@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -20,8 +21,21 @@ class ExperimentLedger:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
+    _RUN_COLS: tuple[str, ...] = (
+        "timestamp", "seed", "mode", "guidance", "prompt_idea", "positive_prompt",
+        "native_path", "final_path", "native_sha256", "final_sha256",
+        "native_seconds", "finish_seconds", "total_seconds",
+        "peak_rss_gib", "min_avail_ram_gib", "face_count", "hand_count",
+        "heterochromia_score", "eye_drift_detected", "quality_action",
+        "receipt_path", "round_num",
+    )
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.db_path)
+
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(self._connect()) as conn, conn:
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS runs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,20 +66,18 @@ class ExperimentLedger:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_seed ON runs(seed)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_round ON runs(round_num)")
 
+    def _normalize_row(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        row = {k: kwargs.get(k) for k in self._RUN_COLS}
+        if not row["timestamp"]:
+            row["timestamp"] = datetime.now(timezone.utc).isoformat()
+        if isinstance(row["eye_drift_detected"], bool):
+            row["eye_drift_detected"] = 1 if row["eye_drift_detected"] else 0
+        return row
+
     def record_run(self, **kwargs: Any) -> int:
-        if "timestamp" not in kwargs or not kwargs["timestamp"]:
-            kwargs["timestamp"] = datetime.now(timezone.utc).isoformat()
-        
-        cols = [
-            "timestamp", "seed", "mode", "guidance", "prompt_idea", "positive_prompt",
-            "native_path", "final_path", "native_sha256", "final_sha256",
-            "native_seconds", "finish_seconds", "total_seconds",
-            "peak_rss_gib", "min_avail_ram_gib", "face_count", "hand_count",
-            "heterochromia_score", "eye_drift_detected", "quality_action",
-            "receipt_path", "round_num"
-        ]
-        
-        filtered = {k: kwargs.get(k) for k in cols if k in kwargs}
+        filtered = {k: kwargs.get(k) for k in self._RUN_COLS if k in kwargs}
+        if "timestamp" not in filtered or not filtered["timestamp"]:
+            filtered["timestamp"] = datetime.now(timezone.utc).isoformat()
         if "eye_drift_detected" in filtered and isinstance(filtered["eye_drift_detected"], bool):
             filtered["eye_drift_detected"] = 1 if filtered["eye_drift_detected"] else 0
 
@@ -73,7 +85,7 @@ class ExperimentLedger:
         columns = ", ".join(filtered.keys())
         values = list(filtered.values())
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(self._connect()) as conn, conn:
             cursor = conn.cursor()
             cursor.execute(
                 f"INSERT OR REPLACE INTO runs ({columns}) VALUES ({placeholders})",
@@ -81,78 +93,135 @@ class ExperimentLedger:
             )
             return cursor.lastrowid or 0
 
-    def ingest_existing_artifacts(self, app_dir: str | Path | None = None) -> int:
+    def ingest_existing_artifacts(
+        self,
+        app_dir: str | Path | None = None,
+        *,
+        force_refresh: bool = False,
+    ) -> int:
         app_path = Path(app_dir) if app_dir else self.config.app_dir
         assert app_path is not None
-        count = 0
 
-        # 1. Scan output/emilia/quality/*.run.json
-        quality_dir = app_path / "output" / "emilia" / "quality"
-        if quality_dir.is_dir():
-            for run_file in quality_dir.glob("*.run.json"):
-                try:
-                    data = json.loads(run_file.read_text(encoding="utf-8"))
-                    gen = data.get("generation", {})
-                    fin = data.get("finishing", {})
-                    n_sec = gen.get("seconds", 0.0)
-                    f_sec = fin.get("seconds", 0.0)
-                    self.record_run(
-                        seed=data.get("seed"),
-                        mode="quality",
-                        guidance=data.get("guidance", "baseline"),
-                        native_path=data.get("native"),
-                        final_path=data.get("final"),
-                        native_seconds=n_sec,
-                        finish_seconds=f_sec,
-                        total_seconds=n_sec + f_sec,
-                        receipt_path=str(run_file.resolve()),
-                    )
-                    count += 1
-                except Exception:
-                    continue
+        with closing(self._connect()) as conn, conn:
+            existing_paths: set[str] = set()
+            if not force_refresh:
+                existing_paths = {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT receipt_path FROM runs WHERE receipt_path IS NOT NULL"
+                    ).fetchall()
+                }
 
-        # 2. Scan temp/architecture_iterations/round_*/*.json
-        iter_dir = app_path / "temp" / "architecture_iterations"
-        if iter_dir.is_dir():
-            for round_dir in iter_dir.glob("round_*"):
-                if not round_dir.is_dir():
-                    continue
-                try:
-                    round_num = int(round_dir.name.split("_")[-1])
-                except ValueError:
-                    round_num = None
-                for rec_file in round_dir.glob("*.json"):
-                    if rec_file.name == "summary.json":
+            pending_rows: list[tuple[Any, ...]] = []
+            now_iso = datetime.now(timezone.utc).isoformat()
+            total_matched = 0
+
+            # 1. Scan output/emilia/quality/*.run.json
+            quality_dir = app_path / "output" / "emilia" / "quality"
+            if quality_dir.is_dir():
+                for run_file in quality_dir.glob("*.run.json"):
+                    resolved_str = str(run_file.resolve())
+                    if resolved_str in existing_paths:
+                        total_matched += 1
                         continue
                     try:
-                        data = json.loads(rec_file.read_text(encoding="utf-8"))
-                        receipt = data.get("receipt", {})
-                        hashes = data.get("pixel_hashes", {})
-                        gen = receipt.get("generation", {})
-                        fin = receipt.get("finishing", {})
-                        self.record_run(
-                            seed=data.get("seed") or receipt.get("seed"),
-                            mode="benchmark",
-                            guidance=receipt.get("guidance", "baseline"),
-                            native_path=receipt.get("native"),
-                            final_path=receipt.get("final"),
-                            native_sha256=hashes.get("native"),
-                            final_sha256=hashes.get("final"),
-                            native_seconds=gen.get("seconds"),
-                            finish_seconds=fin.get("seconds"),
-                            total_seconds=data.get("wall_seconds"),
-                            peak_rss_gib=data.get("peak_rss_bytes", 0) / (1024**3) if "peak_rss_bytes" in data else None,
-                            min_avail_ram_gib=data.get("min_available_ram_bytes", 0) / (1024**3) if "min_available_ram_bytes" in data else None,
-                            receipt_path=str(rec_file.resolve()),
-                            round_num=round_num,
-                        )
-                        count += 1
+                        data = json.loads(run_file.read_text(encoding="utf-8"))
+                        gen = data.get("generation", {})
+                        fin = data.get("finishing", {})
+                        n_sec = gen.get("seconds", 0.0)
+                        f_sec = fin.get("seconds", 0.0)
+                        qi_native = data.get("quality_inspection", {}).get("native", {})
+                        qi_final = data.get("quality_inspection", {}).get("final", {})
+                        row = self._normalize_row({
+                            "timestamp": now_iso,
+                            "seed": data.get("seed"),
+                            "mode": "quality",
+                            "guidance": data.get("guidance", "baseline"),
+                            "prompt_idea": data.get("user_idea"),
+                            "native_path": data.get("native"),
+                            "final_path": data.get("final"),
+                            "native_sha256": qi_native.get("pixel_sha256"),
+                            "final_sha256": qi_final.get("pixel_sha256"),
+                            "native_seconds": n_sec,
+                            "finish_seconds": f_sec,
+                            "total_seconds": n_sec + f_sec,
+                            "face_count": qi_native.get("face_count"),
+                            "hand_count": qi_native.get("hand_count"),
+                            "heterochromia_score": qi_native.get("heterochromia_score"),
+                            "eye_drift_detected": qi_native.get("eye_drift_detected"),
+                            "quality_action": qi_native.get("recommended_action"),
+                            "receipt_path": resolved_str,
+                        })
+                        pending_rows.append(tuple(row[c] for c in self._RUN_COLS))
+                        total_matched += 1
                     except Exception:
                         continue
-        return count
+
+            # 2. Scan temp/architecture_iterations/round_*/*.json
+            iter_dir = app_path / "temp" / "architecture_iterations"
+            if iter_dir.is_dir():
+                for round_dir in iter_dir.glob("round_*"):
+                    if not round_dir.is_dir():
+                        continue
+                    try:
+                        round_num = int(round_dir.name.split("_")[-1])
+                    except ValueError:
+                        round_num = None
+                    for rec_file in round_dir.glob("*.json"):
+                        if rec_file.name == "summary.json":
+                            continue
+                        resolved_str = str(rec_file.resolve())
+                        if resolved_str in existing_paths:
+                            total_matched += 1
+                            continue
+                        try:
+                            data = json.loads(rec_file.read_text(encoding="utf-8"))
+                            receipt = data.get("receipt", {})
+                            hashes = data.get("pixel_hashes", {})
+                            gen = receipt.get("generation", {})
+                            fin = receipt.get("finishing", {})
+                            row = self._normalize_row({
+                                "timestamp": now_iso,
+                                "seed": data.get("seed") or receipt.get("seed"),
+                                "mode": "benchmark",
+                                "guidance": receipt.get("guidance", "baseline"),
+                                "native_path": receipt.get("native"),
+                                "final_path": receipt.get("final"),
+                                "native_sha256": hashes.get("native"),
+                                "final_sha256": hashes.get("final"),
+                                "native_seconds": gen.get("seconds"),
+                                "finish_seconds": fin.get("seconds"),
+                                "total_seconds": data.get("wall_seconds"),
+                                "peak_rss_gib": (
+                                    data.get("peak_rss_bytes", 0) / (1024**3)
+                                    if "peak_rss_bytes" in data
+                                    else None
+                                ),
+                                "min_avail_ram_gib": (
+                                    data.get("min_available_ram_bytes", 0) / (1024**3)
+                                    if "min_available_ram_bytes" in data
+                                    else None
+                                ),
+                                "receipt_path": resolved_str,
+                                "round_num": round_num,
+                            })
+                            pending_rows.append(tuple(row[c] for c in self._RUN_COLS))
+                            total_matched += 1
+                        except Exception:
+                            continue
+
+            if pending_rows:
+                cols_sql = ", ".join(self._RUN_COLS)
+                placeholders = ", ".join(["?"] * len(self._RUN_COLS))
+                conn.executemany(
+                    f"INSERT OR REPLACE INTO runs ({cols_sql}) VALUES ({placeholders})",
+                    pending_rows,
+                )
+
+            return total_matched
 
     def get_summary_stats(self) -> dict[str, Any]:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(self._connect()) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute("""
                 SELECT 
@@ -166,7 +235,7 @@ class ExperimentLedger:
             return dict(row) if row else {}
 
     def compare_rounds(self, round_a: int, round_b: int) -> dict[str, Any]:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(self._connect()) as conn:
             conn.row_factory = sqlite3.Row
             rows_a = {r["seed"]: dict(r) for r in conn.execute("SELECT * FROM runs WHERE round_num = ?", (round_a,)).fetchall()}
             rows_b = {r["seed"]: dict(r) for r in conn.execute("SELECT * FROM runs WHERE round_num = ?", (round_b,)).fetchall()}
@@ -194,7 +263,7 @@ class ExperimentLedger:
             }
 
     def list_recent_runs(self, limit: int = 20) -> list[dict[str, Any]]:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(self._connect()) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
             return [dict(r) for r in rows]

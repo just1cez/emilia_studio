@@ -81,21 +81,27 @@ def is_emilia_request(idea: str, aliases: tuple[str, ...] = EMILIA_ALIASES) -> b
 
 def clean_generated_prompt(content: str) -> str:
     prompt = content.strip()
-    while "<think>" in prompt.lower() and "</think>" in prompt.lower():
-        start = prompt.lower().index("<think>")
-        end = prompt.lower().index("</think>", start) + len("</think>")
+    lowered = prompt.lower()
+    while "<think>" in lowered and "</think>" in lowered:
+        start = lowered.index("<think>")
+        end = lowered.index("</think>", start) + len("</think>")
         prompt = (prompt[:start] + prompt[end:]).strip()
+        lowered = prompt.lower()
     if prompt.startswith("```"):
         prompt = prompt.strip("`").strip()
+        lowered = prompt.lower()
         for lang in ("json\n", "text\n", "markdown\n"):
-            if prompt.lower().startswith(lang):
+            if lowered.startswith(lang):
                 prompt = prompt[len(lang) :].strip()
-    for prefix in ("Positive prompt:", "Prompt:", "英文提示词:"):
-        if prompt.lower().startswith(prefix.lower()):
+                lowered = prompt.lower()
+    for prefix in ("positive prompt:", "prompt:", "英文提示词:"):
+        if lowered.startswith(prefix):
             prompt = prompt[len(prefix) :].strip()
-    for marker in ("\nNegative prompt:", "\n负面提示词:"):
-        if marker.lower() in prompt.lower():
-            prompt = prompt[: prompt.lower().index(marker.lower())].strip()
+            lowered = prompt.lower()
+    for marker in ("\nnegative prompt:", "\n负面提示词:"):
+        if marker in lowered:
+            prompt = prompt[: lowered.index(marker)].strip()
+            lowered = prompt.lower()
     prompt = " ".join(line.strip() for line in prompt.splitlines() if line.strip())
     if not prompt:
         raise BridgeError("Ollama 返回了空的生图提示词")
@@ -164,7 +170,7 @@ class OllamaPromptCompiler:
                 )
             deadline = time.monotonic() + 90
             while time.monotonic() < deadline:
-                time.sleep(2)
+                time.sleep(0.25)
                 tags = self.probe_ollama()
                 if tags is not None:
                     break

@@ -1,0 +1,39 @@
+diff --git a/modules/impact/core.py b/modules/impact/core.py
+index a75a5bf..0e374b5 100644
+--- a/modules/impact/core.py
++++ b/modules/impact/core.py
+@@ -619,6 +619,8 @@ class SAMWrapper:
+         self.model = model
+         self.safe_to_gpu = safe_to_gpu if safe_to_gpu is not None else SafeToGPU_stub()
+         self.is_auto_mode = is_auto_mode
++        self._cached_predictor = None
++        self._cached_image_ref = None
+ 
+     def prepare_device(self):
+         if self.is_auto_mode:
+@@ -626,16 +628,22 @@ class SAMWrapper:
+             self.safe_to_gpu.to_device(self.model, device=device)
+ 
+     def release_device(self):
++        self._cached_predictor = None
++        self._cached_image_ref = None
+         if self.is_auto_mode:
+             self.model.to(device="cpu")
+ 
+     def predict(self, image, points, plabs, bbox, threshold):
+-        predictor = SamPredictor(self.model)
+-        predictor.set_image(image, "RGB")
++        if self._cached_predictor is not None and self._cached_image_ref is image:
++            predictor = self._cached_predictor
++        else:
++            predictor = SamPredictor(self.model)
++            predictor.set_image(image, "RGB")
++            self._cached_predictor = predictor
++            self._cached_image_ref = image
+ 
+         return sam_predict(predictor, points, plabs, bbox, threshold)
+ 
+-
+ class SAM2Wrapper:
+     def __init__(self, config, modelname, is_auto_mode, safe_to_gpu=None, device_mode="AUTO"):
+         self.config = config

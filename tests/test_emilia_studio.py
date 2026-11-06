@@ -29,9 +29,10 @@ from emilia_studio.compiler import (
     is_emilia_request,
 )
 from emilia_studio.config import StudioConfig, load_config
+from emilia_studio.engine import EmiliaRenderEngine
 from emilia_studio.inspector import QualityInspector
 from emilia_studio.ledger import ExperimentLedger
-from emilia_studio.workflows import EmiliaWorkflowBuilder
+from emilia_studio.workflows import EmiliaWorkflowBuilder, _RAW_WORKFLOW_CACHE
 
 
 def test_config_loading_and_paths() -> None:
@@ -118,11 +119,10 @@ def test_runtime_patches_plugin_idempotence() -> None:
     assert first["vae_memory_management"] is True
     assert first["utils_mask_caching"] is True
     assert first["nodes_io_optimizations"] is True
+    assert first["upscale_model_in_place_clamp"] is True
+    assert first["ipadapter_attention_copy_removal"] is True
     assert first == second
-    assert verified["vae_memory_management"] is True
-    assert verified["utils_mask_caching"] is True
-    assert verified["nodes_io_optimizations"] is True
-
+    assert all(verified.values())
 def test_quality_inspector_iris_and_heterochromia(tmp_path: Path) -> None:
     inspector = QualityInspector(use_yolo=False)
 
@@ -224,3 +224,61 @@ def test_setup_manifest_verification() -> None:
 
     rc = cli_main(["setup", "--sync"])
     assert rc == 0
+
+
+def test_engine_local_output_zero_copy_ref_resolution(tmp_path: Path) -> None:
+    cfg = StudioConfig(
+        root_dir=ROOT,
+        app_dir=tmp_path / "app",
+        output_dir=tmp_path / "app" / "output",
+        temp_dir=tmp_path / "app" / "temp",
+    )
+    out_file = cfg.output_dir / "emilia" / "quality" / "01_base_00001_.png"
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    out_file.write_bytes(b"fake_png")
+    engine = EmiliaRenderEngine(config=cfg, ledger=ExperimentLedger(db_path=tmp_path / "l.db", config=cfg))
+    ref = engine._resolve_local_load_image_ref(out_file)
+    assert ref == "emilia/quality/01_base_00001_.png [output]"
+
+    in_file = (cfg.app_dir / "input" / "official_face_center_clean.png")
+    in_file.parent.mkdir(parents=True, exist_ok=True)
+    in_file.write_bytes(b"fake_in")
+    assert engine._resolve_local_load_image_ref(in_file) == "official_face_center_clean.png"
+
+
+def test_workflow_cache_and_upscale_factor() -> None:
+    builder = EmiliaWorkflowBuilder(load_config())
+    g_default = builder.build_highres_finish("test.png", seed=20261027, upscale_factor=2.0)
+    assert g_default["15"]["inputs"]["scale_by"] == 0.5
+    g_custom = builder.build_highres_finish("test.png", seed=20261027, upscale_factor=3.0)
+    assert g_custom["15"]["inputs"]["scale_by"] == 0.75
+    assert len(_RAW_WORKFLOW_CACHE) >= 1
+
+
+def test_lanczos_and_sigma_cache_bit_exact() -> None:
+    if not (ROOT / "app" / "comfy").is_dir():
+        pytest.skip("ComfyUI runtime app/ not present in standalone CI")
+    import torch
+    import comfy.utils
+    from custom_nodes import emilia_runtime_patches
+
+    torch.manual_seed(20261027)
+    sample = torch.rand((1, 3, 128, 96), dtype=torch.float32)
+    out1 = comfy.utils.lanczos(sample, 64, 48)
+    out2 = emilia_runtime_patches._patched_lanczos(sample, 64, 48)
+    assert torch.equal(out1, out2)
+    assert out1.movedim(1, -1).is_contiguous()
+
+    cap_mod = emilia_runtime_patches._resolve_cross_attention_patch_module()
+    assert cap_mod is not None
+    sigmas = torch.tensor([1.2345], dtype=torch.float32)
+    q = torch.zeros((2, 16, 64), dtype=torch.float32)
+    attn_patch = cap_mod.Attn2Replace(
+        lambda out, q, k, v, extra_options, **kw: torch.zeros_like(out),
+        sigma_start=10.0,
+        sigma_end=0.1,
+        cond=None,
+    )
+    _ = attn_patch(q, q, q, {"n_heads": 4, "sigmas": sigmas})
+    assert hasattr(sigmas, "_emilia_sigma_val")
+    assert abs(sigmas._emilia_sigma_val - 1.2345) < 1e-5

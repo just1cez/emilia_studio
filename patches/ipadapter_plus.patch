@@ -1,8 +1,27 @@
 diff --git a/CrossAttentionPatch.py b/CrossAttentionPatch.py
-index adb2079..96db607 100644
+index adb2079..336012f 100644
 --- a/CrossAttentionPatch.py
 +++ b/CrossAttentionPatch.py
-@@ -171,10 +171,15 @@ def ipadapter_attention(out, q, k, v, extra_options, module_key='', ipadapter=No
+@@ -23,7 +23,17 @@ class Attn2Replace:
+     def __call__(self, q, k, v, extra_options):
+         dtype = q.dtype
+         out = optimized_attention(q, k, v, extra_options["n_heads"])
+-        sigma = extra_options["sigmas"].detach().cpu()[0].item() if 'sigmas' in extra_options else 999999999.9
++        sigmas = extra_options.get("sigmas")
++        if sigmas is not None:
++            sigma = getattr(sigmas, "_emilia_sigma_val", None)
++            if sigma is None:
++                sigma = sigmas.detach().cpu()[0].item()
++                try:
++                    sigmas._emilia_sigma_val = sigma
++                except AttributeError:
++                    pass
++        else:
++            sigma = 999999999.9
+ 
+         device_kwargs = self.get_multigpu_kwargs(q.device)
+ 
+@@ -171,10 +181,15 @@ def ipadapter_attention(out, q, k, v, extra_options, module_key='', ipadapter=No
          elif weight == 0:
              return 0
          

@@ -180,3 +180,24 @@ Unified the repository into the declarative `emilia_studio` package (`D:\comfyui
    - Root `AGENTS.md` defines the two-tier Option A repository contract (`emilia_studio/` + `app/`), 8 GiB VRAM / Windows commit limit rules, and bit-exact pixel hash invariants.
    - Root `PROGRESS.md` consolidates the 6-phase chronological engineering history and 50-image benchmark tables.
    - `models_manifest.json` + `python -m emilia_studio.cli setup` verifies all 8 model weights, reference assets, and 4 custom node packages.
+
+## Phase 7 Hot-Path & Memory Optimizations (2026-11-07)
+
+Implemented five additional bit-exact optimizations verified on `output/emilia/quality/03_finished_2x_00061_.png` (seed `20261027`, native `276.9s`, finish `73.2s`, native SHA-256 `3b58d9daf2770d0ad7e87b971912b854e1e7495f9e99a09f348af9bf258c9425`, final SHA-256 `d7fe10c200535d8656ab633248ca7cc651ee6d2e60bd309c23c43fa1ce5af63e`):
+
+1. **Zero-Copy Stage 1 -> Stage 2 `[output]` Handoff & In-Memory Stage DB (`emilia_studio/engine.py`)**:
+   - Replaced HTTP multipart upload (`_upload_image` with `overwrite="false"`, which triggered an O(N) SHA-256 collision scan across `app/input/emilia_quality_selected_native*.png` and wrote a duplicate 4 MiB PNG per run) with ComfyUI's native `LoadImage` annotated reference (`emilia/quality/01_base_XXXXX_.png [output]`).
+   - Switched ephemeral stage `--database-url` from on-disk `render.db` to `sqlite:///:memory:` and reduced readiness polling interval from `0.5s` to `0.1s`.
+2. **CPU QualityInspector Zero-Copy Hashing, `float64` In-Place Stats & Module-Level YOLO Cache (`emilia_studio/inspector.py`)**:
+   - Eliminated the `95.55 MiB` `arr.astype(np.float32)` allocation (`arr.mean(dtype=np.float64)` / `arr.std(dtype=np.float64)`), the `23.89 MiB` `im.tobytes()` copy (`hashlib.sha256(memoryview(arr))`), and duplicate `np.asarray(rgb)` conversion in `analyze_iris_color`.
+   - Added `_YOLO_MODEL_CACHE` across `QualityInspector` instances, reducing repeat instance inspection latency on `2304x3456` PNGs from `1261.6 ms` to `762.1 ms` (-39.6%) while saving ~167 MiB peak RAM.
+3. **ComfyUI Core, RealESRGAN Upscaler, IPAdapter Sigma Sync & SAM Backbone Caching (`patches/`)**:
+   - `comfy.utils.tiled_scale_multidim`: replaced `o.add_(ps_view * mask_view)` with `ps_view.mul_(mask_view); o.add_(ps_view)`, eliminating 43 temporary tile tensor allocations (`676.8 MiB` churn across Stage 1 and Stage 2).
+   - `comfy_extras.nodes_upscale_model.ImageUpscaleWithModel`: kept `in_img` as a CPU view (moving per-tile to GPU) and clamped `s` in-place (`s.clamp_(0, 1.0)`) before `.movedim(-3, -1)`, saving `382.21 MiB` peak CPU commit and `23.89 MiB` GPU VRAM.
+   - `comfy.utils.lanczos`: in-place `np.clip(arr, 0, 255, out=arr)`, in-place `t /= 255.0`, and `results[0].unsqueeze(0)` for `batch=1`, eliminating `~692.75 MiB` of CPU allocations during the `4608x6912 -> 2304x3456` downsample and making the resulting tensor contiguous for zero-copy `SaveImage`.
+   - `CrossAttentionPatch.Attn2Replace.__call__`: cached the scalar `sigma` float on the `sigmas` tensor per diffusion step ( fulfills the previously noted "once-per-model-evaluation sigma extraction" candidate), eliminating 2,484 synchronous GPU->CPU `cudaMemcpyDtoH` stalls per 36-step render, and fixed hyphenated `comfyui-ipadapter-plus` loading in `patches/emilia_runtime_patches/__init__.py`.
+   - `impact.core.SAMWrapper.predict`: cached `SamPredictor.set_image` backbone features when called repeatedly on the same `image` array across multiple detected hands, cutting SAM ViT-B `1024x1024` backbone passes by 50%.
+4. **SQLite ExperimentLedger Single-Transaction Batch & Incremental Ingest (`emilia_studio/ledger.py`)**:
+   - Replaced per-file `sqlite3.connect()` commits in `ingest_existing_artifacts()` with single-transaction `executemany()` and `existing_paths` incremental skip, reducing cold ingest of 109 artifacts from `12,233.4 ms` to `177.5 ms` (68.9x faster) and incremental ingest to `82.4 ms` (148.5x faster).
+5. **Workflow Raw JSON Cache & Compiler Cleanup (`emilia_studio/workflows.py`, `emilia_studio/compiler.py`)**:
+   - Added `_RAW_WORKFLOW_CACHE` in `EmiliaWorkflowBuilder`, wired `upscale_factor` (`scale_by = upscale_factor / 4.0`) in `build_highres_finish`, and removed redundant `.lower()` string allocations in `clean_generated_prompt`.

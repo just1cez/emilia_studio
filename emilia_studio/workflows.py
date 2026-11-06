@@ -15,6 +15,9 @@ class WorkflowSpec:
     graph: Dict[str, Any]
     visual_template: Optional[Path] = None
 
+_RAW_WORKFLOW_CACHE: dict[str, str] = {}
+
+
 class EmiliaWorkflowBuilder:
     """Builder for constructing standard Emilia API graphs."""
     
@@ -23,8 +26,12 @@ class EmiliaWorkflowBuilder:
 
     def _load_api(self, name: str) -> Dict[str, Any]:
         path = self.config.workflows_dir / name
-        return json.loads(path.read_text(encoding="utf-8"))
-
+        key = str(path.resolve())
+        raw = _RAW_WORKFLOW_CACHE.get(key)
+        if raw is None:
+            raw = path.read_text(encoding="utf-8")
+            _RAW_WORKFLOW_CACHE[key] = raw
+        return json.loads(raw)
     def build_highres_native(
         self,
         seed: int = 20261027,
@@ -83,7 +90,8 @@ class EmiliaWorkflowBuilder:
         graph["28"]["inputs"]["seed"] = seed + 4
         graph["28"]["inputs"]["denoise"] = hand_denoise
         graph["28"]["inputs"]["steps"] = hand_steps
-        
+        if upscale_factor != 2.0 and "15" in graph and "inputs" in graph["15"]:
+            graph["15"]["inputs"]["scale_by"] = round(float(upscale_factor) / 4.0, 4)
         if pag:
             graph["29"]["inputs"]["filename_prefix"] = "emilia/community/quality_pag_refined"
             graph["16"]["inputs"]["filename_prefix"] = "emilia/community/quality_pag_finished"

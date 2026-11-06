@@ -18,6 +18,8 @@ def _resolve_default_app_dir() -> Path:
     return Path(__file__).resolve().parents[1] / "app"
 
 
+_YOLO_MODEL_CACHE: dict[str, Any] = {}
+
 def _rgb_to_hsv_deg(rgb_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Convert uint8 RGB array (H, W, 3) to (H_deg [0..360), S [0..1], V [0..1])."""
     im_hsv = Image.fromarray(rgb_arr, mode="RGB").convert("HSV")
@@ -150,9 +152,15 @@ class QualityInspector:
             from ultralytics import YOLO
 
             if self.face_model_path.is_file():
-                self._face_model = YOLO(str(self.face_model_path))
+                f_key = str(self.face_model_path.resolve())
+                if f_key not in _YOLO_MODEL_CACHE:
+                    _YOLO_MODEL_CACHE[f_key] = YOLO(f_key)
+                self._face_model = _YOLO_MODEL_CACHE[f_key]
             if self.hand_model_path.is_file():
-                self._hand_model = YOLO(str(self.hand_model_path))
+                h_key = str(self.hand_model_path.resolve())
+                if h_key not in _YOLO_MODEL_CACHE:
+                    _YOLO_MODEL_CACHE[h_key] = YOLO(h_key)
+                self._hand_model = _YOLO_MODEL_CACHE[h_key]
             return self._face_model is not None
         except Exception:
             self._face_model = None
@@ -209,6 +217,8 @@ class QualityInspector:
         self,
         image: Image.Image | str | Path,
         face_bbox: tuple[float, float, float, float] | None = None,
+        *,
+        rgb_array: np.ndarray | None = None,
     ) -> dict[str, Any]:
         """Locate left and right eye regions, isolate saturated iris pixels in HSV, and check for drift."""
         if isinstance(image, (str, Path)):
@@ -240,7 +250,7 @@ class QualityInspector:
         rx1 = int(max(0, round(x1 + 0.55 * fw)))
         rx2 = int(min(w, round(x1 + 0.84 * fw)))
 
-        arr = np.asarray(rgb)
+        arr = rgb_array if rgb_array is not None else np.asarray(rgb)
         left_crop = arr[ey1:ey2, lx1:lx2]
         right_crop = arr[ey1:ey2, rx1:rx2]
 
@@ -336,9 +346,51 @@ class QualityInspector:
             with Image.open(path) as im:
                 im.load()
                 width, height = im.size
-                pixel_sha256 = hashlib.sha256(im.tobytes()).hexdigest()
-                rgb_im = im.convert("RGB") if im.mode != "RGB" else im.copy()
-                arr = np.asarray(rgb_im)
+                if im.mode == "RGB":
+                    rgb_im = im
+                    arr = np.asarray(rgb_im)
+                    pixel_sha256 = hashlib.sha256(memoryview(arr)).hexdigest()
+                else:
+                    pixel_sha256 = hashlib.sha256(im.tobytes()).hexdigest()
+                    rgb_im = im.convert("RGB")
+                    arr = np.asarray(rgb_im)
+
+                dimensions_match = True
+                reasons: list[str] = []
+                if expected_size is not None and (width, height) != tuple(expected_size):
+                    dimensions_match = False
+                    reasons.append(
+                        f"Dimensions {(width, height)} do not match expected {expected_size}"
+                    )
+
+                if np.issubdtype(arr.dtype, np.integer):
+                    non_nan = True
+                else:
+                    non_nan = bool(np.isfinite(arr).all())
+                mean_rgb = float(arr.mean(dtype=np.float64)) if (non_nan and arr.size > 0) else 0.0
+                std_rgb = float(arr.std(dtype=np.float64)) if (non_nan and arr.size > 0) else 0.0
+                min_rgb = int(arr.min()) if arr.size > 0 else 0
+                max_rgb = int(arr.max()) if arr.size > 0 else 0
+                dynamic_range = float(max_rgb - min_rgb)
+                non_blank = bool(non_nan and std_rgb > 1.0 and dynamic_range >= 10.0)
+
+                if not non_nan:
+                    reasons.append("Image contains NaN or infinite pixel values")
+                if not non_blank:
+                    reasons.append(
+                        f"Image appears blank or flat (std={std_rgb:.2f}, range={dynamic_range:.1f})"
+                    )
+
+                face_boxes, face_confs, hand_boxes, hand_confs, detector_source = (
+                    self.detect_anatomy(rgb_im)
+                )
+                face_count = len(face_boxes)
+                hand_count = len(hand_boxes)
+                multiple_subjects = bool(solo_prompt and face_count > 1)
+
+                primary_face = face_boxes[0] if face_boxes else None
+                iris = self.analyze_iris_color(rgb_im, face_bbox=primary_face, rgb_array=arr)
+                iris["anatomy_detector_source"] = detector_source
         except Exception as exc:
             return InspectionReport(
                 image_path=str(path),
@@ -351,36 +403,6 @@ class QualityInspector:
                 effective_action="accept" if strict_seed_lock else "reject_seed",
                 reasons=[f"Failed to decode PNG: {exc}"],
             )
-
-        dimensions_match = True
-        reasons: list[str] = []
-        if expected_size is not None and (width, height) != tuple(expected_size):
-            dimensions_match = False
-            reasons.append(f"Dimensions {(width, height)} do not match expected {expected_size}")
-
-        arr_f = arr.astype(np.float32)
-        non_nan = bool(np.isfinite(arr_f).all())
-        mean_rgb = float(np.mean(arr_f)) if non_nan else 0.0
-        std_rgb = float(np.std(arr_f)) if non_nan else 0.0
-        min_rgb = int(np.min(arr)) if arr.size > 0 else 0
-        max_rgb = int(np.max(arr)) if arr.size > 0 else 0
-        dynamic_range = float(max_rgb - min_rgb)
-        non_blank = bool(non_nan and std_rgb > 1.0 and dynamic_range >= 10.0)
-
-        if not non_nan:
-            reasons.append("Image contains NaN or infinite pixel values")
-        if not non_blank:
-            reasons.append(f"Image appears blank or flat (std={std_rgb:.2f}, range={dynamic_range:.1f})")
-
-        face_boxes, face_confs, hand_boxes, hand_confs, detector_source = self.detect_anatomy(rgb_im)
-        face_count = len(face_boxes)
-        hand_count = len(hand_boxes)
-        multiple_subjects = bool(solo_prompt and face_count > 1)
-
-        primary_face = face_boxes[0] if face_boxes else None
-        iris = self.analyze_iris_color(rgb_im, face_bbox=primary_face)
-        iris["anatomy_detector_source"] = detector_source
-
         if face_count == 0:
             recommended_action = "reject_seed"
             reasons.append("No face detected in candidate image")

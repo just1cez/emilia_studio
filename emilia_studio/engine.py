@@ -63,13 +63,36 @@ class EmiliaRenderEngine:
         self.inspector = inspector or QualityInspector(app_dir=self.config.app_dir)
         self.ledger = ledger or ExperimentLedger(config=self.config)
 
+    def _resolve_local_load_image_ref(self, image_path: Path) -> str | None:
+        """Return zero-copy ComfyUI LoadImage annotated reference if image_path is inside local output/input/temp dirs."""
+        if self.config.app_dir is None or not image_path.is_file():
+            return None
+        resolved = image_path.resolve()
+        candidates: list[tuple[Path, str]] = []
+        if self.config.output_dir is not None:
+            candidates.append((self.config.output_dir.resolve(), "[output]"))
+        candidates.append(((self.config.app_dir / "output").resolve(), "[output]"))
+        candidates.append(((self.config.app_dir / "input").resolve(), "[input]"))
+        candidates.append(((self.config.app_dir / "temp").resolve(), "[temp]"))
+        for base_dir, tag in candidates:
+            try:
+                rel = resolved.relative_to(base_dir).as_posix()
+                return f"{rel} {tag}" if tag != "[input]" else rel
+            except ValueError:
+                continue
+        return None
+
     async def _upload_image(
         self,
         session: aiohttp.ClientSession,
         base_url: str,
         image_path: Path,
         upload_filename: str = "emilia_quality_selected_native.png",
+        overwrite: bool = True,
     ) -> str:
+        local_ref = self._resolve_local_load_image_ref(image_path)
+        if local_ref is not None:
+            return local_ref
         with image_path.open("rb") as image_file:
             data = aiohttp.FormData()
             data.add_field(
@@ -78,7 +101,7 @@ class EmiliaRenderEngine:
                 filename=upload_filename,
                 content_type="image/png",
             )
-            data.add_field("overwrite", "false")
+            data.add_field("overwrite", "true" if overwrite else "false")
             async with session.post(f"{base_url}/upload/image", data=data) as response:
                 response.raise_for_status()
                 uploaded = await response.json()
@@ -94,10 +117,11 @@ class EmiliaRenderEngine:
         extra_pnginfo: dict[str, Any] | None = None,
     ) -> StageResult:
         if stage in ("finish", "eye_repair"):
-            selected = Path(graph["1"]["inputs"]["image"])
-            uploaded_ref = await self._upload_image(session, base_url, selected)
-            graph["1"]["inputs"]["image"] = uploaded_ref
-
+            raw_img = str(graph["1"]["inputs"]["image"])
+            if not (raw_img.endswith("[output]") or raw_img.endswith("[input]") or raw_img.endswith("[temp]")):
+                selected = Path(raw_img)
+                uploaded_ref = await self._upload_image(session, base_url, selected)
+                graph["1"]["inputs"]["image"] = uploaded_ref
         client_id = str(uuid.uuid4())
         ws_url = base_url.replace("http:", "ws:") + "/ws"
         async with session.ws_connect(
@@ -213,7 +237,7 @@ class EmiliaRenderEngine:
             "--temp-directory",
             str(home / "temp"),
             "--database-url",
-            "sqlite:///" + (home / "user" / "render.db").as_posix(),
+            "sqlite:///:memory:",
             "--log-stdout",
         ]
         environment = os.environ.copy()
@@ -255,7 +279,7 @@ class EmiliaRenderEngine:
                             raise TimeoutError(
                                 f'{stage} server did not start; see {home / "server.log"}'
                             )
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(0.1)
 
                     stage_res = await self._execute_graph_on_session(
                         session=session,
@@ -321,12 +345,6 @@ class EmiliaRenderEngine:
                 self.config.app_dir,
                 generation["outputs"]["9"]["images"][0],
             )
-            with Image.open(selected) as image:
-                if image.size != (1152, 1728):
-                    raise RuntimeError(
-                        "Native output dimensions differ from the quality workflow contract."
-                    )
-
             native_report = self.inspector.inspect_image(
                 selected,
                 expected_size=(1152, 1728),
@@ -334,7 +352,10 @@ class EmiliaRenderEngine:
                 solo_prompt=True,
                 strict_seed_lock=strict_seed_lock,
             )
-
+            if not native_report.dimensions_match:
+                raise RuntimeError(
+                    "Native output dimensions differ from the quality workflow contract."
+                )
             if (
                 not strict_seed_lock
                 and native_report.recommended_action == "reject_seed"
@@ -390,12 +411,6 @@ class EmiliaRenderEngine:
             self.config.app_dir,
             finishing["outputs"]["16"]["images"][0],
         )
-        with Image.open(final) as image:
-            if image.size != (2304, 3456):
-                raise RuntimeError(
-                    "Finished output dimensions differ from the quality workflow contract."
-                )
-
         final_report = self.inspector.inspect_image(
             final,
             expected_size=(2304, 3456),
@@ -403,7 +418,10 @@ class EmiliaRenderEngine:
             solo_prompt=True,
             strict_seed_lock=strict_seed_lock,
         )
-
+        if not final_report.dimensions_match:
+            raise RuntimeError(
+                "Finished output dimensions differ from the quality workflow contract."
+            )
         receipt: dict[str, Any] = {
             "seed": current_seed,
             "guidance": "PAG scale 1.0" if pag else "baseline",
