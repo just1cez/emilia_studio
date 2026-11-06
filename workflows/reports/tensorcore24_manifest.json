@@ -1,0 +1,5901 @@
+{
+  "date": "2026-09-24",
+  "count": 24,
+  "workflow_template": "app/emilia/emilia_ipadapter_high_quality_test.api.json",
+  "profile": {
+    "steps": 32,
+    "cfg": 5.5,
+    "sampler": "euler_ancestral",
+    "scheduler": "normal",
+    "ipadapter_weight": 0.55,
+    "canvas": [
+      832,
+      1216
+    ],
+    "upscale": "RealESRGAN x4 then Lanczos 0.5",
+    "identity_reference": "input/official_face_center_clean.png",
+    "tensor_core_mode": "PyTorch FP16-capable CUDA path; no unverified fast flags"
+  },
+  "scenes": [
+    {
+      "index": 1,
+      "slug": "snow_forest_threequarter",
+      "seed": 20261001,
+      "theme_prompt": "three-quarter view, winter cape, standing in a snowy forest, one hand catching a single snowflake, other hand resting near chest, simple visible hands, gentle smile, morning mist, cool blue dawn light, winter postcard, balanced composition",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, three-quarter view, winter cape, standing in a snowy forest, one hand catching a single snowflake, other hand resting near chest, simple visible hands, gentle smile, morning mist, cool blue dawn light, winter postcard, balanced composition",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261001,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/01_snow_forest_threequarter_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 01 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/01_snow_forest_threequarter_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 01 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 2,
+      "slug": "mansion_garden_closeup",
+      "seed": 20261002,
+      "theme_prompt": "close-up portrait, classic white and lavender dress, gentle smile, looking at viewer, mansion garden, flowering bushes, soft early morning light, elegant anime key visual",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, close-up portrait, classic white and lavender dress, gentle smile, looking at viewer, mansion garden, flowering bushes, soft early morning light, elegant anime key visual",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261002,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/02_mansion_garden_closeup_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 02 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/02_mansion_garden_closeup_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 02 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 3,
+      "slug": "classical_library_halfbody",
+      "seed": 20261003,
+      "theme_prompt": "half body, formal dress, holding one closed book against chest, calm thoughtful expression, classical library, tall bookshelves, candlelight, warm shadows, light novel cover",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, half body, formal dress, holding one closed book against chest, calm thoughtful expression, classical library, tall bookshelves, candlelight, warm shadows, light novel cover",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261003,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/03_classical_library_halfbody_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 03 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/03_classical_library_halfbody_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 03 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 4,
+      "slug": "terrace_tea_kneeshot",
+      "seed": 20261004,
+      "theme_prompt": "knee-up composition, spring long dress, seated at a terrace tea table, holding one porcelain teacup, gentle smile, golden hour, soft fantasy painterly anime, elegant garden terrace",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, knee-up composition, spring long dress, seated at a terrace tea table, holding one porcelain teacup, gentle smile, golden hour, soft fantasy painterly anime, elegant garden terrace",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261004,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/04_terrace_tea_kneeshot_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 04 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/04_terrace_tea_kneeshot_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 04 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 5,
+      "slug": "capital_street_fullbody",
+      "seed": 20261005,
+      "theme_prompt": "full body, travel cape, standing on a royal capital street, looking back over shoulder into wind, hair ribbons flowing, blue hour, cinematic cel shading, lanterns and distant city lights",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, full body, travel cape, standing on a royal capital street, looking back over shoulder into wind, hair ribbons flowing, blue hour, cinematic cel shading, lanterns and distant city lights",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261005,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/05_capital_street_fullbody_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 05 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/05_capital_street_fullbody_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 05 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 6,
+      "slug": "lakeside_profile",
+      "seed": 20261006,
+      "theme_prompt": "side profile, knit sweater and long skirt, standing beside a quiet lake, gazing at stars, moonlight, dreamy fairy-tale illustration, reflected night sky",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, side profile, knit sweater and long skirt, standing beside a quiet lake, gazing at stars, moonlight, dreamy fairy-tale illustration, reflected night sky",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261006,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/06_lakeside_profile_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 06 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/06_lakeside_profile_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 06 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 7,
+      "slug": "flower_field_wide",
+      "seed": 20261007,
+      "theme_prompt": "environmental wide shot, classic white and lavender dress, walking through a flower field, sunset backlight, warm rim light, watercolor anime illustration, expansive sky",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, environmental wide shot, classic white and lavender dress, walking through a flower field, sunset backlight, warm rim light, watercolor anime illustration, expansive sky",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261007,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/07_flower_field_wide_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 07 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/07_flower_field_wide_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 07 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 8,
+      "slug": "crystal_cavern_lowangle",
+      "seed": 20261008,
+      "theme_prompt": "slight low angle, ice crystal ritual robe, casting gentle ice magic with one raised hand, crystal cavern, luminous blue magic glow, art nouveau decorative framing",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, slight low angle, ice crystal ritual robe, casting gentle ice magic with one raised hand, crystal cavern, luminous blue magic glow, art nouveau decorative framing",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261008,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/08_crystal_cavern_lowangle_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 08 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/08_crystal_cavern_lowangle_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 08 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 9,
+      "slug": "mountain_ruins_interaction",
+      "seed": 20261009,
+      "theme_prompt": "slight high angle, travel cape, interacting with a small blue spirit named Puck hovering beside her, mountain ruins, aurora, anime key visual, wind-swept atmosphere",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, slight high angle, travel cape, interacting with a small blue spirit named Puck hovering beside her, mountain ruins, aurora, anime key visual, wind-swept atmosphere",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261009,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/09_mountain_ruins_interaction_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 09 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/09_mountain_ruins_interaction_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 09 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 10,
+      "slug": "night_festival_threequarter",
+      "seed": 20261010,
+      "theme_prompt": "three-quarter view, elegant formal kimono, joyful at a night festival, holding one paper lantern, moonlight, glowing stalls, light novel cover composition",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, three-quarter view, elegant formal kimono, joyful at a night festival, holding one paper lantern, moonlight, glowing stalls, light novel cover composition",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261010,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/10_night_festival_threequarter_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 10 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/10_night_festival_threequarter_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 10 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 11,
+      "slug": "rain_window_bust",
+      "seed": 20261011,
+      "theme_prompt": "bust portrait, raincoat cape, thoughtful expression by a rain-streaked window, cool and warm reflected light, rainy night reflections, cinematic cel shading",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, bust portrait, raincoat cape, thoughtful expression by a rain-streaked window, cool and warm reflected light, rainy night reflections, cinematic cel shading",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261011,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/11_rain_window_bust_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 11 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/11_rain_window_bust_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 11 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 12,
+      "slug": "fantasy_ice_palace_fullbody",
+      "seed": 20261012,
+      "theme_prompt": "full body, light fantasy armor over white and lavender clothing, extending one translucent ice shield, grand ice palace, blue crystal glow, soft fantasy painterly anime",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, full body, light fantasy armor over white and lavender clothing, extending one translucent ice shield, grand ice palace, blue crystal glow, soft fantasy painterly anime",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261012,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/12_fantasy_ice_palace_fullbody_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 12 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/12_fantasy_ice_palace_fullbody_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 12 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 13,
+      "slug": "snow_forest_closeup",
+      "seed": 20261013,
+      "theme_prompt": "close-up portrait, winter cape, gentle smile, snowy forest, aurora ribbons in the sky, frosted branches, winter postcard, soft violet and blue light",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, close-up portrait, winter cape, gentle smile, snowy forest, aurora ribbons in the sky, frosted branches, winter postcard, soft violet and blue light",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261013,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/13_snow_forest_closeup_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 13 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/13_snow_forest_closeup_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 13 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 14,
+      "slug": "mansion_garden_profile",
+      "seed": 20261014,
+      "theme_prompt": "side profile, formal dress, interacting with a small blue spirit named Puck near her shoulder, mansion garden, morning mist, watercolor anime illustration",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, side profile, formal dress, interacting with a small blue spirit named Puck near her shoulder, mansion garden, morning mist, watercolor anime illustration",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261014,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/14_mansion_garden_profile_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 14 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/14_mansion_garden_profile_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 14 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 15,
+      "slug": "library_lowangle_ice_robe",
+      "seed": 20261015,
+      "theme_prompt": "slight low angle, ice crystal ritual robe, reading one open book at a library desk, candles, crystal ornaments, art nouveau decorative anime composition",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, slight low angle, ice crystal ritual robe, reading one open book at a library desk, candles, crystal ornaments, art nouveau decorative anime composition",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261015,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/15_library_lowangle_ice_robe_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 15 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/15_library_lowangle_ice_robe_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 15 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 16,
+      "slug": "terrace_tea_wide",
+      "seed": 20261016,
+      "theme_prompt": "environmental wide shot, classic white and lavender dress, drinking tea at a terrace, sunset backlight, distant garden, dreamy fantasy painterly illustration",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, environmental wide shot, classic white and lavender dress, drinking tea at a terrace, sunset backlight, distant garden, dreamy fantasy painterly illustration",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261016,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/16_terrace_tea_wide_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 16 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/16_terrace_tea_wide_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 16 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 17,
+      "slug": "capital_street_bust_kimono",
+      "seed": 20261017,
+      "theme_prompt": "bust portrait, elegant formal kimono, looking back with a gentle smile, royal capital street, soft morning light, anime key visual, delicate linework",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, bust portrait, elegant formal kimono, looking back with a gentle smile, royal capital street, soft morning light, anime key visual, delicate linework",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261017,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/17_capital_street_bust_kimono_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 17 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/17_capital_street_bust_kimono_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 17 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 18,
+      "slug": "lakeside_kneeshot_raincape",
+      "seed": 20261018,
+      "theme_prompt": "knee-up composition, raincoat cape, gazing at stars beside a lake after rain, blue hour, wet reflections, cinematic cel shading",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, knee-up composition, raincoat cape, gazing at stars beside a lake after rain, blue hour, wet reflections, cinematic cel shading",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261018,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/18_lakeside_kneeshot_raincape_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 18 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/18_lakeside_kneeshot_raincape_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 18 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 19,
+      "slug": "flower_field_fullbody_knit",
+      "seed": 20261019,
+      "theme_prompt": "full body, knit sweater and long skirt, walking through a flower field, golden hour, warm breeze, soft fantasy painterly anime, clear silhouette",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, full body, knit sweater and long skirt, walking through a flower field, golden hour, warm breeze, soft fantasy painterly anime, clear silhouette",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261019,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/19_flower_field_fullbody_knit_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 19 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/19_flower_field_fullbody_knit_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 19 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 20,
+      "slug": "crystal_cavern_halfbody_armor",
+      "seed": 20261020,
+      "theme_prompt": "half body, light fantasy armor, extending one translucent ice shield, crystal cavern, moonlight through crystals, light novel cover, blue-violet glow",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, half body, light fantasy armor, extending one translucent ice shield, crystal cavern, moonlight through crystals, light novel cover, blue-violet glow",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261020,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/20_crystal_cavern_halfbody_armor_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 20 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/20_crystal_cavern_halfbody_armor_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 20 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 21,
+      "slug": "mountain_ruins_wide_dress",
+      "seed": 20261021,
+      "theme_prompt": "environmental wide shot, classic white and lavender dress, catching one falling snowflake at mountain ruins, aurora, watercolor anime illustration, sweeping landscape",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, environmental wide shot, classic white and lavender dress, catching one falling snowflake at mountain ruins, aurora, watercolor anime illustration, sweeping landscape",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261021,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/21_mountain_ruins_wide_dress_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 21 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/21_mountain_ruins_wide_dress_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 21 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 22,
+      "slug": "night_festival_fullbody_spring",
+      "seed": 20261022,
+      "theme_prompt": "full body, spring long dress, joyful at a night festival, holding one paper lantern, blue hour, art nouveau decorative anime style, luminous atmosphere",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, full body, spring long dress, joyful at a night festival, holding one paper lantern, blue hour, art nouveau decorative anime style, luminous atmosphere",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261022,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/22_night_festival_fullbody_spring_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 22 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/22_night_festival_fullbody_spring_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 22 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 23,
+      "slug": "rain_window_closeup_formal",
+      "seed": 20261023,
+      "theme_prompt": "close-up portrait, formal dress, thoughtful by a rain-streaked window, warm candle reflection and cool rain light, rainy night reflection, winter postcard",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, close-up portrait, formal dress, thoughtful by a rain-streaked window, warm candle reflection and cool rain light, rainy night reflection, winter postcard",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261023,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/23_rain_window_closeup_formal_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 23 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/23_rain_window_closeup_formal_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 23 final 2x"
+          }
+        }
+      }
+    },
+    {
+      "index": 24,
+      "slug": "fantasy_ice_palace_threequarter",
+      "seed": 20261024,
+      "theme_prompt": "three-quarter view, ice crystal ritual robe, casting gentle ice magic from one raised hand, fantasy ice palace, crystalline glow, dreamy fantasy illustration",
+      "workflow": {
+        "4": {
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+          },
+          "_meta": {
+            "title": "Illustrious XL v0.1 / verified SHA256"
+          }
+        },
+        "10": {
+          "class_type": "LoraLoader",
+          "inputs": {
+            "model": [
+              "4",
+              0
+            ],
+            "clip": [
+              "4",
+              1
+            ],
+            "lora_name": "emilia-re-zero-re.safetensors",
+            "strength_model": 0.8,
+            "strength_clip": 0.8
+          },
+          "_meta": {
+            "title": "Emilia LoRA / 0.8 identity lock"
+          }
+        },
+        "5": {
+          "class_type": "EmptyLatentImage",
+          "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+          },
+          "_meta": {
+            "title": "Native 832x1216 / batch 1"
+          }
+        },
+        "6": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, clean anime lineart, refined cel shading, masterpiece, best quality, three-quarter view, ice crystal ritual robe, casting gentle ice magic from one raised hand, fantasy ice palace, crystalline glow, dreamy fantasy illustration",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Identity anchors + large simple full-body composition"
+          }
+        },
+        "7": {
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, deformed clothing, tangled hair",
+            "clip": [
+              "10",
+              1
+            ]
+          },
+          "_meta": {
+            "title": "Anatomy, scale, crop and identity guardrails"
+          }
+        },
+        "3": {
+          "class_type": "KSampler",
+          "inputs": {
+            "model": [
+              "42",
+              0
+            ],
+            "positive": [
+              "6",
+              0
+            ],
+            "negative": [
+              "7",
+              0
+            ],
+            "latent_image": [
+              "5",
+              0
+            ],
+            "seed": 20261024,
+            "steps": 32,
+            "cfg": 5.5,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1.0
+          },
+          "_meta": {
+            "title": "Tensor Core quality profile / Euler a / 32 steps / CFG 5.5"
+          }
+        },
+        "8": {
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "samples": [
+              "3",
+              0
+            ],
+            "vae": [
+              "4",
+              2
+            ],
+            "tile_size": 512,
+            "overlap": 64,
+            "temporal_size": 64,
+            "temporal_overlap": 8
+          },
+          "_meta": {
+            "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+          }
+        },
+        "9": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "8",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/24_fantasy_ice_palace_threequarter_native"
+          },
+          "_meta": {
+            "title": "Set 24 image 24 native inspection"
+          }
+        },
+        "1": {
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "official_face_center_clean.png"
+          },
+          "_meta": {
+            "title": "Official clean center face reference"
+          }
+        },
+        "40": {
+          "class_type": "IPAdapterModelLoader",
+          "inputs": {
+            "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+          },
+          "_meta": {
+            "title": "IPAdapter Plus Face SDXL"
+          }
+        },
+        "41": {
+          "class_type": "CLIPVisionLoader",
+          "inputs": {
+            "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+          },
+          "_meta": {
+            "title": "CLIP Vision ViT-H"
+          }
+        },
+        "42": {
+          "class_type": "IPAdapterAdvanced",
+          "inputs": {
+            "model": [
+              "10",
+              0
+            ],
+            "ipadapter": [
+              "40",
+              0
+            ],
+            "image": [
+              "1",
+              0
+            ],
+            "weight": 0.55,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "K+V",
+            "clip_vision": [
+              "41",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Official face identity conditioning / weight 0.55"
+          }
+        },
+        "13": {
+          "class_type": "UpscaleModelLoader",
+          "inputs": {
+            "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+          },
+          "_meta": {
+            "title": "Anime upscaler / RealESRGAN x4"
+          }
+        },
+        "14": {
+          "class_type": "ImageUpscaleWithModel",
+          "inputs": {
+            "upscale_model": [
+              "13",
+              0
+            ],
+            "image": [
+              "8",
+              0
+            ]
+          },
+          "_meta": {
+            "title": "Upscale identity candidate 4x"
+          }
+        },
+        "15": {
+          "class_type": "ImageScaleBy",
+          "inputs": {
+            "image": [
+              "14",
+              0
+            ],
+            "upscale_method": "lanczos",
+            "scale_by": 0.5
+          },
+          "_meta": {
+            "title": "Downsample identity candidate to 2x"
+          }
+        },
+        "16": {
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": [
+              "15",
+              0
+            ],
+            "filename_prefix": "emilia/tensorcore24/24_fantasy_ice_palace_threequarter_2x"
+          },
+          "_meta": {
+            "title": "Set 24 image 24 final 2x"
+          }
+        }
+      }
+    }
+  ]
+}

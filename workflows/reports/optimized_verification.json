@@ -1,0 +1,27 @@
+{
+  "workflow": "emilia_lora_safe.api.json",
+  "prompt_id": "7faa73da-0481-4165-aabb-49d3070a1a5a",
+  "status": "success",
+  "model": "Illustrious-XL-v0.1.safetensors",
+  "lora": "emilia-re-zero-re.safetensors",
+  "lora_strength": {"model": 0.8, "clip": 0.8},
+  "seed": 20260913,
+  "native_size": [832, 1216],
+  "upscaled_size": [1664, 2432],
+  "outputs": {
+    "native": "output/emilia/optimized/safe_native_00001_.png",
+    "upscaled": "output/emilia/optimized/safe_2x_00001_.png"
+  },
+  "checks": {
+    "api_submission": "success",
+    "native_output": "present",
+    "upscaled_output": "present",
+    "prompt_metadata": "present",
+    "visual_review": "character identity and anatomy visibly improved over generated_20260922; hands are intentionally kept in a simple low-risk pose"
+  },
+  "notes": [
+    "This is a verified baseline, not a guarantee of perfect anatomy on every seed.",
+    "Use the native output for anatomy review before accepting the 2x output.",
+    "The prior latent high-resolution pass was retained separately as optimized/native_1p25x_00001_.png and optimized/final_2x_00001_.png; its denoise 0.32 pass softened the result, so the safe direct upscale is the recommended default."
+  ]
+}

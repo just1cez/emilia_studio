@@ -1,0 +1,182 @@
+# Emilia workflow decision record
+
+Current default for finished-image quality: run `render-emilia-quality.ps1` from the project root. It uses the existing `comfyui` Conda environment and completes native generation, face/hand refinement and 2304x3456 delivery automatically. The older lightweight records below are historical comparisons.
+
+## Historical lightweight baseline
+
+Use `app/emilia/emilia_lora_safe.api.json` or the visual workflow `app/user/default/workflows/Emilia_03_LoRA_8GB.json`.
+
+It uses Illustrious XL v0.1, the Emilia LoRA at model/CLIP strength 0.8, 832x1216, batch 1, Euler Ancestral, 24 steps, CFG 5.5, and a conservative full-body prompt. The native image is inspected before the RealESRGAN 4x plus Lanczos 0.5x output is accepted.
+
+Verified outputs from the fixed seed are in `output/emilia/optimized/`:
+
+- `safe_native_00001_.png` — 832x1216 inspection image
+- `safe_2x_00001_.png` — 1664x2432 delivery image
+
+## Why the latent high-resolution variant is not default
+
+`app/emilia/emilia_lora_optimized.api.json` and `app/user/default/workflows/Emilia_06_LoRA_HighRes_8GB.json` add a 1.25x latent upscale and a second KSampler at denoise 0.32. The graph executes successfully, but the fixed-seed result is visibly softer and less reliable for the current model/VRAM combination than the direct native-to-upscale path. Keep it for controlled experiments, not as the default.
+
+## Operating rule
+
+Do not upscale malformed anatomy. The minimal safe baseline remains available without custom nodes; the continuous quality workflow adds Impact Pack/Subpack only for targeted face, hand and SAM mask refinement. Generate several native seeds, reject images with broken eyes/hands/legs/clothing joins, then run the selected native PNG through the quality workflow.
+
+## Continuous optimization result
+
+The tested production path is now:
+
+`base KSampler → FaceDetailer (YOLO face) → DetailerForEach (YOLO hand + SAM mask) → RealESRGAN x4 → Lanczos 0.5x`.
+
+Use `app/emilia/emilia_lora_production.api.json` or `app/user/default/workflows/Emilia_07_Production_FaceHand.json` for quality mode. The current on-disk API was executed successfully and produced:
+
+- `output/emilia/optimized/production_native_00002_.png` — 832x1216
+- `output/emilia/optimized/production_2x_00002_.png` — 1664x2432
+
+The SAM mask changes only a very small area relative to bbox-only hand refinement, but protects sleeves and nearby clothing from unnecessary repainting. Keep SAM enabled in the production graph.
+
+Installed and tested:
+
+- `ComfyUI-Impact-Pack` 8.28.3
+- `ComfyUI-Impact-Subpack` 1.3.5
+- `face_yolov8n.pt`
+- `hand_yolov8n.pt`
+- `sam_vit_b_01ec64.pth`
+
+`PixelKSampleUpscalerProvider` and `IterativeImageUpscale` were tested. They produce a sharper but substantially slower result and can alter source pixels, so they remain experimental rather than the default delivery path. The full experiment matrix and hashes are in `app/emilia/continuous_optimization.json`.
+
+## Targeted fallback
+
+The second fixed-seed production trial exposed blue/pink eye drift. The default production prompt now explicitly requests matching violet irises and excludes pink/mismatched/one-blue-one-pink eyes; the retest reduced that drift. A stronger face-only pass (`guide_size=640`, `denoise=0.42`, 16 steps) restored both irises to violet on the original failure, but also changed expression slightly. Keep that pass as a fallback for eye-color failures only; do not add it to every generation.
+
+Reusable fallback graph: `app/emilia/emilia_eye_repair.api.json`. Replace its `LoadImage` input with the failed native PNG, run it, and inspect the face before accepting the 2× output.
+
+## Hardware utilization and acceleration check
+
+Measured on the 8 GiB CMP 40HX (Turing, compute capability 7.5) with the native 832×1216 workflow at 12 steps. During sampling, GPU utilization repeatedly reached 97–100%, VRAM peaked at 7147/8192 MiB, and the steady sampler rate was about 14.8 s/step. The GPU is not idle or starved during diffusion; idle utilization between jobs is expected.
+
+The combined experimental profile (`--fast autotune fp16_accumulation cublas_ops`, FP16 VAE/intermediates, lower VRAM reserve) took 380 s versus 256 s for the baseline in the recorded single-run comparison; its per-step rate was not materially faster. FP16 accumulation alone and xFormers 0.0.35 did not improve steady sampler speed. The xFormers test reproduced the baseline sample pixel-for-pixel and the package was removed. SageAttention's optimized kernels target newer Ampere/Ada/Hopper GPUs; Triton is absent and no CUDA compiler is installed. Keep the current PyTorch memory-efficient SDPA and dynamic-VRAM/async-offload defaults; do not install new nodes or attention packages for this machine.
+
+Benchmark details, commands, outputs, hashes, and compatibility observations: `app/emilia/performance_evaluation.json`.
+
+## Quality-first finished artwork (2026-10-23)
+
+Quality, not latency, is now the selection criterion. The previous FP16 candidate-only speed profile is superseded; its measurements remain in `app/emilia/highres_workflow_optimization_report.json` as history, not current defaults.
+
+Recommended command from `D:\comfyui`:
+
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\render-emilia-quality.ps1 -Seed 20261027`
+
+The command starts an isolated ComfyUI child for native generation, waits for the PNG, exits that child to release all reference/diffusion models, then starts a separate finishing child. It does not stop unrelated ComfyUI instances; close other GPU workloads before rendering. This process boundary avoids keeping CLIP Vision/IPAdapter and SAM/detailer models resident together under the small Windows commit limit. Failed cache-none and CUDA-Graph-disable experiments were not adopted as fixes. Logs and exact submitted graphs are retained in a `.run.json` receipt beside the final image.
+
+Selected settings:
+
+- Native: Illustrious XL + Emilia LoRA 0.8/0.8, 1152x1728, batch 1, DPM++ 2M SDE / Karras, 36 steps, CFG 5.5. Official face reference weight 0.40 through sampling position 0.75; stronger full-length conditioning was rejected because of character-sheet/background bias in the observed images.
+- Prompt: complete painted garden, layered shading, white boots, matching violet eyes; negative prompt excludes unfinished sketch backgrounds, barefoot/deformed feet and eye-color drift. This is a jointly selected visual profile, not proof that one sampler or extra steps is universally superior.
+- VAE: FP32, explicit 512-pixel tiles with 64 overlap for the large native image. Full-frame FP32 decode exhausted VRAM during trials; the saved graph requests tiling directly. FP32 is a conservative precision choice, not a claim of universally visible superiority over FP16.
+- Face: YOLO + FaceDetailer, guide640/max896, 20 DPM++ 2M/Karras steps, denoise0.22. Hands: YOLO + SAM mask + DetailerForEach, guide512/max768, 20 steps, denoise0.24. No hand detections means no invented repaint; inspect the result.
+- Delivery: refine before RealESRGAN x4 anime 6B, then Lanczos 0.5x to net 2x. Save base, refined native and 2304x3456 final PNGs under `app/output/emilia/quality/`.
+
+For manual editing, use `Emilia_08_HighRes_Quality_Base_8GB.json` and `Emilia_09_Quality_Finish_2x.json` under `app/user/default/workflows/`. Start the GUI with `start-comfyui.ps1` (now FP32 VAE), generate a native image, close and restart ComfyUI before opening the finishing graph, then upload that native PNG, not the reference face. The automatic command performs this handoff without manual restarts. Saved visual seeds are fixed for reproducibility; change the native seed when exploring alternatives.
+
+Observed quality selection: the default produces a coherent painted garden and complete boots instead of the prior sketchy background and weak foot anatomy. Local face changes are intentionally subtle; clenched/overlapping hands remain stylized rather than guaranteed perfect anatomy. An 832x1248-to-1152x1728 low-denoise whole-image refinement trial was executed but not selected; more passes and larger dimensions are not accepted solely because they cost more time.
+
+Hardware policy: no overclock, power-limit or fan-policy changes; no temperature/power software stop. Do not run the identity and finishing graphs simultaneously. No models or dependencies were downloaded.
+
+Evidence: `app/emilia/quality_first_report.json`, final `.run.json` receipts, native/refined/final PNGs and local before/after crops. These are manual visual judgments and executed workflow checks, not universal quality scores or proof that every seed is deliverable.
+
+## Community tutorial and node experiments (2026-10-25)
+
+Online sources and local compatibility evidence are in `app/emilia/community_quality_sources.json`; nine isolated GPU experiments and visual decisions are in `app/emilia/community_quality_report.json`. This investigation prioritizes finished artwork, not benchmark speed. All experiments used the existing Conda environment and unchanged hardware policy; no new model weights, Torch upgrade, Triton or compiled attention package was required.
+
+The automatic entry now has an optional community PAG composition mode:
+
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\render-emilia-quality.ps1 -Seed 20261027 -Pag`
+
+It inserts ComfyUI's existing `PerturbedAttentionGuidance` at scale1.0 after IPAdapter, then completes the same isolated face/hand/SAM and 2x delivery stages. Open `Emilia_10_Community_PAG_Quality_8GB.json` for its native graph; use the existing quality finishing graph afterwards. Without `-Pag`, the original quality baseline is preserved. PAG is an alternate composition, not a universal quality upgrade: two seeds were executed, but hand simplification remains and pose/costume lines can change. Keep it optional and inspect each image. Receipts include the selected guidance mode; PAG outputs use `emilia/community/quality_pag_*` prefixes.
+
+The source-backed investigation also exposed a real GUI/API mismatch. Existing API functions omitted `noise_mask_feather` and executed default0, whereas the saved visual graph serialized20. Both face and hand masks are now explicitly0 in API and GUI; other optional behavior inputs are also explicit. Verification compares entire input dictionaries, not just keys present in the API. Existing paste-back `feather12` remains unchanged. The Impact tutorial distinguishes paste feather from sampling-mask feather and explicitly warns that feathering can create artifacts.
+
+Not selected as defaults:
+
+- UltimateSDUpscaleNoUpscale at denoise0.12 and0.20, 768 tiles,64 padding,Chess, no seam pass: both executed at full2304x3456. Mostly contour/color changes rather than reliable extra fabric/anatomy detail.
+- TiledDiffusion Mixture of Diffusers at denoise0.18,1024 tiles,256 overlap,batch1: executed but did not establish a consistent visual improvement. It globally patches sampler hooks, and borrowed code carries CC BY-NC-SA4.0 restrictions; code licensing is not automatically an output-image licensing claim.
+- Head-only IPAdapter mask: executed and reduced global reference influence, but changed the pose into more open fingers and added anatomy risk. The fixed region is not safe for arbitrary compositions.
+- Explicit face/hand Differential Diffusion mask feather8/12 and a higher face-processing pixel-budget trial: executed but did not justify changing the conservative baseline.
+
+USDU and TiledDiffusion were downloaded at recorded commits, audited, installed and actually exercised, then moved outside `custom_nodes` so unselected hooks do not affect normal generation. Their tested source remains under `temp/community_quality/*-tested-disabled/`. USDU's fixed upstream submodule was populated before import to avoid its runtime master.zip download fallback. Do not reinstall either simply because a tutorial calls it mandatory.
+
+Relevant primary sources: [USDU](https://github.com/ssitu/ComfyUI_UltimateSDUpscale), [TiledDiffusion](https://github.com/shiimizu/ComfyUI-TiledDiffusion), [IPAdapter masks](https://github.com/cubiq/ComfyUI_IPAdapter_plus/blob/main/NODES.md), [Impact detailers](https://github.com/ltdrdata/ComfyUI-extension-tutorials/blob/Main/ComfyUI-Impact-Pack/tutorial/detailers.md), [PAG reference](https://github.com/pamparamm/sd-perturbed-attention). The [nomadoor community tutorial](https://comfyui.nomadoor.net/en/basic-workflows/ultimate-sd-upscale/) demonstrates why overlap and shared per-tile prompts matter; its SD1.5 ControlNet settings must not be copied wholesale onto this SDXL model.
+
+## Quality-preserving implementation optimizations (2026-11-03)
+
+The automatic renderer now requests no latent previews: its WebSocket client discarded every binary preview. GUI preview settings in `start-comfyui.ps1` remain unchanged. Sampling parameters, FP32 VAE, disabled pinned memory, dynamic VRAM and process isolation are unchanged.
+
+`comfy/utils.py` reuses feather masks by output tile shape within one `tiled_scale_multidim` invocation, including across batch items; no masks survive the call. `nodes.py` clips the owned PNG conversion array in place, avoiding one 91.125 MiB float32 temporary for a 2304x3456 RGB output without modifying the source image tensor.
+
+Three complete fixed-seed (20261027) native/refinement/upscale runs succeeded. Baseline receipt: `output/emilia/quality/03_finished_2x_00005_.run.json`; mask-only round: `03_finished_2x_00006_.run.json`; final round: `03_finished_2x_00007_.run.json`. Native, refined and final decoded PNG pixels were identical across all three runs. Final output remains 2304x3456.
+
+Prompt times (native / finish): baseline 263.570 / 71.622 s; mask-only 176.901 / 67.389 s; final 176.427 / 67.120 s. These single sequential runs include different initialization/file-cache conditions; the large baseline difference is not an established optimization speedup. Whole-command times were 474.52 / 300.02 / 300.63 s, so the final round did not demonstrate a whole-command latency improvement over the mask-only round.
+
+Isolated CPU probes preserved exact results. At 10 threads, 1152x1728 tile blending took median 0.188806 s before versus 0.065498 s with mask reuse (five repetitions; excludes VAE compute). PNG float conversion/clipping took median 0.112403 versus 0.088360 s (seven repetitions; excludes compression and disk IO). These local timings are not end-to-end speedup claims.
+
+Third round: `custom_nodes/comfyui-ipadapter-plus/CrossAttentionPatch.py` skips four identity `repeat(1, 1, 1)` copies for non-unfolded batch-one reference K/V projections. Larger batches retain the existing repetition. GPU probes exercised batch 1/2 and CFG orders [0,1], [1,0], [0,1,0] with exact outputs; representative batch-one callback timing was 1.476 ms before / 0.972 ms after (synthetic shapes, not full SDXL timing). Complete receipt `output/emilia/quality/03_finished_2x_00008_.run.json`: native 176.135 s, finish 69.246 s, whole command 302.52 s. Native, refined and final PNG pixels again match the baseline exactly. The full-command timing does not establish a statistically significant speedup; the accepted benefit is removed redundant allocations/copies.
+
+Verification: six focused tile-edge/blending and PNG quantization/input-immutability tests passed. The environment lacked pytest; pytest 9.2.0, pluggy 1.7.0 and iniconfig 2.3.1 were installed for these checks. An existing anyio plugin emitted a pytest-10 deprecation warning. No dependency upgrades to Torch or inference backends were made.
+
+Remaining code-level opportunities, not applied or claimed as measured improvements:
+
+- `execution.py:760-767`: initial `cache_results` retains cache entries through the prompt. Releasing this temporary after extracting node IDs may let RAM-pressure eviction reclaim more memory; requires live dependency/provider and repeated-prompt coverage.
+- `comfy_execution/caching.py:567-597`: RAM estimates omit tensors nested in dictionaries, and estimated freed bytes do not account for shared backing storage/live references. Accounting needs an ownership-aware fix, not indiscriminate tensor cloning or more GC.
+- `CrossAttentionPatch.py:26`: each attention patch extracts sigma onto CPU. Moving scalar extraction to the per-model-evaluation owner may reduce repeated GPU synchronization, but must preserve substep, multigpu and gating semantics.
+- Ordinary VAE output staging and whole-file hashing were subsequently addressed in the five-round evaluation below.
+
+Retain FP32 tiled VAE, disabled pinned memory, dynamic VRAM, batch one and separate native/finishing processes. Historical static/pinned configurations reached system commit limits; physical free RAM alone is not sufficient evidence to enable them. This Turing GPU does not justify installing newer-architecture attention kernels or blindly enabling FP8/INT8. CPU topology is Xeon E5-2690 v2, 10 cores/20 threads; Torch currently uses 10 intra-op threads. More threads or concurrently running generation processes is not an established improvement.
+
+## Five ten-image architecture iterations
+
+Executed five sequential rounds, each with ten complete native/refinement/upscale runs using seeds 20261027 through 20261036. All 50 final files are distinct artifacts at 2304x3456, not intermediate images counted as deliveries. For each seed, every later round's native, refined and final decoded PNG pixels match round one exactly. Submitted graphs match except for the uploaded native filename. No sampler, model, resolution, precision, detector, mask or isolation settings changed.
+
+| Round | Cumulative architecture change | Median complete command (s) | Ten-image total (s) |
+| --- | --- | ---: | ---: |
+| 1 | Current implementation baseline | 315.560 | 3305.424 |
+| 2 | Ordinary VAE decode copies raw output directly into owned destination | 314.586 | 3140.055 |
+| 3 | VAE encode writes directly into destination and releases raw output | 316.577 | 3152.022 |
+| 4 | Generic tiled decode reuses its accumulation buffer | 317.588 | 3298.729 |
+| 5 | Image/latent SHA-256 reads in bounded 1 MiB chunks | 316.586 | 3166.081 |
+
+These observations do not establish end-to-end acceleration. Round one includes a slow initial run; round four includes larger latency outliers and lower available RAM. Sampling process-tree RSS is not system commit, GPU allocation or total model residency. Retain the structural allocation/copy reductions without claiming measured whole-system memory or speed improvement.
+
+VAE decode/encode now clear failed temporary outputs before tiled OOM fallback. Owned-tiled decoding's separate `copy=True` remains required and unchanged. Final tiled accumulation uses an out-of-place first sum to establish caller-context ownership, then in-place second addition and division: direct callers outside inference mode cannot mutate the inference tensor returned by `tiled_scale`. This interface boundary was caught by regression tests after the image rounds; normal executor inference mode had not exposed it.
+
+Visual contact-sheet review of every round found the same baseline defects: seed 20261030 generates two people despite the single-person prompt, seed 20261034 crops the feet, and several hands need detailed inspection. Pixel identity establishes absence of architectural image drift, not artistic correctness. No prompt changes were mixed into these comparisons.
+
+Reproduce a round with `python script_examples/benchmark_architecture_iterations.py --round N`; it serially invokes the existing renderer ten times and stores per-image receipts/resources in `temp/architecture_iterations/round_NN`. Existing successful records are skipped, so use a new round number for fresh measurements. Evaluate with `python script_examples/evaluate_architecture_iteration.py --round N`; it requires ten successful final images and creates `summary.json` and `contact_sheet.jpg`. Baseline comparison uses round 01. The fifty experiment outputs are `output/emilia/quality/03_finished_2x_00009_.png` through `03_finished_2x_00058_.png`, with individual `.run.json` receipts.
+
+Next architecture candidates remain execution-cache lifetime/accounting, once-per-model-evaluation sigma extraction, and bounded same-stage process reuse. Same-stage reuse could reduce twenty child launches per ten images to two while keeping native/finish isolated, but was not adopted: this experiment lacks Windows system-commit evidence for ten consecutive cached prompts. Do not substitute physical free RAM or RSS for that acceptance criterion.
+
+Final verification: 22 focused tests passed, covering FP32/FP16/BF16 output ownership, strided source preservation, partial batches, late allocation-OOM release before fallback, real three-layout tiled blending, streaming hash boundaries/content invalidation, and prior PNG/tile regressions. One existing anyio pytest deprecation warning remains. The corrected inference-boundary implementation additionally completed seed20261027 as `output/emilia/quality/03_finished_2x_00059_.png` (296.94 s whole command); native, refined and final pixels exactly match the round-one seed. This supplementary smoke image is not counted as another ten-image iteration.
+
+## Emilia Studio v2.0 Architectural Overhaul (2026-11-06)
+
+Unified the repository into the declarative `emilia_studio` package (`D:\comfyui\emilia_studio`) while preserving 100% pixel-exact parity on all baseline and benchmark workflows:
+
+1. **Unified Configuration & Environment Auto-Discovery (`emilia_studio/config.py`, `config.toml`, `pyproject.toml`)**:
+   - Eliminated hardcoded path discrepancies between `ollama_comfyui_bridge.py` (`D:\comfyui\env`) and the Conda quality environment (`D:\conda-data\envs\comfyui\python.exe`).
+   - Supports environment variable overrides (`EMILIA_CONDA_PYTHON`, `EMILIA_OLLAMA_EXE`, `EMILIA_COMFY_PORT`, `EMILIA_QUALITY_PORT`) and `config.toml`.
+2. **Declarative Workflow Builder & API/GUI Sync (`emilia_studio/workflows.py`)**:
+   - `EmiliaWorkflowBuilder` programmatically constructs `highres_native` (1152x1728 + IPAdapter + optional PAG), `highres_finish` (FaceDetailer + YOLO/SAM HandDetailer + RealESRGAN x4 + Lanczos 0.5x to 2304x3456), `eye_repair` (denoise 0.42 violet iris recovery), and `lora_native`.
+   - `sync_visual_workflow` synchronizes API inputs directly into GUI workflow `widgets_values_named` and `widgets_values`, preventing API/GUI parameter drift (such as `noise_mask_feather`).
+3. **Runtime Performance Patch Plugin (`app/custom_nodes/emilia_runtime_patches/__init__.py`)**:
+   - Encapsulates and verifies the four memory/allocation optimizations (`vae_memory_management`, `utils_mask_caching`, `nodes_io_optimizations`, `ipadapter_attention_copy_removal`) idempotently on startup.
+4. **Deterministic CPU-Only Quality Gate & Violet-Iris Inspector (`emilia_studio/inspector.py`)**:
+   - Performs zero-VRAM (CPU-enforced) YOLOv8n face/hand detection and HSV circular hue analysis on left/right eye regions.
+   - Automatically catches multi-subject hallucinations on solo prompts (e.g., seed `20261030` two-person defect) and blue/pink heterochromia eye drift, recommending `accept`, `repair_eyes`, or `reject_seed`.
+   - Preserves bit-exact benchmark reproducibility when `strict_seed_lock=True` (default in benchmark runs) while embedding full inspection telemetry into every `.run.json` receipt.
+5. **Ollama Structured Prompt Compiler (`emilia_studio/compiler.py`, `ollama_comfyui_bridge.py`)**:
+   - Upgraded `ollama_comfyui_bridge.py` from the legacy single-stage 832x1216 graph to drive the full 2-stage 2304x3456 HighRes Quality pipeline by default (`--mode quality`, with `--mode fast` retained for quick previews), automatically inferring portrait/upper-body/full-body framing and IPAdapter weights while enforcing `num_gpu=0, keep_alive=0`.
+6. **SQLite Experiment & Render Ledger (`emilia_studio/ledger.py`)**:
+   - Indexed all 108+ historical `.run.json` receipts and 50 ten-seed architecture iteration records into `app/emilia/studio_ledger.sqlite3`, accessible via `python -m emilia_studio.cli ledger [stats|compare|recent|ingest]`.
+7. **Option A GitHub Repository Standardization (`AGENTS.md`, `PROGRESS.md`, `README.md`, `models_manifest.json`)**:
+   - Root `AGENTS.md` defines the two-tier Option A repository contract (`emilia_studio/` + `app/`), 8 GiB VRAM / Windows commit limit rules, and bit-exact pixel hash invariants.
+   - Root `PROGRESS.md` consolidates the 6-phase chronological engineering history and 50-image benchmark tables.
+   - `models_manifest.json` + `python -m emilia_studio.cli setup` verifies all 8 model weights, reference assets, and 4 custom node packages.

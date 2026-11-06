@@ -1,0 +1,752 @@
+{
+  "date": "2026-09-24",
+  "purpose": "24-image high-quality Emilia set using official-face IPAdapter and 32-step profile",
+  "workflow": "app/emilia/emilia_ipadapter_high_quality_test.api.json",
+  "manifest": "app/emilia/tensorcore24_manifest.json",
+  "run_record": "app/emilia/tensorcore24_run.json",
+  "review_sheet": "output/emilia/tensorcore24/tensorcore24_face_upperbody_review.jpg",
+  "contact_sheets": [
+    "output/emilia/tensorcore24/tensorcore24_contact_sheet_native.jpg",
+    "output/emilia/tensorcore24/tensorcore24_contact_sheet_2x.jpg"
+  ],
+  "profile": {
+    "steps": 32,
+    "cfg": 5.5,
+    "sampler": "euler_ancestral",
+    "scheduler": "normal",
+    "ipadapter_weight": 0.55,
+    "canvas": [
+      832,
+      1216
+    ],
+    "upscale": "RealESRGAN x4 then Lanczos 0.5",
+    "identity_reference": "input/official_face_center_clean.png",
+    "tensor_core_mode": "PyTorch FP16-capable CUDA path; no unverified fast flags"
+  },
+  "review_method": "Direct visual review of contact sheets plus upper-body/face review sheet; file dimensions, SHA256, and embedded prompt metadata checked for every PNG.",
+  "samples": [
+    [
+      "snow_forest_threequarter",
+      "accept",
+      "身份稳定，雪花与斗篷成立；双手保持简单。"
+    ],
+    [
+      "mansion_garden_closeup",
+      "accept",
+      "脸部和官方发饰清晰，近景完成度高。"
+    ],
+    [
+      "classical_library_halfbody",
+      "accept_with_object_caution",
+      "图书馆和书本语义成立；手与书边缘需全尺寸复核。"
+    ],
+    [
+      "terrace_tea_kneeshot",
+      "accept",
+      "茶杯、坐姿和暖光成立。"
+    ],
+    [
+      "capital_street_fullbody",
+      "accept_with_composition_caution",
+      "全身和城市氛围成立，背景较图形化。"
+    ],
+    [
+      "lakeside_profile",
+      "accept",
+      "侧脸、湖面、星光和冷色调成立。"
+    ],
+    [
+      "flower_field_wide",
+      "accept",
+      "花田远景成立；主体较小但仍可识别。"
+    ],
+    [
+      "crystal_cavern_lowangle",
+      "accept_with_hand_caution",
+      "冰晶魔法效果强；抬手细节需谨慎。"
+    ],
+    [
+      "mountain_ruins_interaction",
+      "accept",
+      "极光和小精灵互动成立。"
+    ],
+    [
+      "night_festival_threequarter",
+      "accept",
+      "灯笼与祭典场景成立。"
+    ],
+    [
+      "rain_window_bust",
+      "accept",
+      "胸像和雨夜反射成立，身份清晰。"
+    ],
+    [
+      "fantasy_ice_palace_fullbody",
+      "accept",
+      "冰宫、冰盾和全身构图成立。"
+    ],
+    [
+      "snow_forest_closeup",
+      "accept",
+      "近景身份锚点最清楚之一。"
+    ],
+    [
+      "mansion_garden_profile",
+      "accept",
+      "侧面与宅邸背景成立。"
+    ],
+    [
+      "library_lowangle_ice_robe",
+      "accept",
+      "书本、蜡烛和装饰构图成立。"
+    ],
+    [
+      "terrace_tea_wide",
+      "accept",
+      "远景茶会成立，茶杯可见。"
+    ],
+    [
+      "capital_street_bust_kimono",
+      "accept_with_clothing_caution",
+      "胸像身份稳定，和服语义弱于正式礼服。"
+    ],
+    [
+      "lakeside_kneeshot_raincape",
+      "accept",
+      "湖畔膝上构图与雨后氛围成立。"
+    ],
+    [
+      "flower_field_fullbody_knit",
+      "accept_with_hand_caution",
+      "花田和服装成立；右侧手势细节需检查。"
+    ],
+    [
+      "crystal_cavern_halfbody_armor",
+      "accept",
+      "水晶洞窟与护盾成立。"
+    ],
+    [
+      "mountain_ruins_wide_dress",
+      "accept",
+      "远景、极光和白紫服装成立。"
+    ],
+    [
+      "night_festival_fullbody_spring",
+      "accept",
+      "全身祭典构图成立。"
+    ],
+    [
+      "rain_window_closeup_formal",
+      "accept",
+      "脸部近景和冷暖反射成立。"
+    ],
+    [
+      "fantasy_ice_palace_threequarter",
+      "accept_with_hand_caution",
+      "冰宫与施法动作成立；双手是风险点。"
+    ]
+  ],
+  "overall": {
+    "generated": 24,
+    "successful": 24,
+    "accepted": 24,
+    "identity_consistency": "strong across the set: silver-white hair, violet eyes, braid, white flower, X-shaped clip and white-lavender palette remain consistent",
+    "quality": "high for a single-pass 8 GiB workflow; the best results are close-ups, library, rain-window, snow and ice-palace scenes",
+    "risks": "hands and small props remain the only recurring inspection risks; a few wide scenes are intentionally more poster-like and less photorealistic",
+    "pcie": "Telemetry observed max Gen2 and current Gen1 at x16 throughout generation. The generation path is compute-bound; PCIe did not become a demonstrated bottleneck.",
+    "tensor_core": "The workflow used normal PyTorch CUDA FP16-capable execution; the earlier GEMM test showed the hardware path is available. No unsafe fast flags were enabled."
+  },
+  "artifacts": [
+    {
+      "index": 1,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/01_snow_forest_threequarter_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1378837,
+      "sha256": "47d45692223c99c67b18df62592fafe2d75ced6cac33a8e1451fcf874f7c7237",
+      "prompt_metadata": true
+    },
+    {
+      "index": 1,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/01_snow_forest_threequarter_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 3321220,
+      "sha256": "76c1e13d557e05e540ba53e5c038feda05d2ad02aba6aa90a436e379ecbfec32",
+      "prompt_metadata": true
+    },
+    {
+      "index": 2,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/02_mansion_garden_closeup_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1214817,
+      "sha256": "bf735d4aa3062c589a6ab59444e4e04d6630a62416058cdb1fe6b3344297fd49",
+      "prompt_metadata": true
+    },
+    {
+      "index": 2,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/02_mansion_garden_closeup_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2527696,
+      "sha256": "cca9864fc41c6f1c6dbeb04cd9abb2c54e78ad83e037eb80045779c4c8fd645d",
+      "prompt_metadata": true
+    },
+    {
+      "index": 3,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/03_classical_library_halfbody_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1191971,
+      "sha256": "6021f9fe58f4e615f80551336247556be4f124c93ba9b269a249a28a98dab86f",
+      "prompt_metadata": true
+    },
+    {
+      "index": 3,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/03_classical_library_halfbody_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2725119,
+      "sha256": "97e7d4bc0290aa2efcfc87ef0c4c534260651ba6c4fa5e43d50ffe8391a5ea46",
+      "prompt_metadata": true
+    },
+    {
+      "index": 4,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/04_terrace_tea_kneeshot_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1154328,
+      "sha256": "ce9aa3386cf8ad8b02c83f39d319dabb611072acccd00315c0eb12df73df7338",
+      "prompt_metadata": true
+    },
+    {
+      "index": 4,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/04_terrace_tea_kneeshot_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2257912,
+      "sha256": "e62477b460b0174cf7636c939305fce1bec5410c02231c4bd2e33cad0a52a4b6",
+      "prompt_metadata": true
+    },
+    {
+      "index": 5,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/05_capital_street_fullbody_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1222476,
+      "sha256": "9cb583ff16020fe1b471897847af2a7be0dd38cc72b1c00e62a896f5f1b2e487",
+      "prompt_metadata": true
+    },
+    {
+      "index": 5,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/05_capital_street_fullbody_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2879466,
+      "sha256": "27e075a797633335c043e29bdd70a168b41863b0e9689c15b18d95d17ce6e8e7",
+      "prompt_metadata": true
+    },
+    {
+      "index": 6,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/06_lakeside_profile_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1140048,
+      "sha256": "3281c622b6a3d54089784bf3624439e6cfca8d363a5aff56124cd3864e34ce19",
+      "prompt_metadata": true
+    },
+    {
+      "index": 6,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/06_lakeside_profile_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2536003,
+      "sha256": "119f8e282fce9b6230f390f3ae0d30d5465bbf4d54c7c78b9cf3acaa571fdf02",
+      "prompt_metadata": true
+    },
+    {
+      "index": 7,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/07_flower_field_wide_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1230843,
+      "sha256": "20e089864f1e03f218c959ec7a44229c3277e4a65fc4d5fb01d6842ef7d8dea0",
+      "prompt_metadata": true
+    },
+    {
+      "index": 7,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/07_flower_field_wide_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2799658,
+      "sha256": "b050adc895ccb2951018591bfae7f44e2d8825d8475a12f74fdd2061b8c65edf",
+      "prompt_metadata": true
+    },
+    {
+      "index": 8,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/08_crystal_cavern_lowangle_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1337380,
+      "sha256": "a679e89c093811919df617b8a912bfbd1130e5164f744cdf50bbc14f839b4a7b",
+      "prompt_metadata": true
+    },
+    {
+      "index": 8,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/08_crystal_cavern_lowangle_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2967223,
+      "sha256": "2262c896d60b486058b19202343732d868a9418340df3482bf6e1c58f15e4951",
+      "prompt_metadata": true
+    },
+    {
+      "index": 9,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/09_mountain_ruins_interaction_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1381770,
+      "sha256": "301788ccaf7295c017b4d299522cbf6fba8b6b9fed267bfdb22119f966e81396",
+      "prompt_metadata": true
+    },
+    {
+      "index": 9,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/09_mountain_ruins_interaction_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 3356348,
+      "sha256": "669cc26c18483a0e8e8b382cadff65341ccfa6535f997df8c86f1e9aabd9342e",
+      "prompt_metadata": true
+    },
+    {
+      "index": 10,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/10_night_festival_threequarter_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1284239,
+      "sha256": "7f7b16325d635f031dba67706e71b7aafe12bf7701628e08cdcda5b19d5cb690",
+      "prompt_metadata": true
+    },
+    {
+      "index": 10,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/10_night_festival_threequarter_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2937871,
+      "sha256": "cda6ae76764a71b4c25c0314fa0a26d261b468ad68e47536e56bdc66d2453225",
+      "prompt_metadata": true
+    },
+    {
+      "index": 11,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/11_rain_window_bust_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1190749,
+      "sha256": "d6c6cbb71991899f99a670018849386c8f1215d7e552d623754aeb50bca49a17",
+      "prompt_metadata": true
+    },
+    {
+      "index": 11,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/11_rain_window_bust_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2490137,
+      "sha256": "e43214dc76fae83f04cfe228e5e8f3fa89fdfa3aaa25111e7bf94fe60a827a4e",
+      "prompt_metadata": true
+    },
+    {
+      "index": 12,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/12_fantasy_ice_palace_fullbody_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1199647,
+      "sha256": "cc6179690b0d08a1d25127f094fa52caf4019438b722b12c6f084145bfa4f717",
+      "prompt_metadata": true
+    },
+    {
+      "index": 12,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/12_fantasy_ice_palace_fullbody_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2612454,
+      "sha256": "4e5699419e065e55a363e5ec2b1857baa6a7c7490b7bcd6202c130e50e7c9395",
+      "prompt_metadata": true
+    },
+    {
+      "index": 13,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/13_snow_forest_closeup_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1292886,
+      "sha256": "cc4208b6970531c68d531667d640d50c4f6b00828c5fd13071230e6da3ffd2c9",
+      "prompt_metadata": true
+    },
+    {
+      "index": 13,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/13_snow_forest_closeup_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 3098895,
+      "sha256": "d828d26f762573aeaecd540bd310b52145ef8b8f1ab88fd4035d3cdac6af5a66",
+      "prompt_metadata": true
+    },
+    {
+      "index": 14,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/14_mansion_garden_profile_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1227477,
+      "sha256": "f2b52ae85177e35930bcd98e86f966a4a348df759726405081d8ce1bd0eddd2a",
+      "prompt_metadata": true
+    },
+    {
+      "index": 14,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/14_mansion_garden_profile_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2809112,
+      "sha256": "e1eb46f619be5235eba7b17f59c43eb2f5e90f3e2dbfecdcf633ff7615d73e49",
+      "prompt_metadata": true
+    },
+    {
+      "index": 15,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/15_library_lowangle_ice_robe_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1425986,
+      "sha256": "651168b05530edc2c4e32a43146371f3add7be989f3b3863f3e46b2ee6a9329b",
+      "prompt_metadata": true
+    },
+    {
+      "index": 15,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/15_library_lowangle_ice_robe_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 3152922,
+      "sha256": "b3de40c89e3b16255a92215afa710927648a16df4293c9d020ccf5d99c5814a1",
+      "prompt_metadata": true
+    },
+    {
+      "index": 16,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/16_terrace_tea_wide_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1293405,
+      "sha256": "bb89179cbae3d88ea362f03bb4884356a1651db8d1a7f7a0b88e7ae5f2d0ced1",
+      "prompt_metadata": true
+    },
+    {
+      "index": 16,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/16_terrace_tea_wide_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2728585,
+      "sha256": "c5cf76d92ee4f50effa8f3edfb34681ef354cdf6bd9c91eca11a63157e92cd3e",
+      "prompt_metadata": true
+    },
+    {
+      "index": 17,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/17_capital_street_bust_kimono_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1236780,
+      "sha256": "87227b1ccf0bffac308bf420bc0b9034f6c6e48674fb0baf6fa658cad8dd2ba5",
+      "prompt_metadata": true
+    },
+    {
+      "index": 17,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/17_capital_street_bust_kimono_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2290488,
+      "sha256": "ffebe9d379f99434c4ca2ea010154953c7fbcea2c003b491663f5fcec81c42bc",
+      "prompt_metadata": true
+    },
+    {
+      "index": 18,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/18_lakeside_kneeshot_raincape_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1208074,
+      "sha256": "b6700f49888aba753a2900df377123088d947efa182e09d72c56b1b72a0ad2f1",
+      "prompt_metadata": true
+    },
+    {
+      "index": 18,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/18_lakeside_kneeshot_raincape_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2649523,
+      "sha256": "5eea0b287fa12b78722fafffd31cd93d1ea9958a6c6123e5a37eabaa96add80e",
+      "prompt_metadata": true
+    },
+    {
+      "index": 19,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/19_flower_field_fullbody_knit_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1320337,
+      "sha256": "f86f8f883194f80e4095fae4c0fe97f1254488ea917616a93d4b6a576fc557e3",
+      "prompt_metadata": true
+    },
+    {
+      "index": 19,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/19_flower_field_fullbody_knit_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2512942,
+      "sha256": "09dd56b490ea70e18f91f2a029014d44b84eab02423fc75365af046bf08eedb3",
+      "prompt_metadata": true
+    },
+    {
+      "index": 20,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/20_crystal_cavern_halfbody_armor_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1257469,
+      "sha256": "4c3f484f3add6157f78c71296a1108b82b6812121b85e257cdfc718590051e54",
+      "prompt_metadata": true
+    },
+    {
+      "index": 20,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/20_crystal_cavern_halfbody_armor_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2930072,
+      "sha256": "949d9b3fdac5ab7e330fa2cfd6d34defb21ef5ad6b725f59a8897a2d199a6844",
+      "prompt_metadata": true
+    },
+    {
+      "index": 21,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/21_mountain_ruins_wide_dress_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1335016,
+      "sha256": "247bc2d2e68aec23eb5f472630e7efaad77eca0643f6c4c6e380868f77669a12",
+      "prompt_metadata": true
+    },
+    {
+      "index": 21,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/21_mountain_ruins_wide_dress_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 3384464,
+      "sha256": "e316168d8cd778218c4148c25721841c0b1d6eb1f3e8b551ab85a592cf15fba6",
+      "prompt_metadata": true
+    },
+    {
+      "index": 22,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/22_night_festival_fullbody_spring_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1300360,
+      "sha256": "af8a9b30c1d0d05db8b970d36685d021c4284eaeeaa28ba471cc97e1de74c78a",
+      "prompt_metadata": true
+    },
+    {
+      "index": 22,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/22_night_festival_fullbody_spring_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2965261,
+      "sha256": "b6e80c1289b952ab99aff785f1630ef484282f2b5e172ef7f6f88b381209e422",
+      "prompt_metadata": true
+    },
+    {
+      "index": 23,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/23_rain_window_closeup_formal_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1190498,
+      "sha256": "4d2f1d0aef44361433735504ac87e5f0bf2037ae783cd890b2af366c8bb8e973",
+      "prompt_metadata": true
+    },
+    {
+      "index": 23,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/23_rain_window_closeup_formal_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2647858,
+      "sha256": "5048854971353636ca96f319edca723c9d29498586bd7af7538bb46abdb6d9de",
+      "prompt_metadata": true
+    },
+    {
+      "index": 24,
+      "kind": "native",
+      "path": "output/emilia/tensorcore24/24_fantasy_ice_palace_threequarter_native_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1296467,
+      "sha256": "5938a34bcf4e25018574dc5d1662af29a4922268e70623a1185163c3eff19b9c",
+      "prompt_metadata": true
+    },
+    {
+      "index": 24,
+      "kind": "2x",
+      "path": "output/emilia/tensorcore24/24_fantasy_ice_palace_threequarter_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2964008,
+      "sha256": "7e664aa739c89e087be4374841d9f03969dc37e71b59d87a600a53f790021ba1",
+      "prompt_metadata": true
+    }
+  ],
+  "telemetry_summary": {
+    "samples": 229,
+    "gpu_max_util_pct": 100.0,
+    "gpu_max_sm_mhz": 1905.0,
+    "gpu_max_power_w": 197.81,
+    "gpu_max_memory_used_mib": 7403.0,
+    "pcie_observed": [
+      {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      }
+    ]
+  }
+}

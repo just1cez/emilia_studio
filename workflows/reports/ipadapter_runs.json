@@ -1,0 +1,40 @@
+{
+  "workflow": "app/emilia/emilia_ipadapter_face.api.json",
+  "reference": "app/emilia/reference_redraw_20260913/official_faces.png",
+  "runs": [
+    {
+      "weight": 0.35,
+      "prompt_id": "e4b2b7fa-728d-4128-8eba-17a45e8a2eeb",
+      "status": "success",
+      "elapsed_seconds": 385.7,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "ipface035_native_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "weight": 0.75,
+      "prompt_id": "52887ac3-7cd7-4e17-b4a9-96bcf825ee4b",
+      "status": "success",
+      "elapsed_seconds": 390.9,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "ipface075_native_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

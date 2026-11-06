@@ -1,0 +1,187 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "official_face_center_clean.png"
+    },
+    "_meta": {
+      "title": "Official clean center face reference"
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "42",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ],
+      "seed": 20261027,
+      "steps": 36,
+      "cfg": 5.5,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "denoise": 1
+    },
+    "_meta": {
+      "title": "Quality render / DPM++ 2M SDE Karras / 36 steps"
+    }
+  },
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+    },
+    "_meta": {
+      "title": "Illustrious XL v0.1 / verified SHA256"
+    }
+  },
+  "5": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 1152,
+      "height": 1728,
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "Recommended high-resolution native 1152x1728 / batch 1"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "masterpiece, best quality, anime illustration, emilia \\(re:zero\\), 1girl, solo, silver-white long hair, crown braid, straight bangs, matching violet eyes, pointed elf ears, white flower hair ornament, x-shaped hair clip, purple ribbons, white and lavender dress with purple trim, green gemstone brooch, detached bell sleeves, white knee-high boots, full body, both boots fully visible, standing on a garden path, hands relaxed, gentle smile, looking at viewer, balanced anatomy, flower garden, blooming flowers, leafy trees, stone archway, blue sky, warm soft sunlight, coherent painted background, layered cel shading, delicate clean lineart, subtle fabric folds",
+      "clip": [
+        "10",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Identity anchors + large simple full-body composition"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "worst quality, low quality, unfinished, monochrome, sketch, lineart background, wireframe, scribbles, messy background, overexposed, flat lighting, blurry, bad anatomy, bad hands, fused fingers, extra fingers, missing fingers, extra limbs, fused legs, barefoot, deformed feet, cropped feet, cropped head, multiple girls, heterochromia, blue eyes, red eyes, pink eyes, text, watermark, signature, photo, realistic, 3d, nsfw",
+      "clip": [
+        "10",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Anatomy, scale, crop and identity guardrails"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "FP32 tiled VAE / avoid full-frame VRAM failure"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "emilia/quality/01_base"
+    },
+    "_meta": {
+      "title": "Save 1152x1728 base / inspect structure"
+    }
+  },
+  "10": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "4",
+        1
+      ],
+      "lora_name": "emilia-re-zero-re.safetensors",
+      "strength_model": 0.8,
+      "strength_clip": 0.8
+    },
+    "_meta": {
+      "title": "Emilia LoRA / 0.8 identity lock"
+    }
+  },
+  "40": {
+    "class_type": "IPAdapterModelLoader",
+    "inputs": {
+      "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+    },
+    "_meta": {
+      "title": "IPAdapter Plus Face SDXL"
+    }
+  },
+  "41": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": {
+      "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+    },
+    "_meta": {
+      "title": "CLIP Vision ViT-H"
+    }
+  },
+  "42": {
+    "class_type": "IPAdapterAdvanced",
+    "inputs": {
+      "model": [
+        "10",
+        0
+      ],
+      "ipadapter": [
+        "40",
+        0
+      ],
+      "image": [
+        "1",
+        0
+      ],
+      "weight": 0.4,
+      "weight_type": "linear",
+      "combine_embeds": "average",
+      "start_at": 0,
+      "end_at": 0.75,
+      "embeds_scaling": "K+V",
+      "clip_vision": [
+        "41",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Face reference balanced / weight 0.40 / ends at 0.75"
+    }
+  }
+}

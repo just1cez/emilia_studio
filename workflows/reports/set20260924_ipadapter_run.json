@@ -1,0 +1,110 @@
+{
+  "workflow": "app/emilia/emilia_ipadapter_official_identity.api.json",
+  "reference": "input/official_face_center_clean.png",
+  "scenes": [
+    {
+      "name": "garden_portrait",
+      "seed": 20261311,
+      "positive": "1girl, solo, rezero emilia, emilia \\(re:zero\\), anime key visual, official character design, silver-white hair, long hair, straight bangs, crown braid, same violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, gentle warm smile, three-quarter portrait, hands gently clasped near chest, elegant simple pose, royal flower garden, stone balustrade, soft morning light, pale blue sky, clean anime lineart, refined cel shading, masterpiece, best quality",
+      "negative": "worst quality, low quality, lowres, blurry, bad anatomy, bad hands, extra fingers, missing fingers, fused fingers, extra arms, extra legs, multiple girls, cropped head, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, heterochromia, mismatched eyes, text, watermark, photo, realistic, 3d, nsfw"
+    },
+    {
+      "name": "snow_fullbody",
+      "seed": 20261312,
+      "positive": "1girl, solo, rezero emilia, emilia \\(re:zero\\), anime key visual, official character design, silver-white hair, long hair, straight bangs, crown braid, same violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, gentle smile, full body, feet visible, standing in a snowy garden, one hand gently holding a single snowflake, other hand near chest, simple visible-hand pose, balanced proportions, winter postcard, soft blue daylight, clean anime lineart, refined cel shading, masterpiece, best quality",
+      "negative": "worst quality, low quality, lowres, blurry, bad anatomy, bad hands, extra fingers, missing fingers, fused fingers, extra arms, extra legs, multiple girls, complex hand gesture, holding multiple objects, cropped head, cropped feet, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, heterochromia, mismatched eyes, text, watermark, photo, realistic, 3d, nsfw"
+    },
+    {
+      "name": "library_halfbody",
+      "seed": 20261313,
+      "positive": "1girl, solo, rezero emilia, emilia \\(re:zero\\), anime key visual, official character design, silver-white hair, long hair, straight bangs, crown braid, same violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, gentle thoughtful smile, half body, three-quarter view, hands holding one closed book against chest, candlelit classical library, tall bookshelves, warm window light, light snow outside, clean anime lineart, refined cel shading, light novel cover, masterpiece, best quality",
+      "negative": "worst quality, low quality, lowres, blurry, bad anatomy, bad hands, extra fingers, missing fingers, fused fingers, extra arms, extra legs, multiple girls, complex hand gesture, multiple books, cropped head, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, heterochromia, mismatched eyes, text, watermark, photo, realistic, 3d, nsfw"
+    }
+  ],
+  "runs": [
+    {
+      "index": 1,
+      "scene": "garden_portrait",
+      "seed": 20261311,
+      "prompt_id": "3f380781-8a39-4cb9-a160-545c6004bac6",
+      "status": "success",
+      "elapsed_seconds": 446.2,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "set20260924_01_garden_portrait_native_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "set20260924_01_garden_portrait_2x_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "index": 2,
+      "scene": "snow_fullbody",
+      "seed": 20261312,
+      "prompt_id": "bb01a8f5-e463-474f-8028-8a60b1dca608",
+      "status": "success",
+      "elapsed_seconds": 391.0,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "set20260924_02_snow_fullbody_native_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "set20260924_02_snow_fullbody_2x_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "index": 3,
+      "scene": "library_halfbody",
+      "seed": 20261313,
+      "prompt_id": "9faadc06-98c0-4cba-9596-48d6a3b62ae6",
+      "status": "success",
+      "elapsed_seconds": 396.0,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "set20260924_03_library_halfbody_native_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "set20260924_03_library_halfbody_2x_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

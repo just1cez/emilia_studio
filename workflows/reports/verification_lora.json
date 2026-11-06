@@ -1,0 +1,93 @@
+{
+  "selected_model": {
+    "checkpoint": "models/checkpoints/Illustrious-XL-v0.1.safetensors",
+    "checkpoint_sha256": "3e15ba00387db678ab4a099f75771c4f5ac67fda9e7100a01d263eaf30145aa9",
+    "checkpoint_source": "https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0",
+    "lora": "models/loras/emilia-re-zero-re.safetensors",
+    "lora_sha256": "4e7f9019768dfd9f092facdf2c7c3fe1d5fd5c42e7087e067aca4983393f4bb0",
+    "lora_source": "https://huggingface.co/Muapi/emilia-re-zero-re",
+    "lora_base": "OnomaAIResearch/Illustrious-xl-early-release-v0",
+    "lora_trigger": "rezero emilia, emilia (re:zero)",
+    "strength_model": 0.8,
+    "strength_clip": 0.8
+  },
+  "workflows": {
+    "native_api": "app/emilia/emilia_lora_native.api.json",
+    "native_visual": "app/user/default/workflows/Emilia_03_LoRA_8GB.json",
+    "upscale_api": "app/emilia/emilia_lora_upscale.api.json",
+    "upscale_visual": "app/user/default/workflows/Emilia_04_LoRA_Upscale_2x.json"
+  },
+  "approved_output": {
+    "native": "app/output/emilia/experiments/illustrious_lora_080_00001_.png",
+    "upscaled": "app/output/emilia/lora_experiments/lora_2x_00001_.png",
+    "seed": 20260913,
+    "native_size": [
+      832,
+      1216
+    ],
+    "upscaled_size": [
+      1664,
+      2432
+    ],
+    "evaluation": "Closer to official Emilia than Animagine-only baseline: silver hair, straight bangs, crown braid, violet eyes, pointed ears, white flower and X ornament, purple ribbon, white/lavender costume, cape and green gem are all visible in an independent flower-garden composition. Remaining differences: sleeve ornament detail and some clothing construction are model-dependent.",
+    "not_official_reference_input": true
+  },
+  "verification": {
+    "lora_native_prompt_id": "2e2bc6c7-1ff8-4f2f-9262-6a6e5d5d676b",
+    "lora_native_status": "success",
+    "lora_upscale_prompt_id": "869e6f8d-ed8e-4f06-99fc-f3f12c5cc182",
+    "lora_upscale_status": "success",
+    "saved_visual_to_api_roundtrip_equal": true,
+    "comfy_queue_empty_after_runs": true,
+    "comfyui_model_list_includes_checkpoint": true,
+    "comfyui_model_list_includes_lora": true,
+    "max_observed_vram_from_previous_832x1216_trials_mib": 7145,
+    "hardware": "NVIDIA CMP 40HX 8192 MiB VRAM, 32 GB RAM",
+    "runtime": "ComfyUI 0.34.0, PyTorch 2.13.0+cu130"
+  },
+  "reference": {
+    "official_page": "https://re-zero-anime.jp/tv/character/",
+    "local_reference": "app/input/emilia_reference/official_classic.png",
+    "purpose": "visual design comparison only"
+  },
+  "strength_comparison": {
+    "tested": {
+      "model": 1.0,
+      "clip": 1.0,
+      "seed": 20260919,
+      "image": "app/output/emilia/experiments/lora_strength100_00001_.png"
+    },
+    "selected": {
+      "model": 0.8,
+      "clip": 0.8,
+      "seed": 20260913,
+      "image": "app/output/emilia/lora_experiments/lora_best_2x_00001_.png"
+    },
+    "reason": "Strength 1.0 increased canonical costume coverage but produced flatter facial expression and simpler composition; 0.8 retained stronger facial expression, richer scene and more natural overall artwork."
+  },
+  "last_optimization": "A strength 0.9 full-body test was run and rejected after visual comparison; 0.8 remains the stable identity/aesthetic optimum.",
+  "latest_comparison": {
+    "costume_proportion_candidate": "app/output/emilia/experiments/lora_proportion_080_00001_.png",
+    "eye_correction_candidate": "app/output/emilia/experiments/lora_proportion_080_eyes_00001_.png",
+    "rejected_reason": "The proportion candidate improved full-costume silhouette but one eye drifted pink; the eye-correction candidate still had blue/pink eye drift and flatter expression. The existing 0.8 full-body candidate remains the best combined identity, expression, composition and line quality.",
+    "selected": "app/output/emilia/lora_experiments/lora_best_2x_00001_.png",
+    "selected_native": "app/output/emilia/experiments/illustrious_lora_080_00001_.png"
+  },
+  "portrait_candidate": {
+    "native": "app/output/emilia/experiments/portrait_dpmpp_natural_00001_.png",
+    "upscaled": "app/output/emilia/lora_experiments/portrait_best_2x_00001_.png",
+    "strength_model": 0.85,
+    "strength_clip": 0.85,
+    "seed": 20260923,
+    "sampler": "dpmpp_2m/karras",
+    "steps": 24,
+    "evaluation": "Best face-focused preset after comparison: symmetric violet anime eyes, silver hair, straight bangs, crown braid, pointed ears, white flower, X ornament, ribbon, cape and green gem. The full-body 0.8 preset remains the main scene preset."
+  },
+  "strength_090_comparison": {
+    "candidate": "app/output/emilia/experiments/lora_strength090_upper_00001_.png",
+    "seed": 20260924,
+    "strength_model": 0.9,
+    "strength_clip": 0.9,
+    "evaluation": "Rejected: canonical clothing silhouette became more literal but facial eyes drifted pink/blue and the image lost the richer expression and scene quality of the 0.8 default. Default remains strength 0.8."
+  }
+}

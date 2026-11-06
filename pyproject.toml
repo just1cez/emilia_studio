@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emilia-studio"
+version = "2.0.0"
+description = "Declarative High-Res SDXL + IPAdapter + Detailer + Upscale Pipeline, Quality Inspector, Ollama Compiler, and SQLite Ledger for Emilia (Re:Zero)"
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp",
+    "numpy",
+    "Pillow",
+]
+
+[project.scripts]
+emilia-studio = "emilia_studio.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["emilia_studio*"]

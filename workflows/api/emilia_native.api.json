@@ -1,0 +1,111 @@
+{
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "animagine-xl-4.0-opt.safetensors"
+    },
+    "_meta": {
+      "title": "动漫模型 · Animagine XL 4.0 Opt"
+    }
+  },
+  "5": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 832,
+      "height": 1216,
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "画布832×1216 · batch=1"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "1girl, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, safe, solo, silver hair, purple eyes, braid, hair flower, white flower, x hair ornament, purple ribbon, white dress, detached sleeves, wide sleeves, green gem, purple trim, looking at viewer, gentle smile, cowboy shot, standing, wind, outdoors, flower garden, white flowers, stone balustrade, soft daylight, pale blue sky, delicate lineart, soft colors, anime coloring, masterpiece, high score, great score, absurdres",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "角色名 + 作品名 + 场景 + 质量标签"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "lowres, bad anatomy, bad hands, text, error, missing finger, extra digits, fewer digits, worst quality, low quality, low score, bad score, average score, signature, watermark, username, blurry, photo, realistic, 3d, multiple girls, extra arms, extra legs, nsfw, neon colors, oversaturated, thick outline",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "负面 · 画质和人体错误"
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ],
+      "seed": 20260913,
+      "steps": 28,
+      "cfg": 4.5,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 1.0
+    },
+    "_meta": {
+      "title": "固定种子 · Euler a · 28步 · CFG4.5"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "FP32 VAE分块解码 · 512/64"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "emilia/03_native"
+    },
+    "_meta": {
+      "title": "保存原生图 · 先确认脸和手"
+    }
+  }
+}

@@ -1,0 +1,498 @@
+{
+  "purpose": "continuous node optimization for Emilia anime generation",
+  "installed": {
+    "custom_nodes": [
+      "comfyui-impact-pack v8.28.3",
+      "comfyui-impact-subpack v1.3.5"
+    ],
+    "models": [
+      "models/ultralytics/bbox/face_yolov8n.pt",
+      "models/ultralytics/bbox/hand_yolov8n.pt",
+      "models/sams/sam_vit_b_01ec64.pth"
+    ],
+    "native_nodes": [
+      "FaceDetailer",
+      "DetailerForEach",
+      "ImpactSimpleDetectorSEGS",
+      "SAMLoader",
+      "PixelKSampleUpscalerProvider",
+      "IterativeImageUpscale"
+    ]
+  },
+  "experiments": [
+    {
+      "name": "FaceDetailer d0.18",
+      "workflow": "app/emilia/emilia_face_detailer.api.json",
+      "output": "app/output/emilia/experiments/face_detailer_d018_native_00001_.png",
+      "result": "preserves source; improvement subtle"
+    },
+    {
+      "name": "FaceDetailer d0.24",
+      "workflow": "app/emilia/emilia_face_detailer.api.json",
+      "output": "app/output/emilia/experiments/face_detailer_native_00001_.png",
+      "result": "best face balance in tested fixed-seed set; selected face default"
+    },
+    {
+      "name": "FaceDetailer d0.35",
+      "workflow": "app/emilia/emilia_face_detailer.api.json",
+      "output": "app/output/emilia/experiments/face_detailer_d035_native_00001_.png",
+      "result": "stronger change; less conservative; not default"
+    },
+    {
+      "name": "HandDetailer bbox d0.30",
+      "workflow": "app/emilia/emilia_hand_detailer.api.json",
+      "output": "app/output/emilia/experiments/hand_detailer_native_00001_.png",
+      "result": "works on two detected hands; modest cleanup"
+    },
+    {
+      "name": "HandDetailer guide640 d0.40",
+      "workflow": "app/emilia/emilia_hand_detailer.api.json",
+      "output": "app/output/emilia/experiments/hand_detailer_g640_native_00001_.png",
+      "result": "best bbox hand candidate; stronger detail without obvious whole-image drift"
+    },
+    {
+      "name": "HandDetailer + SAM",
+      "workflow": "app/emilia/emilia_hand_detailer.api.json",
+      "output": "app/output/emilia/experiments/hand_detailer_sam_native_00001_.png",
+      "result": "preserves non-hand pixels best; use as production mask refinement"
+    },
+    {
+      "name": "PixelKSample d0.22",
+      "workflow": "app/emilia/emilia_pixel_ksample.api.json",
+      "output": "app/output/emilia/experiments/pixel_ksample_2x_00001_.png",
+      "result": "sharper but alters pixels and costs about 17 minutes; optional only"
+    },
+    {
+      "name": "PixelKSample d0.12",
+      "workflow": "app/emilia/emilia_pixel_ksample.api.json",
+      "output": "app/output/emilia/experiments/pixel_ksample_d012_2x_00001_.png",
+      "result": "more conservative but still much slower than RealESRGAN; rejected as default"
+    },
+    {
+      "name": "Face+Hand+SAM production",
+      "workflow": "app/emilia/emilia_lora_production.api.json",
+      "output": "app/output/emilia/optimized/production_sam_2x_00001_.png",
+      "result": "successful 832x1216 to 1664x2432 pipeline; visually clean identity, face, hands and anatomy"
+    },
+    {
+      "name": "Production second seed 20260933",
+      "workflow": "app/emilia/emilia_lora_production.api.json (in-memory seed override)",
+      "output": "app/output/emilia/experiments/production_seed20260933_native_00001_.png",
+      "result": "anatomy and composition acceptable; face had blue/pink eye drift, so reject or run targeted eye repair"
+    },
+    {
+      "name": "Targeted eye repair d0.42",
+      "workflow": "app/emilia/emilia_face_detailer.api.json (eye-focused prompt override)",
+      "output": "app/output/emilia/experiments/eye_repair_d042_native_00001_.png",
+      "result": "successfully restored both eyes to violet on the failed second seed; fallback only, not default because stronger denoise changes facial expression"
+    },
+    {
+      "name": "Eye-guard prompt retest seed 20260933",
+      "workflow": "app/emilia/emilia_lora_production.api.json with seed override",
+      "output": "app/output/emilia/experiments/production_eye_guard_native_00001_.png",
+      "result": "same-violet eye constraint reduced the prior blue/pink drift; accepted as default prompt improvement, with targeted repair retained as fallback"
+    },
+    {
+      "name": "Three-seed production quality evaluation 20260923",
+      "workflow": "app/emilia/emilia_lora_production.api.json",
+      "seeds": [
+        20261001,
+        20261002,
+        20261003
+      ],
+      "raw_acceptance": "1/3 without fallback; seeds 20261001 and 20261003 had heterochromia",
+      "fallback": "app/emilia/emilia_eye_repair.api.json repaired both rejected faces",
+      "final_acceptance": "3/3 after targeted repair",
+      "final_average_score": 8.33,
+      "evaluation_record": "app/emilia/set20260923_evaluation.json",
+      "review_assets": [
+        "output/emilia/evaluation/set20260923_contact_sheet.jpg",
+        "output/emilia/evaluation/set20260923_quality_closeups.jpg",
+        "output/emilia/evaluation/set20260923_final_selection.jpg"
+      ]
+    },
+    {
+      "name": "Official reference IPAdapter identity test",
+      "workflow": "app/emilia/emilia_ipadapter_official_identity.api.json",
+      "reference": "app/input/official_face_center_clean.png",
+      "model": "ip-adapter-plus-face_sdxl_vit-h.safetensors",
+      "selected_weight": 0.55,
+      "result": "strongest official face/braid/X-clip/violet-eye match in this round; optional identity mode, not default due VRAM and character-sheet bias",
+      "evaluation_record": "app/emilia/ipadapter_identity_evaluation.json"
+    },
+    {
+      "name": "Three-scene official IPAdapter identity set 20260924",
+      "workflow": "app/emilia/emilia_ipadapter_official_identity.api.json",
+      "seeds": [
+        20261311,
+        20261312,
+        20261313
+      ],
+      "accepted": "3/3",
+      "average_score": 8.85,
+      "main_failure": "library scene missed the requested book",
+      "evaluation_record": "app/emilia/set20260924_ipadapter_evaluation.json",
+      "review_assets": [
+        "output/emilia/ipadapter/set20260924_contact_sheet.jpg",
+        "output/emilia/ipadapter/set20260924_quality_closeups.jpg"
+      ]
+    }
+  ],
+  "selected_defaults": {
+    "generation": "Illustrious XL + Emilia LoRA 0.8/0.8; reference weight0.40 until0.75; 1152x1728; DPM++ 2M SDE Karras 36; CFG5.5; FP32 tiled VAE",
+    "face": "Impact FaceDetailer, YOLO face, guide640/max896, denoise0.22, 20 steps, dpmpp_2m/karras",
+    "hands": "Impact DetailerForEach, YOLO hand + SAM mask, guide512/max768, denoise0.24, 20 steps, dpmpp_2m/karras",
+    "upscale": "RealESRGAN x4plus anime 6B then Lanczos 0.5x",
+    "workflow_api": "app/emilia/emilia_ipadapter_highres_production.api.json",
+    "workflow_gui": "app/user/default/workflows/Emilia_08_HighRes_Quality_Base_8GB.json",
+    "finishing_api": "app/emilia/emilia_ipadapter_highres_upscale.api.json",
+    "finishing_gui": "app/user/default/workflows/Emilia_09_Quality_Finish_2x.json",
+    "automatic_entry": "render-emilia-quality.ps1",
+    "verification_output": "app/output/emilia/quality/03_finished_2x_00001_.png",
+    "eye_guard": "matching violet irises; low-denoise face refinement; reject eye-color failures after inspection"
+  },
+  "artifacts": {
+    "app/output/emilia/optimized/production_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "6b4b74abc668376cd800c0bb760f32404db477e005712476e1b71e2f943b1198"
+    },
+    "app/output/emilia/optimized/production_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "f41bf9f55f6c46f9a728268dd6bf8fdef67cf6d1dc10aa99962f1cf874f79d4e"
+    },
+    "app/output/emilia/optimized/production_sam_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "7c69b5ee39b5a679cc5c5a43b77812db91e8a5ac206fb0dc5bfa9bfb6a66feba"
+    },
+    "app/output/emilia/optimized/production_sam_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "f622b1d8f3aaf25a14dd87588c4beb89df5525e9665a5ad28b57744d95c8e4c9"
+    },
+    "app/output/emilia/experiments/face_detailer_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "fbc230ae9c2971c182410b4ef354902c891a2b4e7e79afd24630a1ccb57d3eac"
+    },
+    "app/output/emilia/experiments/face_detailer_d018_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "6f0746bbba19a165978b29bd19da6e0d37ca403d9fb0b374a5bee2b14a3c84a2"
+    },
+    "app/output/emilia/experiments/face_detailer_d035_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "1d250397a5889c3fbaba31a612591a17ac5087fb2bf068df60a61227a5741bf8"
+    },
+    "app/output/emilia/experiments/hand_detailer_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "2ec8544c0e693d75e86b0b2430a9625c2f6096c0fb32ed3998af490aaf8ac2a4"
+    },
+    "app/output/emilia/experiments/hand_detailer_d045_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "fc4712e469887409e3bdaae77632d700a5545431eeeec9d710d8605e3934b87b"
+    },
+    "app/output/emilia/experiments/hand_detailer_g640_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "95c9065ad93d059cb2bd738d51df61897e092a9aa93b88cf84909843e7331847"
+    },
+    "app/output/emilia/experiments/hand_detailer_sam_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "c655587866ef3a3eea5c9b70cb6f83b7a1b6491cf7d82e05ad9f9708b91d86a1"
+    },
+    "app/output/emilia/experiments/pixel_ksample_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "4a04b47e1f20674dca65f69b414b54819a553ad8ee335a27cc309719cee92901"
+    },
+    "app/output/emilia/experiments/pixel_ksample_d012_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "eda79097ef19a02a478bb9eccbe3e8f39dfad285ea6be2ca2452f8642e5b87d0"
+    },
+    "app/output/emilia/experiments/production_seed20260933_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "315a9dfcf5694acf42010fd83453465807973e6f43aa73d139dc1ddcc842a256"
+    },
+    "app/output/emilia/experiments/production_seed20260933_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "efa99a3046a5413143634eee8c187d7677036b7d428aa01328639ba6d6bb6617"
+    },
+    "app/output/emilia/experiments/eye_repair_d042_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "90bba6779c41e551e9c703153084ec0769df3d0912a249e091f4d48473adbfcb"
+    },
+    "app/output/emilia/experiments/eye_repair_d042_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "7a6b945249d6f76abdf5b69f9d84198dc0fd29873df6cc1e86b89243edc25d54"
+    },
+    "app/output/emilia/experiments/production_eye_guard_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "cf26bce96d661c07acafd47f086af5f0d806f8daf073c781645313ecebffc5c8"
+    },
+    "app/output/emilia/experiments/production_eye_guard_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "34b4dfc2015f3a703ef4f2228788b7d7f0a01bdd287d4020fa78e30e8de206db"
+    },
+    "app/output/emilia/optimized/production_native_00003_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "546bb39fa3900419788d3e3c8a617c6457f620bebcf9633048613956783b299a"
+    },
+    "app/output/emilia/optimized/production_2x_00003_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "122622a51c0fae70bdde884424fe36b6690668a227e093772851348d8404047c"
+    },
+    "app/output/emilia/evaluation/set20260923_01_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "f49086eaac6f2f688d5da2313f4b2a431ddc2251446210aa202ebb34e02f3e5c"
+    },
+    "app/output/emilia/evaluation/set20260923_01_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "9c1d8811fb071b6a44f90bafba76fb738eded0664ee41e0cbb1972843a19116b"
+    },
+    "app/output/emilia/evaluation/set20260923_01_repaired_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "7df485267c0cfd64b26ce7c047bd05868bc738f2cb121071df608da074f5539b"
+    },
+    "app/output/emilia/evaluation/set20260923_01_repaired_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "d751cc11c0a33ad62d57eaccdf83e2c2c3a3ebfaf833f256f5fdcbd3da210bc8"
+    },
+    "app/output/emilia/evaluation/set20260923_02_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "48b1539095b234aecbfd49b975f61c36bb47ec42408f5d59c85a45655c2e0e2d"
+    },
+    "app/output/emilia/evaluation/set20260923_02_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "55d48edfbdcbde8a2b5a33ee038d0e7c60b6941cad782c6cf478eb96007b5d4e"
+    },
+    "app/output/emilia/evaluation/set20260923_03_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "e122abff405ead05895bd52dd622c0881ffb7310be14cc733e3969ba67ccf4e2"
+    },
+    "app/output/emilia/evaluation/set20260923_03_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "ff0369bff65d4979f3be3dfd5996525fddbff9932b81937dec7daed4c43b8ca2"
+    },
+    "app/output/emilia/evaluation/set20260923_03_repaired_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "ce5578c5fa49cbf333d2227fd3e55c5edd7eedf330b0e5e1518359d3d318e5e6"
+    },
+    "app/output/emilia/evaluation/set20260923_03_repaired_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "cd62dcdeac1fcc7e5aaa28106e792347a4c742557d8254e4cbfaa60721ff6292"
+    },
+    "app/output/emilia/ipadapter/set20260924_01_garden_portrait_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "5a7d5735c9b94238badac24a8aca937a760932421ba77817e825071ddef90a35"
+    },
+    "app/output/emilia/ipadapter/set20260924_01_garden_portrait_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "efa1fe6c69d53c9f8f12b71a08c81d09043ca8940c2cbb572f192f01d8ed284d"
+    },
+    "app/output/emilia/ipadapter/set20260924_02_snow_fullbody_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "ae95b2e0dbbadc3d0a46cb652a6af44d1b198284d230a650014ea36208f638d2"
+    },
+    "app/output/emilia/ipadapter/set20260924_02_snow_fullbody_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "eb503b59afd262399e4533f0299910fb6fcc45055c1c0a25fddb117335c1acf7"
+    },
+    "app/output/emilia/ipadapter/set20260924_03_library_halfbody_native_00001_.png": {
+      "size": [
+        832,
+        1216
+      ],
+      "sha256": "bb41ae600b1ca51572229a2e9ff325e98cc16b5a97c56e2bae192fba54828a36"
+    },
+    "app/output/emilia/ipadapter/set20260924_03_library_halfbody_2x_00001_.png": {
+      "size": [
+        1664,
+        2432
+      ],
+      "sha256": "c4544219a232d94b547f355e9203343dcab2c1955c176f84c0e33acc1353242c"
+    }
+  },
+  "next_candidate": "ControlNet/OpenPose remains unavailable as a tested production path because no SDXL ControlNet model is installed; do not add it to the default until a compatible model is downloaded and A/B tested.",
+  "current_api_run": {
+    "prompt_id": "76be871a-fb87-4326-a8da-d4797d76d4b5",
+    "status": "success",
+    "outputs": [
+      "output/emilia/optimized/production_native_00003_.png",
+      "output/emilia/optimized/production_2x_00003_.png"
+    ],
+    "execution_cached": true,
+    "eye_guard_prompt_verified": true
+  },
+  "fallbacks": {
+    "eye_color_drift": "Use eye-focused FaceDetailer prompt with same-violet constraint, guide640, denoise0.42, steps16; inspect face after repair.",
+    "hand_detector_no_detection": "Keep original image; do not force a hand repaint when detector finds no hand."
+  },
+  "latest_set_evaluation": "app/emilia/set20260923_evaluation.json",
+  "optional_identity_workflow": "app/emilia/emilia_ipadapter_official_identity.api.json",
+  "latest_ipadapter_set_evaluation": "app/emilia/set20260924_ipadapter_evaluation.json",
+  "hardware_unlock_test": {
+    "date": "2026-09-24",
+    "gpu": "NVIDIA CMP 40HX",
+    "compute_capability": "7.5 (Turing)",
+    "pcie": {
+      "reported_max_generation": 2,
+      "device_max_generation": 1,
+      "host_max_generation": 3,
+      "reported_max_width": "16x",
+      "current_width_idle_and_load": "16x",
+      "current_generation_idle_and_load": 1,
+      "h2d_effective_gbps": 6.0,
+      "verdict": "PCIe 16x width is confirmed. Gen2 is not active in the observed idle or sustained-transfer samples; current link remained Gen1, so Gen2 unlock is not confirmed."
+    },
+    "tensor_core": {
+      "fp16_gemm_tflops": 43.34,
+      "fp32_gemm_tflops": 7.42,
+      "fp16_to_fp32_throughput_ratio": 5.84,
+      "cupti_profiler": "unavailable: CUPTI_ERROR_CMP_DEVICE_NOT_SUPPORTED",
+      "verdict": "Strong indirect evidence of Turing FP16 tensor acceleration; direct kernel attribution was unavailable because the CMP device is unsupported by CUPTI."
+    },
+    "stress_observations": {
+      "max_gpu_utilization_percent": 99,
+      "max_sm_clock_mhz": 1905,
+      "max_power_w": 191.88,
+      "configured_power_limit_w": 184,
+      "max_memory_used_mib": 7403,
+      "memory_total_mib": 8192,
+      "verdict": "No power limit or clock setting was changed. VRAM remained below the 8 GiB physical total but left limited headroom for extra detailer passes."
+    },
+    "workflow_ab": {
+      "workflow": "app/emilia/emilia_ipadapter_high_quality_test.api.json",
+      "run_record": "app/emilia/hardware_unlock_steps32_run.json",
+      "comparison": "Same prompt, official face reference, and seed 20261314; 24 KSampler steps versus 32.",
+      "steps24_native": "output/emilia/ipadapter/hardware_unlock_steps24_native_00001_.png",
+      "steps32_native": "output/emilia/ipadapter/hardware_unlock_steps32_native_00001_.png",
+      "steps32_upscaled": "output/emilia/ipadapter/hardware_unlock_steps32_2x_00001_.png",
+      "comparison_sheet": "output/emilia/ipadapter/hardware_unlock_steps24_vs32.jpg",
+      "visual_result": "32 steps produced the cleaner violet-eye result in this paired seed and preserved the identity anchors; it is retained as an optional high-quality profile, not substituted into the default production workflow.",
+      "decision": "Use the 32-step IPAdapter profile when identity and finish take priority. Keep the default production profile unchanged because one seed is insufficient to prove a universal quality gain and 8 GiB VRAM remains tight."
+    }
+  },
+  "latest_highres_test_report": "app/emilia/quality_first_report.json",
+  "latest_community_quality_report": "app/emilia/community_quality_report.json",
+  "community_quality_sources": "app/emilia/community_quality_sources.json",
+  "optional_pag_quality_command": "render-emilia-quality.ps1 -Seed 20261027 -Pag",
+  "optional_pag_quality_workflow_gui": "app/user/default/workflows/Emilia_10_Community_PAG_Quality_8GB.json",
+  "detailer_mask_policy": "noise_mask_feather0 explicitly in both API and GUI. Previously GUI20 diverged from API function default0. Community DD8/12 tested but not selected as a reliable gain.",
+  "recommended_highres_workflow": "app/emilia/emilia_ipadapter_highres_production.api.json",
+  "recommended_highres_workflow_gui": "app/user/default/workflows/Emilia_08_HighRes_Quality_Base_8GB.json",
+  "recommended_highres_delivery_workflow": "app/emilia/emilia_ipadapter_highres_upscale.api.json",
+  "recommended_highres_delivery_workflow_gui": "app/user/default/workflows/Emilia_09_Quality_Finish_2x.json",
+  "highres_execution_policy": "Quality before latency. render-emilia-quality.ps1 runs native generation, exits that child to release models, then runs face/hand/SAM refinement and automatic 2x delivery. FP32 tiled VAE; no overclock and no temperature/power software stop.",
+  "highres_profiles": {
+    "1152x1728": {
+      "workflow": "app/emilia/emilia_ipadapter_highres_production.api.json",
+      "native_prefix": "output/emilia/quality/01_base",
+      "refined_prefix": "output/emilia/quality/02_refined",
+      "final_prefix": "output/emilia/quality/03_finished_2x",
+      "native_pixels": 1990656,
+      "final_pixels": 7962624,
+      "execution_entry": "render-emilia-quality.ps1",
+      "verdict": "quality-selected full-body seed20261027; painted garden, coherent boots, conservative face and masked hand refinement; isolated stages verified"
+    }
+  }
+}

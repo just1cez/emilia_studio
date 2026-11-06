@@ -1,0 +1,187 @@
+{
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+    },
+    "_meta": {
+      "title": "Illustrious XL v0.1 / verified SHA256"
+    }
+  },
+  "10": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "4",
+        1
+      ],
+      "lora_name": "emilia-re-zero-re.safetensors",
+      "strength_model": 0.8,
+      "strength_clip": 0.8
+    },
+    "_meta": {
+      "title": "Emilia LoRA / 0.8 identity lock"
+    }
+  },
+  "5": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 832,
+      "height": 1216,
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "Native 832x1216 / batch 1"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, anime key visual, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, gentle smile, looking at viewer, full body, character focus, medium-long shot, subject fills the frame, feet visible, arms relaxed at sides, hands visible, simple standing pose, balanced body proportions, centered composition, flower garden, stone archway, soft daylight, pale blue sky, clean anime lineart, refined cel shading, soft colors, masterpiece, best quality",
+      "clip": [
+        "10",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Identity anchors + large simple full-body composition"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, extreme perspective, complex hand pose, holding object, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, giant breasts, asymmetrical eyes, crossed eyes, red eyes, blue eyes, heterochromia, deformed clothing, tangled hair",
+      "clip": [
+        "10",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Anatomy, scale, crop and identity guardrails"
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "42",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ],
+      "seed": 20261303,
+      "steps": 24,
+      "cfg": 5.5,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 1.0
+    },
+    "_meta": {
+      "title": "Stable native render / Euler a / 24 steps / CFG 5.5"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "emilia/ipadapter/panel3_w055"
+    },
+    "_meta": {
+      "title": "Save native candidate for anatomy inspection"
+    }
+  },
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "emilia_official_face_panel_3.png"
+    },
+    "_meta": {
+      "title": "Official Emilia face panel 3"
+    }
+  },
+  "40": {
+    "class_type": "IPAdapterModelLoader",
+    "inputs": {
+      "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+    },
+    "_meta": {
+      "title": "IPAdapter Plus Face SDXL"
+    }
+  },
+  "41": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": {
+      "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+    },
+    "_meta": {
+      "title": "CLIP Vision ViT-H"
+    }
+  },
+  "42": {
+    "class_type": "IPAdapterAdvanced",
+    "inputs": {
+      "model": [
+        "10",
+        0
+      ],
+      "ipadapter": [
+        "40",
+        0
+      ],
+      "image": [
+        "1",
+        0
+      ],
+      "weight": 0.55,
+      "weight_type": "linear",
+      "combine_embeds": "average",
+      "start_at": 0.0,
+      "end_at": 1.0,
+      "embeds_scaling": "K+V",
+      "clip_vision": [
+        "41",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Official face identity conditioning / weight 0.55"
+    }
+  }
+}

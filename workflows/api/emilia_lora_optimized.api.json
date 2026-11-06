@@ -1,0 +1,166 @@
+{
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+    },
+    "_meta": {
+      "title": "Illustrious XL v0.1 / verified SHA256"
+    }
+  },
+  "10": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": ["4", 0],
+      "clip": ["4", 1],
+      "lora_name": "emilia-re-zero-re.safetensors",
+      "strength_model": 0.8,
+      "strength_clip": 0.8
+    },
+    "_meta": {
+      "title": "Emilia LoRA / 0.8 identity lock"
+    }
+  },
+  "5": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 832,
+      "height": 1216,
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "Base 832x1216 / batch 1"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, anime key visual, official character design, silver-white hair, long hair, straight bangs, crown braid, violet eyes, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, gentle smile, looking at viewer, full body, standing, both arms visible, hands visible, relaxed natural pose, balanced proportions, centered composition, flower garden, stone balustrade, soft daylight, pale blue sky, clean anime lineart, refined cel shading, soft colors, masterpiece, best quality",
+      "clip": ["10", 1]
+    },
+    "_meta": {
+      "title": "Character anchors + simple anatomy-safe pose"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, cropped head, cropped feet, cut off, close-up, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, giant breasts, asymmetrical eyes, crossed eyes, red eyes, blue eyes, heterochromia, deformed clothing, tangled hair",
+      "clip": ["10", 1]
+    },
+    "_meta": {
+      "title": "Anatomy, crop, identity and quality guardrails"
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["10", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["5", 0],
+      "seed": 20260913,
+      "steps": 24,
+      "cfg": 5.5,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 1.0
+    },
+    "_meta": {
+      "title": "Base render / Euler a / 24 steps / CFG 5.5"
+    }
+  },
+  "11": {
+    "class_type": "LatentUpscaleBy",
+    "inputs": {
+      "samples": ["3", 0],
+      "upscale_method": "bislerp",
+      "scale_by": 1.25
+    },
+    "_meta": {
+      "title": "Conservative latent high-resolution pass / 1.25x"
+    }
+  },
+  "12": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["10", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["11", 0],
+      "seed": 20260913,
+      "steps": 18,
+      "cfg": 5.0,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 0.32
+    },
+    "_meta": {
+      "title": "High-res detail pass / DPM++ 2M / denoise 0.32"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": ["12", 0],
+      "vae": ["4", 2],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "FP32 tiled VAE / 512 tile / 64 overlap"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["8", 0],
+      "filename_prefix": "emilia/optimized/native_1p25x"
+    },
+    "_meta": {
+      "title": "Save refined native image / inspect before upscale"
+    }
+  },
+  "13": {
+    "class_type": "UpscaleModelLoader",
+    "inputs": {
+      "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+    },
+    "_meta": {
+      "title": "Anime upscaler / RealESRGAN x4"
+    }
+  },
+  "14": {
+    "class_type": "ImageUpscaleWithModel",
+    "inputs": {
+      "upscale_model": ["13", 0],
+      "image": ["8", 0]
+    },
+    "_meta": {
+      "title": "Upscale refined image 4x"
+    }
+  },
+  "15": {
+    "class_type": "ImageScaleBy",
+    "inputs": {
+      "image": ["14", 0],
+      "upscale_method": "lanczos",
+      "scale_by": 0.4
+    },
+    "_meta": {
+      "title": "Downsample to clean 2x of original / 1664x2432"
+    }
+  },
+  "16": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["15", 0],
+      "filename_prefix": "emilia/optimized/final_2x"
+    },
+    "_meta": {
+      "title": "Save optimized 2x final"
+    }
+  }
+}

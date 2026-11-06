@@ -1,0 +1,271 @@
+{
+  "objective": "Finished-image quality before runtime",
+  "model": "Illustrious-XL-v0.1.safetensors",
+  "automatic_entry": "render-emilia-quality.ps1",
+  "runner": "app/script_examples/render_emilia_quality.py",
+  "native_api": "app/emilia/emilia_ipadapter_highres_production.api.json",
+  "finishing_api": "app/emilia/emilia_ipadapter_highres_upscale.api.json",
+  "native_gui": "app/user/default/workflows/Emilia_08_HighRes_Quality_Base_8GB.json",
+  "finishing_gui": "app/user/default/workflows/Emilia_09_Quality_Finish_2x.json",
+  "final_acceptance": "temp/quality_workflow_20261023/final_acceptance.json",
+  "before_after": "app/output/emilia/quality/quality_before_after.jpg",
+  "occupied_port_smoke": "passed: existing listener preserved and no child launched",
+  "community_followup": "app/emilia/community_quality_report.json",
+  "current_gui_mask_contract": "temp/community_quality/gui_contract_after.json",
+  "historical_acceptance_limit": "The earlier GUI acceptance checked declared API fields only and missed extra noise_mask_feather20. The followup explicitly fixes it to0 and checks complete input dictionaries.",
+  "defaults": {
+    "seed": 20261027,
+    "native_size": [
+      1152,
+      1728
+    ],
+    "finished_size": [
+      2304,
+      3456
+    ],
+    "sampler": "dpmpp_2m_sde",
+    "scheduler": "karras",
+    "steps": 36,
+    "cfg": 5.5,
+    "lora_strength": [
+      0.8,
+      0.8
+    ],
+    "ipadapter_weight": 0.4,
+    "ipadapter_end_at": 0.75,
+    "vae": "FP32 tiled, tile512 overlap64",
+    "face": {
+      "steps": 20,
+      "denoise": 0.22,
+      "guide": 640,
+      "max_size": 896
+    },
+    "hands": {
+      "steps": 20,
+      "denoise": 0.24,
+      "guide": 512,
+      "max_size": 768,
+      "mask": "YOLO hand detection refined by SAM"
+    },
+    "upscale": "RealESRGAN_x4plus_anime_6B x4 then Lanczos0.5x"
+  },
+  "manual_quality_review": {
+    "method": "Direct full-image and face/hand crop inspection; subjective judgments, no fabricated numerical quality score.",
+    "selected_seed": 20261027,
+    "improvements": [
+      "Coherent painted garden instead of the earlier unfinished sketch-like background",
+      "Complete white boots and clearer full-body structure",
+      "Matching violet eyes and recognizable Emilia accessories preserved",
+      "Conservative local refinement; no high-denoise whole-image repaint in the selected pipeline"
+    ],
+    "limits": [
+      "Clenched hands remain stylized; not a guarantee of perfect anatomy",
+      "Seed20261028 completes but open-hand/finger simplification remains; not selected as default",
+      "Automatic detectors cannot fix missing or undetected hands",
+      "The stone archway prompt detail is not consistently realized",
+      "VAE FP32 is a conservative precision choice, not proven universally visually superior to FP16"
+    ]
+  },
+  "rejected_or_not_selected": [
+    {
+      "variant": "832x1248 followed by 1152x1728 low-denoise whole-image refinement",
+      "reason": "Executed successfully, but direct high-resolution rendering was selected for this profile; extra whole-image repaint was not a visual improvement worth adopting."
+    },
+    {
+      "variant": "Hand denoise0.32",
+      "reason": "Changed knuckle/contour details more than the conservative0.24; not selected."
+    },
+    {
+      "variant": "All identity, diffusion, SAM and detailer models in one graph/process",
+      "reason": "Some jobs succeeded but later jobs reached the observed Windows commit limit; rejected as the reliable default."
+    },
+    {
+      "variant": "cache-none alone or cache-none plus disable-cuda-graphs",
+      "reason": "Did not resolve the observed commit-pressure interruptions; not adopted as fixes."
+    }
+  ],
+  "execution_contract": {
+    "python": "D:/conda-data/envs/comfyui/python.exe",
+    "separate_native_and_finishing_processes": true,
+    "no_model_residency_overlap_between_stages": true,
+    "temperature_power_software_stop": false,
+    "overclock": false,
+    "power_limit_changed": false,
+    "fan_policy_changed": false,
+    "models_or_dependencies_downloaded": false
+  },
+  "executed_renders": [
+    {
+      "seed": 20261027,
+      "native": "D:\\comfyui\\app\\output\\emilia\\quality\\01_base_00001_.png",
+      "final": "D:\\comfyui\\app\\output\\emilia\\quality\\03_finished_2x_00001_.png",
+      "receipt": "D:\\comfyui\\app\\output\\emilia\\quality\\03_finished_2x_00001_.run.json",
+      "generation_seconds": 165.1689413000131,
+      "finishing_seconds": 64.78962900000624,
+      "logs": "D:\\comfyui\\app\\temp\\quality_7755c956b731",
+      "execution_success": true,
+      "selected_for_delivery": true
+    },
+    {
+      "seed": 20261028,
+      "native": "D:\\comfyui\\app\\output\\emilia\\quality\\01_base_00002_.png",
+      "final": "D:\\comfyui\\app\\output\\emilia\\quality\\03_finished_2x_00002_.png",
+      "receipt": "D:\\comfyui\\app\\output\\emilia\\quality\\03_finished_2x_00002_.run.json",
+      "generation_seconds": 170.28230139997322,
+      "finishing_seconds": 90.12428879999788,
+      "logs": "D:\\comfyui\\app\\temp\\quality_32a696c85c0e",
+      "execution_success": true,
+      "selected_for_delivery": false
+    }
+  ],
+  "experiments": [
+    {
+      "name": "highres_balanced",
+      "success": false,
+      "wall_seconds": 12.521442600002047,
+      "resources": {
+        "max_gpu_c": 49,
+        "max_vram_mib": 5967.06640625,
+        "min_available_ram_gib": 12.144683837890625,
+        "max_commit_fraction": 0.9702838604934603
+      },
+      "safety_stop": "System memory protection"
+    },
+    {
+      "name": "highres_balanced",
+      "success": true,
+      "wall_seconds": 165.87687300000107,
+      "resources": {
+        "max_gpu_c": 87,
+        "max_vram_mib": 7791.06640625,
+        "min_available_ram_gib": 12.150379180908203,
+        "max_commit_fraction": 0.9385670758529275
+      },
+      "safety_stop": null
+    },
+    {
+      "name": "native_832",
+      "success": true,
+      "wall_seconds": 32.618285799981095,
+      "resources": {
+        "max_gpu_c": 89,
+        "max_vram_mib": 7087.06640625,
+        "min_available_ram_gib": 12.554935455322266,
+        "max_commit_fraction": 0.925187486258722
+      },
+      "safety_stop": null
+    },
+    {
+      "name": "native_1024",
+      "success": true,
+      "wall_seconds": 52.42994140001247,
+      "resources": {
+        "max_gpu_c": 90,
+        "max_vram_mib": 7119.06640625,
+        "min_available_ram_gib": 12.384620666503906,
+        "max_commit_fraction": 0.9236598844552953
+      },
+      "safety_stop": null
+    },
+    {
+      "name": "highres_seed27",
+      "success": true,
+      "wall_seconds": 169.2752778000431,
+      "resources": {
+        "max_gpu_c": 89,
+        "max_vram_mib": 7791.06640625,
+        "min_available_ram_gib": 12.359378814697266,
+        "max_commit_fraction": 0.9537779102918283
+      },
+      "safety_stop": null
+    },
+    {
+      "name": "highres_seed28",
+      "success": true,
+      "wall_seconds": 174.6782623999752,
+      "resources": {
+        "max_gpu_c": 90,
+        "max_vram_mib": 7759.06640625,
+        "min_available_ram_gib": 12.499248504638672,
+        "max_commit_fraction": 0.9370108086280874
+      },
+      "safety_stop": null
+    },
+    {
+      "name": "staged_hires",
+      "success": true,
+      "wall_seconds": 147.07246679998934,
+      "resources": {
+        "max_gpu_c": 90,
+        "max_vram_mib": 7823.06640625,
+        "min_available_ram_gib": 12.366958618164062,
+        "max_commit_fraction": 0.9550100605315033
+      },
+      "safety_stop": null
+    },
+    {
+      "name": "polished_seed27",
+      "success": true,
+      "wall_seconds": 225.95663829997648,
+      "resources": {
+        "max_gpu_c": 90,
+        "max_vram_mib": 7759.06640625,
+        "min_available_ram_gib": 10.983585357666016,
+        "max_commit_fraction": 0.967119517070443
+      },
+      "safety_stop": null
+    },
+    {
+      "name": "final_quality_seed27",
+      "success": true,
+      "wall_seconds": 63.053713999979664,
+      "resources": {
+        "max_gpu_c": 86,
+        "max_vram_mib": 7633.06640625,
+        "min_available_ram_gib": 11.191032409667969,
+        "max_commit_fraction": 0.960176109886279
+      },
+      "safety_stop": null
+    },
+    {
+      "name": "final_quality_seed28",
+      "success": false,
+      "wall_seconds": 15.533951400022488,
+      "resources": {
+        "max_gpu_c": 83,
+        "max_vram_mib": 7729.06640625,
+        "min_available_ram_gib": 11.282787322998047,
+        "max_commit_fraction": 0.9729065722652147
+      },
+      "safety_stop": "System memory protection"
+    },
+    {
+      "name": "final_quality_seed28",
+      "success": false,
+      "wall_seconds": 112.01129819999915,
+      "resources": {
+        "max_gpu_c": 82,
+        "max_vram_mib": 7695.06640625,
+        "min_available_ram_gib": 10.66054916381836,
+        "max_commit_fraction": 0.9725214472642743
+      },
+      "safety_stop": "System memory protection"
+    },
+    {
+      "name": "emilia_ipadapter_highres_production",
+      "success": false,
+      "wall_seconds": 15.583987099991646,
+      "resources": {
+        "max_gpu_c": 55,
+        "max_vram_mib": 7023.06640625,
+        "min_available_ram_gib": 10.861557006835938,
+        "max_commit_fraction": 0.9785770820203358
+      },
+      "safety_stop": "System memory protection"
+    }
+  ],
+  "gui_contract": "temp/quality_workflow_20261023/gui_contract.json",
+  "selected_final": "app/output/emilia/quality/03_finished_2x_00001_.png",
+  "manual_8gb_guidance": "Use the automatic entry without another GPU-heavy ComfyUI/LLM running. Manual use requires restarting ComfyUI between the native and finishing graphs.",
+  "historical_speed_report": "app/emilia/highres_workflow_optimization_report.json"
+}

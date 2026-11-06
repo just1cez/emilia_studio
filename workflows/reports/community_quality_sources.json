@@ -1,0 +1,66 @@
+{
+  "objective": "Community-sourced quality improvements for the local Emilia SDXL workflow, not speed at the expense of finished artwork",
+  "hardware": "Windows, CMP 40HX 8 GiB Turing sm75, 24 GiB DDR3, existing comfyui Conda environment",
+  "baseline": "app/emilia/quality_first_report.json",
+  "sources": [
+    {
+      "url": "https://github.com/ssitu/ComfyUI_UltimateSDUpscale",
+      "kind": "primary repository",
+      "observed": "Image-to-image redraw on tiles; existing SDXL model and VAE can be reused. No additional runtime dependencies declared in pyproject.toml version1.7.2.",
+      "local_snapshot_commit": "a5547db9e1d07d3318bb21e9e9c474f4c1e9c8df"
+    },
+    {
+      "url": "https://github.com/ssitu/ComfyUI_UltimateSDUpscale/blob/main/js/docs/UltimateSDUpscaleNoUpscale.md",
+      "kind": "primary node documentation",
+      "observed": "NoUpscale retains input dimensions; low denoise0.05-0.2 suggested to reduce hallucinations/seams; padding provides context; seam fixing adds more redraw and should not be enabled blindly. The file header is malformed but parameter table and tips are readable."
+    },
+    {
+      "url": "https://github.com/Coyote-A/ultimate-upscale-for-automatic1111/wiki/FAQ",
+      "kind": "upstream parameter reference",
+      "observed": "Source repository README and ComfyUI docs link this as the original parameter FAQ. Direct fetch intermittent; claims are based on locally audited upstream source and the independently read ComfyUI docs, not an invented FAQ quotation.",
+      "pinned_submodule": "2322caa480535b1011a1f9c18126d85ea444f146"
+    },
+    {
+      "url": "https://comfyui.nomadoor.net/en/basic-workflows/ultimate-sd-upscale/",
+      "kind": "community tutorial read in full",
+      "observed": "Explains overlap seams and repeated subjects when each tile receives the same prompt. Demonstrates deliberately extreme denoise1 with/without ControlNet Tile; not a recommended denoise1 recipe. Tutorial illustrates TiledDiffusion, not the literal USDU node."
+    },
+    {
+      "url": "https://github.com/shiimizu/ComfyUI-TiledDiffusion",
+      "kind": "primary repository README",
+      "observed": "Supports SDXL; Mixture of Diffusers and MultiDiffusion overlap prediction fusion. Dimensions in pixels. Tiled-VAE fast decoder can alter contrast/brightness. Borrowed implementations have CC BY-NC-SA4.0 restrictions.",
+      "tested_commit": "a155b1bac39147381aeaa52b9be42e545626a44f",
+      "deployment": "Executed successfully, then moved outside custom_nodes; not default because no reliable visual gain and global hooks/license risks"
+    },
+    {
+      "url": "https://github.com/cubiq/ComfyUI_IPAdapter_plus/blob/main/NODES.md",
+      "kind": "primary node documentation, matching installed local NODES.md",
+      "observed": "attn_mask is an output-canvas influence mask, black0 white1, same size/aspect as latent canvas; nonsquare reference inputs center crop. start/end timing impacts conditioning. No new face-recognition weights required for the installed Plus Face model."
+    },
+    {
+      "url": "https://github.com/ltdrdata/ComfyUI-extension-tutorials/blob/Main/ComfyUI-Impact-Pack/tutorial/detailers.md",
+      "kind": "primary extension tutorial",
+      "observed": "guide_size may refer to bbox or crop, max_size caps processing canvas. noise_mask_feather changes the inpainting mask and explicitly is not guaranteed better; may produce edge artifacts."
+    },
+    {
+      "url": "https://github.com/ltdrdata/ComfyUI-Impact-Pack/blob/Main/modules/impact/core.py",
+      "kind": "primary implementation and matching local code reviewed by research agent",
+      "observed": "Positive noise_mask_feather automatically selects Differential Diffusion if no denoise mask function exists. Existing API omitted the option and uses function default0, while GUI defaults must not be assumed executed."
+    },
+    {
+      "url": "https://github.com/pamparamm/sd-perturbed-attention",
+      "kind": "primary implementation/research reference",
+      "observed": "PAG supports SDXL and can strengthen coherence but high scale can oversaturate/fry image. ComfyUI already contains a simpler PAG implementation. Not a guaranteed quality upgrade and adds sampling computation."
+    }
+  ],
+  "candidate_fit": {
+    "USDU": "Audited pinned snapshot with populated submodule executed on this GPU at two denoise settings, then moved outside automatic custom_nodes. No pip or model download. No reliable visual gain selected.",
+    "TiledDiffusion": "Audited pinned Python sampler/ControlNet hooks, executed Mixture of Diffusers on the same final PNG, then disabled by moving out of automatic load path. Noncommercial code-license restriction documented; no new weights.",
+    "DifferentialDiffusion": "Already available through Impact; compare explicit noise-mask feather8 face/12 hand against API baseline0, no extra package.",
+    "IPAdapter_attention_mask": "Uses native mask nodes, no new weights; fixed region may miss a moved face and is not universally safe across arbitrary poses.",
+    "PAG": "Native node is available; optional experiment with conservative scale rather than installing a duplicate extension.",
+    "ControlNet_Tile": "Not selected as a prerequisite; compatible SDXL weights are absent and SD1.5 weights do not match IllustriousXL. Larger weight download and extra residency require a separate evidence-backed decision."
+  },
+  "install_safety": "USDU __init__.py downloads upstream master.zip when submodule folder is empty. The audited pinned submodule was populated before import, preventing this fallback path. Core ComfyUI networking behavior was not changed.",
+  "policy": "All Python runs in existing comfyui Conda; no torch upgrade, no overclock, no power/fan changes, no software temperature/power stop. Independent experiments use fresh processes and preserve baseline outputs."
+}

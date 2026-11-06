@@ -1,0 +1,24 @@
+diff --git a/CrossAttentionPatch.py b/CrossAttentionPatch.py
+index adb2079..96db607 100644
+--- a/CrossAttentionPatch.py
++++ b/CrossAttentionPatch.py
+@@ -171,10 +171,15 @@ def ipadapter_attention(out, q, k, v, extra_options, module_key='', ipadapter=No
+         elif weight == 0:
+             return 0
+         
+-        k_cond = ipadapter.ip_layers.to_kvs[k_key](cond).repeat(batch_prompt, 1, 1)
+-        k_uncond = ipadapter.ip_layers.to_kvs[k_key](uncond).repeat(batch_prompt, 1, 1)
+-        v_cond = ipadapter.ip_layers.to_kvs[v_key](cond).repeat(batch_prompt, 1, 1)
+-        v_uncond = ipadapter.ip_layers.to_kvs[v_key](uncond).repeat(batch_prompt, 1, 1)
++        k_cond = ipadapter.ip_layers.to_kvs[k_key](cond)
++        k_uncond = ipadapter.ip_layers.to_kvs[k_key](uncond)
++        v_cond = ipadapter.ip_layers.to_kvs[v_key](cond)
++        v_uncond = ipadapter.ip_layers.to_kvs[v_key](uncond)
++        if batch_prompt != 1:
++            k_cond = k_cond.repeat(batch_prompt, 1, 1)
++            k_uncond = k_uncond.repeat(batch_prompt, 1, 1)
++            v_cond = v_cond.repeat(batch_prompt, 1, 1)
++            v_uncond = v_uncond.repeat(batch_prompt, 1, 1)
+ 
+     if len(cond_or_uncond) == 3: # TODO: cosxl, I need to check this
+         ip_k = torch.cat([(k_cond, k_uncond, k_cond)[i] for i in cond_or_uncond], dim=0)

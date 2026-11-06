@@ -1,0 +1,1157 @@
+{
+  "manifest": "app/emilia/highres_resolution_test_manifest.json",
+  "runs": [
+    {
+      "label": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "seed": 20261025,
+      "prompt_id": "70a845cc-14d8-4c11-bf4d-7201362d01cc",
+      "status": "success",
+      "elapsed_seconds": 165.2,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "1024x1536_native_00001_.png",
+              "subfolder": "emilia\\highres",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "1024x1536_2x_00001_.png",
+              "subfolder": "emilia\\highres",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "1152x1728",
+      "width": 1152,
+      "height": 1728,
+      "seed": 20261026,
+      "prompt_id": "e97dc70d-f4b9-4eca-81a8-4fe63fa7f6d8",
+      "status": "success",
+      "elapsed_seconds": 105.1,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "1152x1728_native_00001_.png",
+              "subfolder": "emilia\\highres",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "1152x1728_2x_00001_.png",
+              "subfolder": "emilia\\highres",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "telemetry": [
+    {
+      "t": 1790785788.4929419,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 0.0,
+      "power_w": 14.15,
+      "sm_mhz": 300.0,
+      "memory_used_mib": 99.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785792.7965102,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 6.0,
+      "power_w": 31.35,
+      "sm_mhz": 690.0,
+      "memory_used_mib": 551.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785796.4102378,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 19.0,
+      "power_w": 21.46,
+      "sm_mhz": 690.0,
+      "memory_used_mib": 1095.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785800.0152009,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 14.0,
+      "power_w": 20.49,
+      "sm_mhz": 735.0,
+      "memory_used_mib": 1383.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785803.6318412,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 16.0,
+      "power_w": 31.5,
+      "sm_mhz": 735.0,
+      "memory_used_mib": 1639.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785807.274111,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 16.0,
+      "power_w": 20.33,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 1863.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785810.8849134,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 2.0,
+      "power_w": 33.76,
+      "sm_mhz": 435.0,
+      "memory_used_mib": 2023.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785814.3747623,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 10.0,
+      "power_w": 16.81,
+      "sm_mhz": 300.0,
+      "memory_used_mib": 2503.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785817.918762,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 11.0,
+      "power_w": 14.48,
+      "sm_mhz": 300.0,
+      "memory_used_mib": 2663.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785821.5001707,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 10.0,
+      "power_w": 17.34,
+      "sm_mhz": 300.0,
+      "memory_used_mib": 2791.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785825.0792644,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 10.0,
+      "power_w": 17.63,
+      "sm_mhz": 630.0,
+      "memory_used_mib": 2983.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785828.6621718,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 9.0,
+      "power_w": 15.04,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 3047.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785832.2337508,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 0.0,
+      "power_w": 32.8,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 3015.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785835.7293618,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 0.0,
+      "power_w": 19.15,
+      "sm_mhz": 300.0,
+      "memory_used_mib": 3015.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785839.2834942,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 4.0,
+      "power_w": 19.24,
+      "sm_mhz": 300.0,
+      "memory_used_mib": 3687.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785842.8795679,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 23.0,
+      "power_w": 44.3,
+      "sm_mhz": 1470.0,
+      "memory_used_mib": 3403.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785846.340356,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 6.0,
+      "power_w": 34.05,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 3915.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785849.8338776,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 25.0,
+      "power_w": 21.29,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 4331.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785853.481303,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 19.0,
+      "power_w": 20.77,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 4587.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785857.0750597,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 22.0,
+      "power_w": 16.63,
+      "sm_mhz": 405.0,
+      "memory_used_mib": 5003.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785860.730703,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 21.0,
+      "power_w": 18.3,
+      "sm_mhz": 630.0,
+      "memory_used_mib": 5419.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785864.3536503,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 21.0,
+      "power_w": 19.33,
+      "sm_mhz": 405.0,
+      "memory_used_mib": 5771.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785867.9768138,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 22.0,
+      "power_w": 14.12,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 6219.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785871.6269133,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 14.0,
+      "power_w": 20.48,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 6507.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785875.196084,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 14.0,
+      "power_w": 15.87,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 6699.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785878.8491282,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 20.0,
+      "power_w": 16.61,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 6603.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785882.472485,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 16.0,
+      "power_w": 19.48,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 6635.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785886.041757,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 18.0,
+      "power_w": 18.16,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 6667.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785889.714602,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 21.0,
+      "power_w": 14.7,
+      "sm_mhz": 390.0,
+      "memory_used_mib": 6635.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785893.3313482,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 25.0,
+      "power_w": 51.77,
+      "sm_mhz": 480.0,
+      "memory_used_mib": 6571.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785896.819003,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 86.0,
+      "power_w": 169.18,
+      "sm_mhz": 1845.0,
+      "memory_used_mib": 6635.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785900.2332146,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 87.0,
+      "power_w": 184.53,
+      "sm_mhz": 1830.0,
+      "memory_used_mib": 6635.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785903.7022452,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 87.0,
+      "power_w": 185.5,
+      "sm_mhz": 1815.0,
+      "memory_used_mib": 6635.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785907.157621,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 88.0,
+      "power_w": 179.81,
+      "sm_mhz": 1785.0,
+      "memory_used_mib": 6699.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785910.6027033,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 87.0,
+      "power_w": 182.91,
+      "sm_mhz": 1695.0,
+      "memory_used_mib": 6699.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785914.0483327,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 88.0,
+      "power_w": 171.79,
+      "sm_mhz": 1815.0,
+      "memory_used_mib": 6699.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785917.4616108,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 87.0,
+      "power_w": 182.0,
+      "sm_mhz": 1800.0,
+      "memory_used_mib": 6699.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785920.8711596,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 88.0,
+      "power_w": 183.06,
+      "sm_mhz": 1800.0,
+      "memory_used_mib": 6699.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785924.3178477,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 32.0,
+      "power_w": 181.54,
+      "sm_mhz": 1800.0,
+      "memory_used_mib": 6507.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785927.7708378,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 98.0,
+      "power_w": 180.74,
+      "sm_mhz": 1860.0,
+      "memory_used_mib": 6635.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785931.2351942,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 97.0,
+      "power_w": 183.8,
+      "sm_mhz": 1770.0,
+      "memory_used_mib": 6635.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785934.6776016,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 99.0,
+      "power_w": 167.78,
+      "sm_mhz": 1770.0,
+      "memory_used_mib": 6635.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785938.1150608,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 97.0,
+      "power_w": 182.35,
+      "sm_mhz": 1770.0,
+      "memory_used_mib": 6635.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785941.550858,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 44.0,
+      "power_w": 66.41,
+      "sm_mhz": 1890.0,
+      "memory_used_mib": 5739.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785945.0643637,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 100.0,
+      "power_w": 182.52,
+      "sm_mhz": 1755.0,
+      "memory_used_mib": 6699.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785948.5591805,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 100.0,
+      "power_w": 125.82,
+      "sm_mhz": 1755.0,
+      "memory_used_mib": 5483.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785952.0131853,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 13.0,
+      "power_w": 66.09,
+      "sm_mhz": 1875.0,
+      "memory_used_mib": 2411.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785955.4859462,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 47.0,
+      "power_w": 156.64,
+      "sm_mhz": 1875.0,
+      "memory_used_mib": 5291.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785958.9694145,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 91.0,
+      "power_w": 174.46,
+      "sm_mhz": 1785.0,
+      "memory_used_mib": 7179.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785962.4079964,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 167.57,
+      "sm_mhz": 1695.0,
+      "memory_used_mib": 7243.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785965.8217108,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 169.41,
+      "sm_mhz": 1860.0,
+      "memory_used_mib": 7243.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785969.2621028,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 91.0,
+      "power_w": 183.68,
+      "sm_mhz": 1830.0,
+      "memory_used_mib": 7243.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785972.7106092,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 164.54,
+      "sm_mhz": 1860.0,
+      "memory_used_mib": 7243.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785976.1649208,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 181.93,
+      "sm_mhz": 1665.0,
+      "memory_used_mib": 7243.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785979.6211612,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 172.49,
+      "sm_mhz": 1860.0,
+      "memory_used_mib": 7243.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785983.0623496,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 174.26,
+      "sm_mhz": 1830.0,
+      "memory_used_mib": 7275.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785986.4844878,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 172.86,
+      "sm_mhz": 1815.0,
+      "memory_used_mib": 7275.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785989.9282978,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 157.45,
+      "sm_mhz": 1830.0,
+      "memory_used_mib": 7275.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785993.3870754,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 91.0,
+      "power_w": 172.66,
+      "sm_mhz": 1695.0,
+      "memory_used_mib": 7275.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790785996.8111494,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 168.54,
+      "sm_mhz": 1845.0,
+      "memory_used_mib": 7275.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786000.2471828,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 164.76,
+      "sm_mhz": 1830.0,
+      "memory_used_mib": 7275.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786003.6821158,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 172.97,
+      "sm_mhz": 1845.0,
+      "memory_used_mib": 7275.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786007.1249728,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 181.8,
+      "sm_mhz": 1740.0,
+      "memory_used_mib": 7275.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786010.560155,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 172.43,
+      "sm_mhz": 1845.0,
+      "memory_used_mib": 7275.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786013.9703078,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 93.0,
+      "power_w": 174.9,
+      "sm_mhz": 1845.0,
+      "memory_used_mib": 7275.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786017.396516,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 92.0,
+      "power_w": 179.36,
+      "sm_mhz": 1695.0,
+      "memory_used_mib": 1707.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786020.8207343,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 99.0,
+      "power_w": 179.66,
+      "sm_mhz": 1695.0,
+      "memory_used_mib": 1931.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786024.2604222,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 98.0,
+      "power_w": 165.04,
+      "sm_mhz": 1665.0,
+      "memory_used_mib": 1931.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786027.6971655,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 97.0,
+      "power_w": 168.83,
+      "sm_mhz": 1665.0,
+      "memory_used_mib": 1931.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786031.1926372,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 97.0,
+      "power_w": 168.19,
+      "sm_mhz": 1665.0,
+      "memory_used_mib": 1931.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786034.6307914,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 95.0,
+      "power_w": 159.46,
+      "sm_mhz": 1620.0,
+      "memory_used_mib": 1931.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786038.058906,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 98.0,
+      "power_w": 159.65,
+      "sm_mhz": 1590.0,
+      "memory_used_mib": 1931.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786041.5125563,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 59.0,
+      "power_w": 169.62,
+      "sm_mhz": 1635.0,
+      "memory_used_mib": 3819.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786044.9732177,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 94.0,
+      "power_w": 147.23,
+      "sm_mhz": 1560.0,
+      "memory_used_mib": 4075.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786048.415738,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 96.0,
+      "power_w": 149.65,
+      "sm_mhz": 1575.0,
+      "memory_used_mib": 4075.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786051.8327963,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 90.0,
+      "power_w": 144.15,
+      "sm_mhz": 1545.0,
+      "memory_used_mib": 4075.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786055.2756224,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 0.0,
+      "power_w": 41.43,
+      "sm_mhz": 375.0,
+      "memory_used_mib": 1003.0,
+      "memory_total_mib": 8192.0
+    },
+    {
+      "t": 1790786058.7645416,
+      "pcie": {
+        "max_gen": 2,
+        "current_gen": 1,
+        "max_width": "16x",
+        "current_width": "16x"
+      },
+      "util_pct": 0.0,
+      "power_w": 27.21,
+      "sm_mhz": 300.0,
+      "memory_used_mib": 1003.0,
+      "memory_total_mib": 8192.0
+    }
+  ]
+}

@@ -1,0 +1,142 @@
+{
+  "date": "2026-09-24",
+  "purpose": "three-scene image-set evaluation using optional official-reference IPAdapter identity mode",
+  "workflow": "app/emilia/emilia_ipadapter_official_identity.api.json",
+  "reference": "app/input/official_face_center_clean.png",
+  "run_record": "app/emilia/set20260924_ipadapter_run.json",
+  "review_assets": [
+    "output/emilia/ipadapter/set20260924_contact_sheet.jpg",
+    "output/emilia/ipadapter/set20260924_quality_closeups.jpg"
+  ],
+  "method": "Manual inspection of native 832x1216 and final 1664x2432 outputs, including face and hand closeups. Scores are visual 0-10 ratings, not an automated metric.",
+  "samples": [
+    {
+      "index": 1,
+      "scene": "garden_portrait",
+      "seed": 20261311,
+      "native": "output/emilia/ipadapter/set20260924_01_garden_portrait_native_00001_.png",
+      "final": "output/emilia/ipadapter/set20260924_01_garden_portrait_2x_00001_.png",
+      "scores": {
+        "identity_face": 9.5,
+        "hair_accessories": 9.5,
+        "clothing_palette": 9.0,
+        "anatomy_hands": 8.5,
+        "composition_scene": 8.0,
+        "upscale": 8.7
+      },
+      "verdict": "accept",
+      "notes": "官方脸型、紫色眼睛、银发、头顶辫和X形发饰稳定；双手交叠基本自然；输出更接近角色立绘而非紧凑肖像。",
+      "artifacts": [
+        {
+          "path": "output/emilia/ipadapter/set20260924_01_garden_portrait_native_00001_.png",
+          "size": [
+            832,
+            1216
+          ],
+          "bytes": 1121353,
+          "sha256": "5a7d5735c9b94238badac24a8aca937a760932421ba77817e825071ddef90a35",
+          "prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/ipadapter/set20260924_01_garden_portrait_2x_00001_.png",
+          "size": [
+            1664,
+            2432
+          ],
+          "bytes": 2163704,
+          "sha256": "efa1fe6c69d53c9f8f12b71a08c81d09043ca8940c2cbb572f192f01d8ed284d",
+          "prompt_metadata": true
+        }
+      ],
+      "average": 8.87
+    },
+    {
+      "index": 2,
+      "scene": "snow_fullbody",
+      "seed": 20261312,
+      "native": "output/emilia/ipadapter/set20260924_02_snow_fullbody_native_00001_.png",
+      "final": "output/emilia/ipadapter/set20260924_02_snow_fullbody_2x_00001_.png",
+      "scores": {
+        "identity_face": 9.5,
+        "hair_accessories": 9.5,
+        "clothing_palette": 9.0,
+        "anatomy_hands": 7.8,
+        "composition_scene": 8.8,
+        "upscale": 8.7
+      },
+      "verdict": "accept_with_hand_caution",
+      "notes": "三张中身份最稳定、雪景与披风成立；胸前双手的手指交叠略简化，未见明确多指或断肢。",
+      "artifacts": [
+        {
+          "path": "output/emilia/ipadapter/set20260924_02_snow_fullbody_native_00001_.png",
+          "size": [
+            832,
+            1216
+          ],
+          "bytes": 1150839,
+          "sha256": "ae95b2e0dbbadc3d0a46cb652a6af44d1b198284d230a650014ea36208f638d2",
+          "prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/ipadapter/set20260924_02_snow_fullbody_2x_00001_.png",
+          "size": [
+            1664,
+            2432
+          ],
+          "bytes": 2321728,
+          "sha256": "eb503b59afd262399e4533f0299910fb6fcc45055c1c0a25fddb117335c1acf7",
+          "prompt_metadata": true
+        }
+      ],
+      "average": 8.88
+    },
+    {
+      "index": 3,
+      "scene": "library_halfbody",
+      "seed": 20261313,
+      "native": "output/emilia/ipadapter/set20260924_03_library_halfbody_native_00001_.png",
+      "final": "output/emilia/ipadapter/set20260924_03_library_halfbody_2x_00001_.png",
+      "scores": {
+        "identity_face": 9.3,
+        "hair_accessories": 9.2,
+        "clothing_palette": 8.8,
+        "anatomy_hands": 8.3,
+        "composition_scene": 8.5,
+        "upscale": 8.7
+      },
+      "verdict": "accept_with_prompt_miss",
+      "notes": "脸部和服装稳定，图书馆背景清晰；提示词要求的书没有出现，双手姿势自然但物件语义失败。",
+      "artifacts": [
+        {
+          "path": "output/emilia/ipadapter/set20260924_03_library_halfbody_native_00001_.png",
+          "size": [
+            832,
+            1216
+          ],
+          "bytes": 1339385,
+          "sha256": "bb41ae600b1ca51572229a2e9ff325e98cc16b5a97c56e2bae192fba54828a36",
+          "prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/ipadapter/set20260924_03_library_halfbody_2x_00001_.png",
+          "size": [
+            1664,
+            2432
+          ],
+          "bytes": 2985712,
+          "sha256": "c4544219a232d94b547f355e9203343dcab2c1955c176f84c0e33acc1353242c",
+          "prompt_metadata": true
+        }
+      ],
+      "average": 8.8
+    }
+  ],
+  "set_result": {
+    "generated": 3,
+    "accepted": 3,
+    "average_score": 8.85,
+    "identity_consistency": "strong across all three scenes: silver-white hair, violet eyes, braid, flower ornament and X-shaped hair clip remained stable",
+    "main_failure": "one prompt semantic miss: the library image did not contain the requested book; hand detail remains the weakest anatomy area",
+    "decision": "Keep optional IPAdapter identity mode at weight 0.55. Do not make it the default for every scene because it uses substantial VRAM and biases output toward character-sheet composition."
+  }
+}

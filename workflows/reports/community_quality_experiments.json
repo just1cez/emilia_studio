@@ -1,0 +1,48 @@
+{
+  "purpose": "Explicit community A/B hypotheses, not claims of automatic quality gain",
+  "fixed_baseline": {
+    "seed": 20261027,
+    "native": "app/output/emilia/quality/01_base_00001_.png",
+    "refined": "app/output/emilia/quality/02_refined_00001_.png",
+    "finished": "app/output/emilia/quality/03_finished_2x_00001_.png",
+    "graph_hashes": "temp/community_quality/baseline_hashes.json"
+  },
+  "experiments": [
+    {
+      "name": "usdu_d012",
+      "graph": "temp/community_quality/graphs/usdu_d012.api.json",
+      "change": "New UltimateSDUpscaleNoUpscale, input fixed existing 2304x3456; 768 tiles,64 context padding,16 mask blur,Chess,batch1,FP32 tiled decode,16 steps CFG4,DPM++2M/Karras,denoise0.12,seamfixNone",
+      "hypothesis": "Fine redraw might replace soft upscaler edges without changing structure. Check eye shape, garment line breaks, tile borders and background foliage."
+    },
+    {
+      "name": "usdu_d020",
+      "graph": "temp/community_quality/graphs/usdu_d020.api.json",
+      "change": "Only denoise increases to0.20 from usdu_d012",
+      "hypothesis": "Test whether stronger detail is worth the shape/line drift; not accepted merely because edge contrast increases."
+    },
+    {
+      "name": "differential_detail",
+      "graph": "temp/community_quality/graphs/differential_detail.api.json",
+      "change": "Same baseline native, same refinement settings; explicitly noise_mask_feather8 on face and12 on hands, automatically applying Impact Differential Diffusion",
+      "hypothesis": "Improve blending of skin/hair/sleeve boundaries without reducing facial identity. Do not equate existing composite feather12 with noise-mask feather."
+    },
+    {
+      "name": "ipadapter_head_mask",
+      "graph": "temp/community_quality/graphs/ipadapter_head_mask.api.json",
+      "change": "Only add full-canvas black mask with feathered384x384 white head region at448,128; keep seed/prompt/model/settings",
+      "hypothesis": "Reduce reference-sheet influence on body/background. Fixed mask is pose-specific and may miss heads under other compositions."
+    },
+    {
+      "name": "pag_scale1",
+      "graph": "temp/community_quality/graphs/pag_scale1.api.json",
+      "change": "Native ComfyUI PerturbedAttentionGuidance scale1.0 after IPAdapter; all baseline generation parameters fixed",
+      "hypothesis": "Extra conditional guidance might improve structure; reject oversaturation, outlines, identity changes or composition loss."
+    }
+  ],
+  "candidate_selection": "Preserve full-body identity, violet eyes and recognizable costume; inspect full frame and equal-scale face/hand/fabric/flower crops. No numerical aesthetic score fabricated. Track runtime and resource peaks but do not optimize solely for speed.",
+  "not_immediate_prerequisites": [
+    "No SD1.5 ControlNet Tile on SDXL/Illustrious; compatible additional weights not installed.",
+    "No FaceID/InstantID swap: different recognition dependencies and unproven benefit for the cartoon reference.",
+    "No simultaneous USDU+TiledDiffusion+PAG+strong denoise soup; changes isolated before combination."
+  ]
+}

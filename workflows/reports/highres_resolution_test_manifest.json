@@ -1,0 +1,35 @@
+{
+  "purpose": "Direct higher-pixel native generation comparison on CMP 40HX",
+  "profile": "IPAdapter official face, 32 steps, CFG 5.5, Euler ancestral, fp32 tiled VAE, normal PyTorch CUDA path",
+  "base_workflow": "app/emilia/emilia_ipadapter_high_quality_test.api.json",
+  "configs": [
+    {
+      "label": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "seed": 20261025,
+      "workflow": "app\\emilia\\emilia_ipadapter_highres_1024x1536.api.json"
+    },
+    {
+      "label": "1152x1728",
+      "width": 1152,
+      "height": 1728,
+      "seed": 20261026,
+      "workflow": "app\\emilia\\emilia_ipadapter_highres_1152x1728.api.json"
+    }
+  ],
+  "reference_resolution": [
+    832,
+    1216
+  ],
+  "memory_plan": "batch 1; dynamic VRAM; reserve 0.25 GiB for the test service; staged 1024x1536 then 1152x1728 only if stable",
+  "recommended_workflow": "app/emilia/emilia_ipadapter_highres_production.api.json",
+  "recommended_native_size": [
+    1152,
+    1728
+  ],
+  "recommended_final_size": [
+    2304,
+    3456
+  ]
+}

@@ -1,0 +1,331 @@
+{
+  "objective": "Community research, local fit, executed visual A/B, selective integration and end-to-end finished artwork",
+  "sources": "app/emilia/community_quality_sources.json",
+  "experiment_matrix": "app/emilia/community_quality_experiments.json",
+  "baseline_report": "app/emilia/quality_first_report.json",
+  "quality_method": "Manual full-frame and equal-scale face/hand/fabric/flower crop inspection. No fabricated aesthetic scores; execution success is not treated as proof of a quality gain.",
+  "experiments": [
+    {
+      "name": "usdu_d012",
+      "success": true,
+      "seconds": 307.17001990000426,
+      "resources": {
+        "max_gpu_c": 90,
+        "peak_vram_mib": 7281.39453125,
+        "min_available_ram_gib": 14.384952545166016,
+        "max_commit_fraction": 0.8817890178279321,
+        "max_power_w": 194.463
+      },
+      "images": [
+        {
+          "node": "16",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\usdu_d012_00001_.png",
+          "size": [
+            2304,
+            3456
+          ],
+          "std": 48.184084247508494,
+          "mean": 201.58265365788967,
+          "sha256": "1dfd6fb113960008c87f904ee70098d0d7d116d8d1d140aec163caf9ec6e5bec"
+        }
+      ],
+      "raw_record": "temp/community_quality/usdu_d012/result.json",
+      "visual_decision": "Runs on this GPU; mainly changed/smoothed some contours and colors. No reliable improvement in garment or hand detail; not default."
+    },
+    {
+      "name": "usdu_d020",
+      "success": true,
+      "seconds": 260.0591263999959,
+      "resources": {
+        "max_gpu_c": 90,
+        "peak_vram_mib": 7281.39453125,
+        "min_available_ram_gib": 13.883079528808594,
+        "max_commit_fraction": 0.8795146719653585,
+        "max_power_w": 194.716
+      },
+      "images": [
+        {
+          "node": "16",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\usdu_d020_00001_.png",
+          "size": [
+            2304,
+            3456
+          ],
+          "std": 47.98619191281373,
+          "mean": 201.60316724737976,
+          "sha256": "1a1ff5c53ef36d4f8f30c9bce4881d14854796438b6e2555b7eeb103af547cb2"
+        }
+      ],
+      "raw_record": "temp/community_quality/usdu_d020/result.json",
+      "visual_decision": "Runs, but stronger redraw was not a reliable detail improvement. Not default; no automatic seam pass added."
+    },
+    {
+      "name": "differential_detail",
+      "success": true,
+      "seconds": 68.00333929999033,
+      "resources": {
+        "max_gpu_c": 89,
+        "peak_vram_mib": 7793.39453125,
+        "min_available_ram_gib": 12.520797729492188,
+        "max_commit_fraction": 0.9348177645437384,
+        "max_power_w": 187.039
+      },
+      "images": [
+        {
+          "node": "29",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\differential_refined_00001_.png",
+          "size": [
+            1152,
+            1728
+          ],
+          "std": 47.065316959184344,
+          "mean": 199.32594313968193,
+          "sha256": "3f64d66a03b536fce6bf99e2c5db32a42f94bc10f1ff380e0af55af1a117e7b9"
+        },
+        {
+          "node": "16",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\differential_finished_00001_.png",
+          "size": [
+            2304,
+            3456
+          ],
+          "std": 49.69310476491336,
+          "mean": 202.29113409515924,
+          "sha256": "fb7f161e83d13f7686cd58b0451ef619a795b5d7ed1beb8323fd7a8ec147a926"
+        }
+      ],
+      "raw_record": "temp/community_quality/differential_detail/result.json",
+      "visual_decision": "Runs; mask-edge/face changes were subtle and not a clear visual gain. Keep baseline feather0; do not assume GUI20 is already active."
+    },
+    {
+      "name": "ipadapter_head_mask",
+      "success": true,
+      "seconds": 185.24697749999177,
+      "resources": {
+        "max_gpu_c": 88,
+        "peak_vram_mib": 7761.39453125,
+        "min_available_ram_gib": 13.244548797607422,
+        "max_commit_fraction": 0.8882154650409116,
+        "max_power_w": 186.124
+      },
+      "images": [
+        {
+          "node": "9",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\ipadapter_head_mask_00001_.png",
+          "size": [
+            1152,
+            1728
+          ],
+          "std": 53.70528738557693,
+          "mean": 188.61658133466221,
+          "sha256": "c5d34cf30f7846cf880c8fa280475a9ae130bff943385d0c9c2fb1481814b47f"
+        }
+      ],
+      "raw_record": "temp/community_quality/ipadapter_head_mask/result.json",
+      "visual_decision": "Runs but fixed region changed whole composition and introduced more open fingers, increasing anatomy risk. Not default or generalized across poses."
+    },
+    {
+      "name": "pag_scale1",
+      "success": true,
+      "seconds": 261.2765245999908,
+      "resources": {
+        "max_gpu_c": 90,
+        "peak_vram_mib": 7761.39453125,
+        "min_available_ram_gib": 12.92496109008789,
+        "max_commit_fraction": 0.8879117480468413,
+        "max_power_w": 214.311
+      },
+      "images": [
+        {
+          "node": "9",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\pag_scale1_00001_.png",
+          "size": [
+            1152,
+            1728
+          ],
+          "std": 45.834855775004634,
+          "mean": 201.0963174953382,
+          "sha256": "a0c258db0e85d2463371555426ce684e8272214b16f99d4200cdb7ffabce1b95"
+        }
+      ],
+      "raw_record": "temp/community_quality/pag_scale1/result.json",
+      "visual_decision": "Runs and produces a usable alternate structured full-body composition; selected as optional PAG1 profile, not a universal baseline replacement."
+    },
+    {
+      "name": "mixture_d018",
+      "success": true,
+      "seconds": 298.090085600008,
+      "resources": {
+        "max_gpu_c": 89,
+        "peak_vram_mib": 7249.39453125,
+        "min_available_ram_gib": 13.947811126708984,
+        "max_commit_fraction": 0.8793645416946627,
+        "max_power_w": 186.42
+      },
+      "images": [
+        {
+          "node": "16",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\mixture_d018_00001_.png",
+          "size": [
+            2304,
+            3456
+          ],
+          "std": 48.307089771383566,
+          "mean": 201.41789783535344,
+          "sha256": "1dc81a699c17c78070c29a6f4c7d0a20e10b2159419b3bf6e7b131de16fec8bf"
+        }
+      ],
+      "raw_record": "temp/community_quality/mixture_d018/result.json",
+      "visual_decision": "Runs with overlapping prediction fusion; still changes eyes/line/shading and does not recover anatomy. Not default. Noncommercial code-license restrictions and global sampler hooks weigh against leaving it auto-loaded."
+    },
+    {
+      "name": "pag_seed28",
+      "success": true,
+      "seconds": 261.8923407999973,
+      "resources": {
+        "max_gpu_c": 89,
+        "peak_vram_mib": 7761.39453125,
+        "min_available_ram_gib": 12.838081359863281,
+        "max_commit_fraction": 0.8875689581094466,
+        "max_power_w": 189.847
+      },
+      "images": [
+        {
+          "node": "9",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\pag_seed28_00001_.png",
+          "size": [
+            1152,
+            1728
+          ],
+          "std": 45.225977783676754,
+          "mean": 202.97240859294624,
+          "sha256": "b291b61c6c4310fe0ee35ba65d705f2cd5913ec4adc0cfbf4e297da4ded3d9f8"
+        }
+      ],
+      "raw_record": "temp/community_quality/pag_seed28/result.json",
+      "visual_decision": "PAG second seed executes with recognizable identity; open-hand simplification remains. Not proof every seed is deliverable."
+    },
+    {
+      "name": "pag_finish",
+      "success": true,
+      "seconds": 52.63905420000083,
+      "resources": {
+        "max_gpu_c": 89,
+        "peak_vram_mib": 7409.39453125,
+        "min_available_ram_gib": 13.289909362792969,
+        "max_commit_fraction": 0.9305350693942988,
+        "max_power_w": 188.451
+      },
+      "images": [
+        {
+          "node": "29",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\pag_refined_00001_.png",
+          "size": [
+            1152,
+            1728
+          ],
+          "std": 45.75456685144719,
+          "mean": 201.07004424672067,
+          "sha256": "75e49c04e918cc3e8d5a9cbae5496c4e81a807178137a24499a8c487d15288ff"
+        },
+        {
+          "node": "16",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\pag_finished_00001_.png",
+          "size": [
+            2304,
+            3456
+          ],
+          "std": 47.96506540763034,
+          "mean": 203.91478663315007,
+          "sha256": "cd0d6cdf49af0eda3f9d557adcec11b8f5a9e75ab80b7372577875c2abbb1e60"
+        }
+      ],
+      "raw_record": "temp/community_quality/pag_finish/result.json",
+      "visual_decision": "Full finishing chain on PAG candidate completed; suitable alternate artwork retained."
+    },
+    {
+      "name": "face_canvas",
+      "success": true,
+      "seconds": 66.55025089999253,
+      "resources": {
+        "max_gpu_c": 89,
+        "peak_vram_mib": 7347.39453125,
+        "min_available_ram_gib": 12.735416412353516,
+        "max_commit_fraction": 0.9355965183603009,
+        "max_power_w": 189.613
+      },
+      "images": [
+        {
+          "node": "29",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\face_canvas_refined_00001_.png",
+          "size": [
+            1152,
+            1728
+          ],
+          "std": 47.10756545321261,
+          "mean": 199.33562135631,
+          "sha256": "dc2e5026a838a6141030c6fb3ee5e31b25e4c4bf2e0771c99d3e6c19d1c35496"
+        },
+        {
+          "node": "16",
+          "path": "D:\\comfyui\\app\\output\\emilia\\community\\face_canvas_finished_00001_.png",
+          "size": [
+            2304,
+            3456
+          ],
+          "std": 49.75928709733257,
+          "mean": 202.30884823060003,
+          "sha256": "6117f791358cb5ed67080c8afca68fe688ede171891149624f45db83ab7488c1"
+        }
+      ],
+      "raw_record": "temp/community_quality/face_canvas/result.json",
+      "visual_decision": "Higher actual face-processing pixel budget executes, but noticeably alters iris/face lines rather than clearly preserving them better. Not default."
+    }
+  ],
+  "integrated": {
+    "baseline_preserved": true,
+    "optional_guidance": "ComfyUI native PerturbedAttentionGuidance scale1.0 after IPAdapter",
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\render-emilia-quality.ps1 -Seed 20261027 -Pag",
+    "visual_workflow": "app/user/default/workflows/Emilia_10_Community_PAG_Quality_8GB.json",
+    "new_models_or_pip_dependencies": false,
+    "default_mask_fix": "noise_mask_feather explicitly0 on both face and hand; GUI previously serialized20, API actual function default0. All remaining GUI optional behavior inputs also explicit in API.",
+    "gui_contract": "temp/community_quality/gui_contract_after.json",
+    "end_to_end_pag_receipt": "app/output/emilia/community/quality_pag_finished_00001_.run.json",
+    "baseline_regression_receipt": "app/output/emilia/quality/03_finished_2x_00003_.run.json",
+    "corrected_visual_workflow_run": "temp/community_quality/final_ui_history.json",
+    "final_acceptance": "temp/community_quality/final_acceptance.json",
+    "comparison": "app/output/emilia/community/community_pag_comparison.jpg",
+    "tile_detail_comparison": "app/output/emilia/community/community_tile_details.jpg",
+    "verification_service_exit": "Owned verification servers were deliberately stopped after successful jobs; supervised exit15 is cleanup, not a generation failure."
+  },
+  "experimental_extensions": {
+    "USDU": {
+      "commit": "a5547db9e1d07d3318bb21e9e9c474f4c1e9c8df",
+      "submodule": "2322caa480535b1011a1f9c18126d85ea444f146",
+      "runtime_smoke": true,
+      "installed_in_default_custom_nodes": false,
+      "audited_tested_source": "temp/community_quality/UltimateSDUpscale-tested-disabled"
+    },
+    "TiledDiffusion": {
+      "commit": "a155b1bac39147381aeaa52b9be42e545626a44f",
+      "runtime_smoke": true,
+      "installed_in_default_custom_nodes": false,
+      "audited_tested_source": "temp/community_quality/TiledDiffusion-tested-disabled",
+      "reason_disabled": "Global sampler hooks and CC BY-NC-SA4.0 borrowed-code restriction; no clear visual gain over baseline."
+    }
+  },
+  "not_selected_for_install": [
+    "SDXL ControlNet Tile weights: extra approximately2.5GB, absent locally; tutorial SD1.5 weights are not substitutes. No weight downloaded.",
+    "FaceID/InstantID: new recognition weights/providers and uncertain anime-reference ID benefit.",
+    "Duplicate PAG package: native node already available."
+  ],
+  "limitations": [
+    "No claim of a global optimum or universal improvement over every seed.",
+    "PAG changes composition and costume lines; output must be inspected.",
+    "No new system pagefile, overclock, power limit or fan policy changes.",
+    "No software temperature/power stop; hardware protections unchanged.",
+    "SDXL model/LoRA quality and original pose still limit hand anatomy; extra redraw is not a guaranteed anatomy fix."
+  ],
+  "selected_optional_artwork": "app/output/emilia/community/quality_pag_finished_00001_.png",
+  "default_baseline_artwork": "app/output/emilia/quality/03_finished_2x_00001_.png"
+}

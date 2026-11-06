@@ -1,0 +1,33 @@
+name: Emilia Studio CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install CPU test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy Pillow aiohttp pytest
+          pip install -e .
+
+      - name: Verify Emilia Studio package imports, workflow audit, and CLI
+        run: |
+          python -m emilia_studio.cli --help
+          python -m emilia_studio.cli workflows
+
+      - name: Run Emilia Studio standalone unit tests
+        run: |
+          python -m pytest tests/test_emilia_studio.py -k "not sqlite_ledger and not real_seed"

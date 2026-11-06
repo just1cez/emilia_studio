@@ -1,0 +1,129 @@
+{
+  "model": {
+    "path": "models/checkpoints/animagine-xl-4.0-opt.safetensors",
+    "bytes": 6938350040,
+    "sha256": "6327eca98bfb6538dd7a4edce22484a1bbc57a8cff6b11d075d40da1afb847ac",
+    "revision": "2b7c1b397761bf5bd3cc42e5b39ec99314a75a96",
+    "source": "https://huggingface.co/cagliostrolab/animagine-xl-4.0",
+    "mirror": "https://hf-mirror.com/cagliostrolab/animagine-xl-4.0",
+    "license": "CreativeML Open RAIL++-M"
+  },
+  "upscaler": {
+    "path": "models/upscale_models/RealESRGAN_x4plus_anime_6B.pth",
+    "bytes": 17938799,
+    "sha256": "f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da",
+    "source": "https://github.com/xinntao/Real-ESRGAN/releases/tag/v0.2.2.4"
+  },
+  "reference": {
+    "url": "https://re-zero-anime.jp/tv/character/",
+    "local": "input/emilia_reference/official_classic.png",
+    "use": "visual evaluation only; no reference pixels are inputs to the native workflow"
+  },
+  "approved": {
+    "seed": 20260913,
+    "native": "output/emilia/verified_baseline/01_native_00002_.png",
+    "upscaled": "output/emilia/verified_baseline/02_upscaled_00002_.png",
+    "input_for_upscaling": "input/emilia_native_seed_20260913.png",
+    "native_size": [
+      832,
+      1216
+    ],
+    "upscaled_size": [
+      1664,
+      2432
+    ],
+    "native_seconds": 415.687,
+    "upscale_seconds": 17.834,
+    "evaluation": "Visually close to Emilia: violet eyes, silver hair, head braid, white flower and four-petal clip, white-purple clothing and green chest gem. Independent composition. Outfit folds and trim are not a pixel-exact official model sheet."
+  },
+  "trials": [
+    {
+      "seed": 20260912,
+      "seconds": 415.245,
+      "max_observed_vram_mib": 7145,
+      "vram_sampling_interval_seconds": 10,
+      "image": "animagine_s20260912_00001_.png"
+    },
+    {
+      "seed": 20260913,
+      "seconds": 420.682,
+      "max_observed_vram_mib": 6761,
+      "vram_sampling_interval_seconds": 10,
+      "image": "animagine_s20260913_00001_.png"
+    },
+    {
+      "seed": 20260914,
+      "seconds": 421.503,
+      "max_observed_vram_mib": 6761,
+      "vram_sampling_interval_seconds": 10,
+      "image": "animagine_s20260914_00001_.png"
+    }
+  ],
+  "verification": {
+    "native_ui_run": "success",
+    "upscale_ui_run": "success",
+    "saved_native_ui_to_api_parameters_equal": true,
+    "saved_upscale_ui_to_api_parameters_equal": true,
+    "chinese_cli_run": "success",
+    "chinese_cli_image": "output/emilia/verified_baseline/ollama_native_00001_.png",
+    "chinese_cli_sampler_seconds": 422.098,
+    "chinese_cli_model_unloaded_after_prompt": true,
+    "png_api_and_visual_seed_agree": true,
+    "fixed_seed_reproduction_pixel_identical": false,
+    "fixed_seed_reproduction_mean_absolute_channel_difference_0_to_255": 1.013225107540486,
+    "note": "GPU arithmetic can produce small pixel differences; model, seed, prompts, sampler and composition are recoverable from PNG metadata."
+  },
+  "hardware": {
+    "gpu": "NVIDIA CMP 40HX",
+    "vram_mib": 8192,
+    "ram_mib": 32705,
+    "batch_size": 1,
+    "vae": "FP32 tiled 512 / overlap64",
+    "reserve_vram_gb": 0.8,
+    "comfyui": "0.34.0",
+    "torch": "2.13.0+cu130"
+  },
+  "weight_repair": {
+    "model": "app\\models\\checkpoints\\animagine-xl-4.0-opt.safetensors",
+    "revision": "2b7c1b397761bf5bd3cc42e5b39ec99314a75a96",
+    "metadata_url": "https://hf-mirror.com/api/models/cagliostrolab/animagine-xl-4.0/tree/2b7c1b397761bf5bd3cc42e5b39ec99314a75a96",
+    "size": 6938350040,
+    "sha256": "6327eca98bfb6538dd7a4edce22484a1bbc57a8cff6b11d075d40da1afb847ac",
+    "verification": "Independent on-disk SHA256 after guarded downloader publication",
+    "total_chunks": 104,
+    "repaired_chunks": 24,
+    "nonfinite_prefix_chunks": 9,
+    "finite_incorrect_prefix_chunks": 15,
+    "remote_download_bytes": 176160768,
+    "different_bytes": 32767131,
+    "corrupted_prefix_extent_bytes": 33209333,
+    "unchanged_chunks": 80,
+    "findings": "24 cached chunk prefixes differed from official pinned HTTP 206 byte-range responses; mismatch extents ended between 162264 and 11947374 bytes from chunk start. Replacing only those prefixes yielded exact official full-file SHA256. Zero blocks in original scan were unchanged and therefore official bytes. Historical cause of prefix corruption is not established by available evidence. No inference or model loading used for diagnostics.",
+    "repaired_starts": [
+      239546368,
+      440872960,
+      575090688,
+      642199552,
+      776417280,
+      843526144,
+      910635008,
+      1044852736,
+      1111961600,
+      1179070464,
+      1246179328,
+      1313288192,
+      1380397056,
+      1447505920,
+      1514614784,
+      1581723648,
+      1648832512,
+      1715941376,
+      1783050240,
+      1850159104,
+      1917267968,
+      1984376832,
+      2051485696,
+      2118594560
+    ]
+  }
+}

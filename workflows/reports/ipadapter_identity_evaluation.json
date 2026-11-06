@@ -1,0 +1,95 @@
+{
+  "purpose": "Official-reference-driven Emilia identity test",
+  "official_sources": [
+    "https://re-zero-anime.jp/tv/character/",
+    "https://re-zero-anime.jp/tv/assets/character/f/2.webp"
+  ],
+  "reference_input": "input/official_face_center_clean.png",
+  "extension": "custom_nodes/comfyui-ipadapter-plus",
+  "models": {
+    "models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors": {
+      "bytes": 2528373448,
+      "sha256": "6ca9667da1ca9e0b0f75e46bb030f7e011f44f86cbfb8d5a36590fcd7507b030"
+    },
+    "models/ipadapter/ip-adapter-plus-face_sdxl_vit-h.safetensors": {
+      "bytes": 847517512,
+      "sha256": "677ad8860204f7d0bfba12d29e6c31ded9beefdf3e4bbd102518357d31a292c1"
+    }
+  },
+  "workflow": "app/emilia/emilia_ipadapter_official_identity.api.json",
+  "test_runs": [
+    "app/emilia/ipadapter_runs.json",
+    "app/emilia/ipadapter_panel_runs.json"
+  ],
+  "candidates": [
+    {
+      "weight": 0.35,
+      "output": "output/emilia/ipadapter/ipface035_native_00001_.png",
+      "verdict": "usable but less identity pressure than clean reference run"
+    },
+    {
+      "weight": 0.55,
+      "output": "output/emilia/ipadapter/ipface055_native_00001_.png",
+      "verdict": "good identity, but strip reference introduces background/garment artifacts"
+    },
+    {
+      "weight": 0.75,
+      "output": "output/emilia/ipadapter/ipface075_native_00001_.png",
+      "verdict": "too strong/less natural; not selected"
+    },
+    {
+      "weight": 0.55,
+      "reference": "clean center crop from official_face.png",
+      "output": "output/emilia/ipadapter/official_face_clean_w055_00001_.png",
+      "final_2x": "output/emilia/ipadapter/official_face_clean_w055_2x_00001_.png",
+      "verdict": "selected; strongest official face, braid, X hair clip, violet-eye consistency"
+    }
+  ],
+  "same_seed_baseline": "output/emilia/ipadapter/compare_baseline_00001_.png",
+  "visual_score": {
+    "identity_face": 9.0,
+    "official_hair_and_accessories": 9.0,
+    "official_clothing_palette": 8.5,
+    "anatomy": 8.0,
+    "composition": 7.5,
+    "upscale_cleanliness": 8.5,
+    "overall": 8.5
+  },
+  "decision": {
+    "include_in_default": false,
+    "retain_as_optional_identity_mode": true,
+    "reason": "IPAdapter materially improves the official face/eyes/braid resemblance versus the same-seed text-only baseline, but CLIP Vision consumes about 2.53 GB and the conditioning can bias clothing/background toward a character-sheet look. Keep the current production workflow as default; use this optional graph for identity-priority images and inspect native output before upscale."
+  },
+  "artifacts": [
+    {
+      "path": "output/emilia/ipadapter/official_face_clean_w055_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1120734,
+      "sha256": "4505cd5f36a9e372b573b92683d93a21214827c47a8316d8283e790a798539b3",
+      "prompt_metadata": true
+    },
+    {
+      "path": "output/emilia/ipadapter/official_face_clean_w055_2x_00001_.png",
+      "size": [
+        1664,
+        2432
+      ],
+      "bytes": 2649315,
+      "sha256": "bf74397baf9a7c4413b6357f74e30036ccc2b3e2845baba75ccd551bdea4adc2",
+      "prompt_metadata": true
+    },
+    {
+      "path": "output/emilia/ipadapter/compare_baseline_00001_.png",
+      "size": [
+        832,
+        1216
+      ],
+      "bytes": 1300402,
+      "sha256": "1b299397517f075fe2399e8e25e1dedeb115bee375a567ae300023dfb896d45c",
+      "prompt_metadata": true
+    }
+  ]
+}

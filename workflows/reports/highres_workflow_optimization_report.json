@@ -1,0 +1,106 @@
+{
+  "status": "Historical speed comparison; superseded by the quality-first default",
+  "current_report": "app/emilia/quality_first_report.json",
+  "target": "app/emilia/emilia_ipadapter_highres_production.api.json",
+  "candidate_gui": "app/user/default/workflows/Emilia_08_HighRes_Candidates_8GB.json",
+  "delivery_api": "app/emilia/emilia_ipadapter_highres_upscale.api.json",
+  "delivery_gui": "app/user/default/workflows/Emilia_09_HighRes_Selected_2x.json",
+  "launcher": "start-comfyui.ps1",
+  "preserved": {
+    "model": "Illustrious-XL-v0.1.safetensors",
+    "lora": "emilia-re-zero-re.safetensors",
+    "lora_model_clip_strength": [0.8, 0.8],
+    "reference_image": "official_face_center_clean.png",
+    "ipadapter_weight": 0.55,
+    "ipadapter_interval": [0, 1],
+    "resolution": [1152, 1728],
+    "batch_size": 1,
+    "steps": 32,
+    "cfg": 5.5,
+    "sampler": "euler_ancestral",
+    "scheduler": "normal",
+    "api_seed": 20261026,
+    "prompts_changed": false,
+    "delivery_resolution": [2304, 3456],
+    "delivery_method": "RealESRGAN_x4plus_anime_6B, then Lanczos scale_by 0.5"
+  },
+  "changes": [
+    "Candidate graph uses VAEDecode instead of VAEDecodeTiled; verified with FP16 VAE.",
+    "Launcher selects FP16 VAE and disables pinned host memory; dynamic VRAM and PyTorch attention remain enabled.",
+    "Candidate graph saves only the native image; expensive upscaling is run only for selected PNGs in a separate graph.",
+    "Both API files contain executable nodes only at top level and import directly into the frontend.",
+    "Visual candidate workflow includes a valid increment-after-generation seed control; API seed remains fixed for reproducibility.",
+    "Visual workflows include explicit stage instructions and preserve the reference conditioning graph."
+  ],
+  "verification_method": "Two seeds, 20261026 and 20261027, using fresh then warm runs. Both comparison services used the existing comfyui Conda environment, reserve-vram 0.8, disabled pinned memory and unchanged generation parameters. OS filesystem cache was not cleared. GPU temperature and power were recorded without software temperature/power stopping. No overclock, power-limit, fan-policy or dependency changes.",
+  "paired_results": [
+    {
+      "seed": 20261026,
+      "baseline_full_with_upscale_seconds": 183.38480230001733,
+      "optimized_native_only_seconds": 119.83601680002175,
+      "baseline_decode_seconds": 23.06877769998391,
+      "optimized_decode_seconds": 1.2544083999819122,
+      "baseline_sampler_seconds": 109.34041539998725,
+      "optimized_sampler_seconds": 108.2867688999977,
+      "latent_exact_match": true,
+      "native_image_mae_255": 1.6383001804351807,
+      "native_image_psnr_db": 39.24882809702127
+    },
+    {
+      "seed": 20261027,
+      "baseline_full_with_upscale_seconds": 149.28408440001658,
+      "optimized_native_only_seconds": 109.14485209999839,
+      "baseline_decode_seconds": 25.63416970000253,
+      "optimized_decode_seconds": 1.3680639000085648,
+      "baseline_sampler_seconds": 108.13714239999535,
+      "optimized_sampler_seconds": 107.49406730002374,
+      "latent_exact_match": true,
+      "native_image_mae_255": 2.850872039794922,
+      "native_image_psnr_db": 35.072961518532864
+    }
+  ],
+  "limits": [
+    "The original full pipeline and optimized native-only pipeline have different output scopes; the entire latency reduction is not an algorithmic speedup.",
+    "The first-run comparison is affected by OS file-cache and model initialization differences; warm-run node timings are more useful.",
+    "Tiled versus non-tiled VAE decoding changes some pixels despite identical sampling latents. Visual comparison found the tested composition and identity preserved, not pixel-identical output.",
+    "Existing foot/hand anatomy and stylized background risks remain; this optimization does not claim to repair them.",
+    "FP16 VAE validity was checked on this installed Illustrious checkpoint, not every other model.",
+    "This IPAdapter high-resolution workflow remains much slower than the previously measured simple 1024-square SDXL benchmark; those runtimes are not interchangeable."
+  ],
+  "isolated_delivery_smoke": {
+    "submitted_via_browser": true,
+    "success": true,
+    "execution_seconds": 28.868,
+    "output": "temp/highres_workflow_optimization/optimized/output/emilia/highres/production_2304x3456_2x_00001_.png",
+    "output_dimensions": [2304, 3456],
+    "loads_diffusion_model": false
+  },
+  "real_launcher_smoke": {
+    "launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File D:/comfyui/start-comfyui.ps1",
+    "port": 8188,
+    "python_environment": "D:/conda-data/envs/comfyui",
+    "fp16_vae_and_disabled_pinned_memory_confirmed": true,
+    "both_visual_workflows_submitted_via_browser": true,
+    "candidate_success": true,
+    "candidate_seconds": 114.124,
+    "candidate_output": "app/output/emilia/highres/production_1152x1728_native_00001_.png",
+    "candidate_dimensions": [1152, 1728],
+    "visual_seed_increment_confirmed": true,
+    "selected_candidate_uploaded_through_load_image": true,
+    "delivery_success": true,
+    "delivery_seconds": 28.284,
+    "delivery_output": "app/output/emilia/highres/production_2304x3456_2x_00001_.png",
+    "delivery_dimensions": [2304, 3456],
+    "visual_preview_confirmed": true
+  },
+  "final_acceptance_record": "temp/highres_workflow_optimization/final_acceptance.json",
+  "verification_service_shutdown": "The owned port-8188 verification process was deliberately terminated after both browser jobs succeeded; supervised exit code 15 is cleanup, not a generation failure.",
+  "raw_records": [
+    "temp/highres_workflow_optimization/baseline_results.json",
+    "temp/highres_workflow_optimization/optimized_results.json",
+    "temp/highres_workflow_optimization/comparison.json",
+    "temp/highres_workflow_optimization/ui_delivery_history.json",
+    "temp/highres_workflow_optimization/final_launcher_history.json",
+    "temp/highres_workflow_optimization/final_launcher_system_stats.json"
+  ]
+}

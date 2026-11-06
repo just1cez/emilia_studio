@@ -1,0 +1,16 @@
+{
+  "guided_checkpoint": {
+    "path":"models/checkpoints/Illustrious-XL-v0.1-GUIDED.safetensors",
+    "sha256":"e3d12d0f76d61aa31d2668a2217e5b642592193f2946842c44d7056ea5469cce",
+    "source":"https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0",
+    "test_image":"app/output/emilia/experiments/guided_lora_080_00001_.png",
+    "same_lora":true,
+    "same_seed":20260913,
+    "same_resolution":[832,1216]
+  },
+  "comparison": {
+    "selected_checkpoint":"Illustrious-XL-v0.1.safetensors",
+    "reason":"Guided preserved the character but did not improve the aesthetic target: its face and costume were flatter and its framing less balanced than the original v0.1 result. Original remains the default for artwork; Guided is retained as a verified optional alternative.",
+    "default_workflow_unchanged":true
+  }
+}

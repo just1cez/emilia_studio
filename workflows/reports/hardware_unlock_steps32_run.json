@@ -1,0 +1,64 @@
+{
+  "workflow": "app/emilia/emilia_ipadapter_high_quality_test.api.json",
+  "comparison": "same prompt, identity reference, and seed; KSampler steps 24 vs 32",
+  "seed": 20261314,
+  "runs": [
+    {
+      "profile": "steps24",
+      "seed": 20261314,
+      "steps": 24,
+      "prompt_id": "dde2e96c-70ba-4429-b3f3-68619d7c01a0",
+      "status": "success",
+      "elapsed_seconds": 140.1,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "hardware_unlock_steps24_native_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "hardware_unlock_steps24_2x_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "profile": "steps32",
+      "seed": 20261314,
+      "steps": 32,
+      "prompt_id": "11d97811-7cb2-4256-9150-df36d9cdfa4e",
+      "status": "success",
+      "elapsed_seconds": 45.0,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "hardware_unlock_steps32_native_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "hardware_unlock_steps32_2x_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "gpu_samples": "app/emilia/hardware_unlock_steps32_gpu_samples.json"
+}

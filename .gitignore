@@ -1,0 +1,25 @@
+# Python & Packaging
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# External ComfyUI Runtime, Local Conda Environment, Caches & Temp Logs
+# (Option 2 Physical Isolation: `app/` stays an untouched standalone ComfyUI Git clone;
+#  all custom workflows, patches, tests, and reference assets live at the top level)
+/app/
+/env/
+/cache/
+/temp/
+.conda_envs_dir_test
+miniconda-installer.exe
+
+# Local Configuration & SQLite Databases
+config.toml
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal

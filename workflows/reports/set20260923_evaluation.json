@@ -1,0 +1,250 @@
+{
+  "date": "2026-09-23",
+  "purpose": "quality evaluation of a generated image set using the optimized production workflow",
+  "workflow": "app/emilia/emilia_lora_production.api.json",
+  "gui_workflow": "app/user/default/workflows/Emilia_07_Production_FaceHand.json",
+  "fallback_workflow": "app/emilia/emilia_eye_repair.api.json",
+  "generation_record": "app/emilia/set20260923_run.json",
+  "repair_record": "app/emilia/set20260923_repairs.json",
+  "visual_method": "Manual inspection of 832x1216 native outputs and 1664x2432 finals, plus enlarged face/hand crops. Scores are 0-10 visual scores, not an automated aesthetic metric.",
+  "criteria": [
+    "identity and clothing adherence",
+    "composition and subject framing",
+    "face and eye consistency",
+    "hands and anatomy",
+    "linework/upscale cleanliness"
+  ],
+  "samples": [
+    {
+      "index": 1,
+      "base_seed": 20261001,
+      "original_native": "output/emilia/evaluation/set20260923_01_native_00001_.png",
+      "original_2x": "output/emilia/evaluation/set20260923_01_2x_00001_.png",
+      "original_verdict": "reject_pending_repair",
+      "defects": [
+        "明显异色瞳：左眼偏蓝/黄，右眼偏粉紫"
+      ],
+      "scores_original": {
+        "identity_clothing": 9.0,
+        "composition": 8.5,
+        "face_eyes": 5.0,
+        "hands_anatomy": 7.5,
+        "render_upscale": 8.5
+      },
+      "repair_native": "output/emilia/evaluation/set20260923_01_repaired_native_00001_.png",
+      "repair_2x": "output/emilia/evaluation/set20260923_01_repaired_2x_00001_.png",
+      "repair_verdict": "accept",
+      "scores_final": {
+        "identity_clothing": 9.0,
+        "composition": 8.5,
+        "face_eyes": 9.0,
+        "hands_anatomy": 7.5,
+        "render_upscale": 8.5
+      },
+      "final_notes": "修复后双眼统一紫色；表情轻微改变但仍自然，手指无明显多余/缺失",
+      "artifacts": [
+        {
+          "path": "output/emilia/evaluation/set20260923_01_native_00001_.png",
+          "size": [
+            832,
+            1216
+          ],
+          "bytes": 1375707,
+          "sha256": "f49086eaac6f2f688d5da2313f4b2a431ddc2251446210aa202ebb34e02f3e5c",
+          "has_comfy_prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/evaluation/set20260923_01_2x_00001_.png",
+          "size": [
+            1664,
+            2432
+          ],
+          "bytes": 3362658,
+          "sha256": "9c1d8811fb071b6a44f90bafba76fb738eded0664ee41e0cbb1972843a19116b",
+          "has_comfy_prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/evaluation/set20260923_01_repaired_native_00001_.png",
+          "size": [
+            832,
+            1216
+          ],
+          "bytes": 1372617,
+          "sha256": "7df485267c0cfd64b26ce7c047bd05868bc738f2cb121071df608da074f5539b",
+          "has_comfy_prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/evaluation/set20260923_01_repaired_2x_00001_.png",
+          "size": [
+            1664,
+            2432
+          ],
+          "bytes": 3388495,
+          "sha256": "d751cc11c0a33ad62d57eaccdf83e2c2c3a3ebfaf833f256f5fdcbd3da210bc8",
+          "has_comfy_prompt_metadata": true
+        }
+      ],
+      "original_average": 7.7,
+      "final_average": 8.5
+    },
+    {
+      "index": 2,
+      "base_seed": 20261002,
+      "original_native": "output/emilia/evaluation/set20260923_02_native_00001_.png",
+      "original_2x": "output/emilia/evaluation/set20260923_02_2x_00001_.png",
+      "original_verdict": "accept",
+      "defects": [
+        "手部交叠导致指节细节偏简化，但未见明显畸形"
+      ],
+      "scores_original": {
+        "identity_clothing": 8.5,
+        "composition": 7.5,
+        "face_eyes": 8.5,
+        "hands_anatomy": 7.0,
+        "render_upscale": 8.5
+      },
+      "final_native": "output/emilia/evaluation/set20260923_02_native_00001_.png",
+      "final_2x": "output/emilia/evaluation/set20260923_02_2x_00001_.png",
+      "final_verdict": "accept",
+      "scores_final": {
+        "identity_clothing": 8.5,
+        "composition": 7.5,
+        "face_eyes": 8.5,
+        "hands_anatomy": 7.0,
+        "render_upscale": 8.5
+      },
+      "final_notes": "三张中主体相对较小、背景留白较多；脸部和服装稳定，雪花与冰雪背景层次最好",
+      "artifacts": [
+        {
+          "path": "output/emilia/evaluation/set20260923_02_native_00001_.png",
+          "size": [
+            832,
+            1216
+          ],
+          "bytes": 1279916,
+          "sha256": "48b1539095b234aecbfd49b975f61c36bb47ec42408f5d59c85a45655c2e0e2d",
+          "has_comfy_prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/evaluation/set20260923_02_2x_00001_.png",
+          "size": [
+            1664,
+            2432
+          ],
+          "bytes": 2666194,
+          "sha256": "55d48edfbdcbde8a2b5a33ee038d0e7c60b6941cad782c6cf478eb96007b5d4e",
+          "has_comfy_prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/evaluation/set20260923_02_native_00001_.png",
+          "size": [
+            832,
+            1216
+          ],
+          "bytes": 1279916,
+          "sha256": "48b1539095b234aecbfd49b975f61c36bb47ec42408f5d59c85a45655c2e0e2d",
+          "has_comfy_prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/evaluation/set20260923_02_2x_00001_.png",
+          "size": [
+            1664,
+            2432
+          ],
+          "bytes": 2666194,
+          "sha256": "55d48edfbdcbde8a2b5a33ee038d0e7c60b6941cad782c6cf478eb96007b5d4e",
+          "has_comfy_prompt_metadata": true
+        }
+      ],
+      "original_average": 8.0,
+      "final_average": 8.0
+    },
+    {
+      "index": 3,
+      "base_seed": 20261003,
+      "original_native": "output/emilia/evaluation/set20260923_03_native_00001_.png",
+      "original_2x": "output/emilia/evaluation/set20260923_03_2x_00001_.png",
+      "original_verdict": "reject_pending_repair",
+      "defects": [
+        "明显异色瞳：一只眼偏蓝紫，另一只偏粉紫"
+      ],
+      "scores_original": {
+        "identity_clothing": 9.0,
+        "composition": 8.5,
+        "face_eyes": 5.5,
+        "hands_anatomy": 7.5,
+        "render_upscale": 8.5
+      },
+      "repair_native": "output/emilia/evaluation/set20260923_03_repaired_native_00001_.png",
+      "repair_2x": "output/emilia/evaluation/set20260923_03_repaired_2x_00001_.png",
+      "repair_verdict": "accept",
+      "scores_final": {
+        "identity_clothing": 9.0,
+        "composition": 8.5,
+        "face_eyes": 9.0,
+        "hands_anatomy": 7.5,
+        "render_upscale": 8.5
+      },
+      "final_notes": "修复后双眼统一紫色；冰宫柱背景构图清晰，手部保持自然交叠",
+      "artifacts": [
+        {
+          "path": "output/emilia/evaluation/set20260923_03_native_00001_.png",
+          "size": [
+            832,
+            1216
+          ],
+          "bytes": 1361242,
+          "sha256": "e122abff405ead05895bd52dd622c0881ffb7310be14cc733e3969ba67ccf4e2",
+          "has_comfy_prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/evaluation/set20260923_03_2x_00001_.png",
+          "size": [
+            1664,
+            2432
+          ],
+          "bytes": 3459645,
+          "sha256": "ff0369bff65d4979f3be3dfd5996525fddbff9932b81937dec7daed4c43b8ca2",
+          "has_comfy_prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/evaluation/set20260923_03_repaired_native_00001_.png",
+          "size": [
+            832,
+            1216
+          ],
+          "bytes": 1358267,
+          "sha256": "ce5578c5fa49cbf333d2227fd3e55c5edd7eedf330b0e5e1518359d3d318e5e6",
+          "has_comfy_prompt_metadata": true
+        },
+        {
+          "path": "output/emilia/evaluation/set20260923_03_repaired_2x_00001_.png",
+          "size": [
+            1664,
+            2432
+          ],
+          "bytes": 3489208,
+          "sha256": "cd62dcdeac1fcc7e5aaa28106e792347a4c742557d8254e4cbfaa60721ff6292",
+          "has_comfy_prompt_metadata": true
+        }
+      ],
+      "original_average": 7.8,
+      "final_average": 8.5
+    }
+  ],
+  "set_result": {
+    "raw_generated": 3,
+    "raw_accepted_without_repair": 1,
+    "raw_rejected_for_eye_color": 2,
+    "fallback_repairs": 2,
+    "final_accepted": 3,
+    "final_average_score": 8.33,
+    "acceptance_rate_after_fallback": 1.0,
+    "quality_summary": "The production chain gives clean anime linework, stable Emilia clothing and usable full-body anatomy. Eye-color drift remains the dominant failure mode; the targeted eye-repair fallback recovered both failed samples. Seed 2 has the weakest framing because the subject is smaller, but it is still acceptable."
+  },
+  "review_assets": [
+    "output/emilia/evaluation/set20260923_contact_sheet.jpg",
+    "output/emilia/evaluation/set20260923_quality_closeups.jpg",
+    "output/emilia/evaluation/set20260923_final_selection.jpg"
+  ]
+}

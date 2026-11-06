@@ -1,0 +1,56 @@
+{
+  "workflow": "app/emilia/emilia_ipadapter_face.api.json",
+  "runs": [
+    {
+      "panel": 1,
+      "prompt_id": "f162615c-4530-480f-91fd-352d3b02393a",
+      "status": "success",
+      "elapsed_seconds": 396.0,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "panel1_w055_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "panel": 2,
+      "prompt_id": "f5a2b27a-5898-47af-8daf-ff5803b69438",
+      "status": "success",
+      "elapsed_seconds": 400.8,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "panel2_w055_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "panel": 3,
+      "prompt_id": "73814061-c47e-445a-a42a-b5a98531f4d0",
+      "status": "success",
+      "elapsed_seconds": 400.9,
+      "outputs": {
+        "9": {
+          "images": [
+            {
+              "filename": "panel3_w055_00001_.png",
+              "subfolder": "emilia\\ipadapter",
+              "type": "output"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

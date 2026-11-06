@@ -1,0 +1,124 @@
+{
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+    },
+    "_meta": {
+      "title": "Illustrious XL v0.1 / verified SHA256"
+    }
+  },
+  "10": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "4",
+        1
+      ],
+      "lora_name": "emilia-re-zero-re.safetensors",
+      "strength_model": 0.85,
+      "strength_clip": 0.85
+    },
+    "_meta": {
+      "title": "Emilia Re:Zero LoRA / 0.8"
+    }
+  },
+  "5": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 832,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "原生832×1216 / batch 1"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "1girl, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, solo, anime screencap, official character design, white hair, long hair, straight bangs, crown braid, violet eyes, natural anime eyes, clear round irises, pointy ears, white flower, hair ornament, x hair ornament, purple ribbon, white cape, white dress, purple trim, detached sleeves, green gem, youthful face, gentle warm smile, looking at viewer, portrait, flower garden bokeh, soft pastel colors, delicate clean lineart, refined anime cel shading, masterpiece, best quality",
+      "clip": [
+        "10",
+        1
+      ]
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "worst quality, bad quality, low quality, lowres, bad anatomy, bad hands, extra fingers, extra limbs, asymmetrical eyes, crossed eyes, spiral eyes, segmented iris, red eyes, blue eyes, mismatched eyes, heterochromia, watermark, text, logo, photo, realistic, 3d, nsfw, giant breasts, overly sexualized, chibi, child, mature woman, thick outline, oversaturated",
+      "clip": [
+        "10",
+        1
+      ]
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "10",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ],
+      "seed": 20260923,
+      "steps": 24,
+      "cfg": 5.0,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1.0
+    },
+    "_meta": {
+      "title": "Euler a / 24步 / CFG5.5"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "FP32 VAE分块解码"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "emilia/experiments/portrait_dpmpp_natural"
+    },
+    "_meta": {
+      "title": "保存LoRA原生图"
+    }
+  }
+}

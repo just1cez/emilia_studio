@@ -1,0 +1,2451 @@
+{
+  "id": "emilia-production-face-hand",
+  "revision": 0,
+  "last_node_id": 30,
+  "last_link_id": 36,
+  "nodes": [
+    {
+      "id": 4,
+      "type": "CheckpointLoaderSimple",
+      "pos": [
+        0,
+        0
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "ckpt_name",
+          "name": "ckpt_name",
+          "type": [
+            "Illustrious-XL-v0.1.safetensors"
+          ],
+          "link": null,
+          "widget": {
+            "name": "ckpt_name"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            1
+          ]
+        },
+        {
+          "localized_name": "CLIP",
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            2
+          ]
+        },
+        {
+          "localized_name": "VAE",
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            14,
+            18,
+            28
+          ]
+        }
+      ],
+      "title": "Illustrious XL v0.1 / verified SHA256",
+      "properties": {
+        "Node name for S&R": "CheckpointLoaderSimple"
+      },
+      "widgets_values": [
+        "Illustrious-XL-v0.1.safetensors"
+      ],
+      "widgets_values_named": {
+        "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+      }
+    },
+    {
+      "id": 10,
+      "type": "LoraLoader",
+      "pos": [
+        340,
+        0
+      ],
+      "size": [
+        320,
+        150
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        },
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 2
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": [
+            "emilia-re-zero-re.safetensors"
+          ],
+          "link": null,
+          "widget": {
+            "name": "lora_name"
+          }
+        },
+        {
+          "localized_name": "strength_model",
+          "name": "strength_model",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "strength_model"
+          }
+        },
+        {
+          "localized_name": "strength_clip",
+          "name": "strength_clip",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "strength_clip"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            3,
+            16,
+            26
+          ]
+        },
+        {
+          "localized_name": "CLIP",
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            17,
+            27
+          ]
+        }
+      ],
+      "title": "Emilia LoRA / 0.8 identity lock",
+      "properties": {
+        "Node name for S&R": "LoraLoader"
+      },
+      "widgets_values": [
+        "emilia-re-zero-re.safetensors",
+        0.8,
+        0.8
+      ],
+      "widgets_values_named": {
+        "lora_name": "emilia-re-zero-re.safetensors",
+        "strength_model": 0.8,
+        "strength_clip": 0.8
+      }
+    },
+    {
+      "id": 5,
+      "type": "EmptyLatentImage",
+      "pos": [
+        0,
+        240
+      ],
+      "size": [
+        300,
+        110
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "height"
+          }
+        },
+        {
+          "localized_name": "batch_size",
+          "name": "batch_size",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "batch_size"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "LATENT",
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "title": "832x1216 / batch 1",
+      "properties": {
+        "Node name for S&R": "EmptyLatentImage"
+      },
+      "widgets_values": [
+        832,
+        1216,
+        1
+      ],
+      "widgets_values_named": {
+        "width": 832,
+        "height": 1216,
+        "batch_size": 1
+      }
+    },
+    {
+      "id": 6,
+      "type": "CLIPTextEncode",
+      "pos": [
+        720,
+        0
+      ],
+      "size": [
+        440,
+        220
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "text"
+          }
+        },
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 4
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            11
+          ]
+        }
+      ],
+      "title": "Base positive / simple visible-hand pose",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, anime key visual, official character design, silver-white hair, long hair, straight bangs, crown braid, same violet eye color, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, gentle gentle smile, looking at viewer, full body, medium-long shot, subject fills the frame, standing, both arms visible, one hand gently raised holding a snowflake, other hand resting near chest, visible hands, relaxed simple pose, balanced proportions, centered composition, snowy flower garden, stone balustrade, soft winter daylight, pale blue sky, clean anime lineart, refined cel shading, soft colors, masterpiece, best quality"
+      ],
+      "widgets_values_named": {
+        "text": "1girl, solo, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, anime key visual, official character design, silver-white hair, long hair, straight bangs, crown braid, same violet eye color, violet eyes, matching violet irises, pointed elf ears, white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, gentle gentle smile, looking at viewer, full body, medium-long shot, subject fills the frame, standing, both arms visible, one hand gently raised holding a snowflake, other hand resting near chest, visible hands, relaxed simple pose, balanced proportions, centered composition, snowy flower garden, stone balustrade, soft winter daylight, pale blue sky, clean anime lineart, refined cel shading, soft colors, masterpiece, best quality"
+      }
+    },
+    {
+      "id": 7,
+      "type": "CLIPTextEncode",
+      "pos": [
+        720,
+        280
+      ],
+      "size": [
+        440,
+        220
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "text"
+          }
+        },
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "title": "Base negative / anatomy guardrails",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, complex hand gesture, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, one blue eye, one pink eye, deformed clothing, tangled hair"
+      ],
+      "widgets_values_named": {
+        "text": "worst quality, low quality, lowres, blurry, out of focus, bad anatomy, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, extra arms, extra legs, extra limbs, disconnected limbs, duplicated body, multiple girls, tiny subject, distant view, cropped head, cropped feet, cut off, complex hand gesture, holding multiple objects, text, watermark, signature, logo, jpeg artifacts, photo, realistic, 3d, chibi, child, mature woman, nsfw, nude, overly sexualized, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, mismatched eyes, heterochromia, one blue eye, one pink eye, deformed clothing, tangled hair"
+      }
+    },
+    {
+      "id": 3,
+      "type": "KSampler",
+      "pos": [
+        1240,
+        100
+      ],
+      "size": [
+        310,
+        270
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 3
+        },
+        {
+          "localized_name": "seed",
+          "name": "seed",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "seed"
+          }
+        },
+        {
+          "localized_name": "steps",
+          "name": "steps",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "steps"
+          }
+        },
+        {
+          "localized_name": "cfg",
+          "name": "cfg",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "cfg"
+          }
+        },
+        {
+          "localized_name": "sampler_name",
+          "name": "sampler_name",
+          "type": [
+            "euler",
+            "euler_cfg_pp",
+            "euler_ancestral",
+            "euler_ancestral_cfg_pp",
+            "heun",
+            "heunpp2",
+            "exp_heun_2_x0",
+            "exp_heun_2_x0_sde",
+            "dpm_2",
+            "dpm_2_ancestral",
+            "lms",
+            "dpm_fast",
+            "dpm_adaptive",
+            "dpmpp_2s_ancestral",
+            "dpmpp_2s_ancestral_cfg_pp",
+            "dpmpp_sde",
+            "dpmpp_sde_gpu",
+            "dpmpp_2m",
+            "dpmpp_2m_cfg_pp",
+            "dpmpp_2m_sde",
+            "dpmpp_2m_sde_gpu",
+            "dpmpp_2m_sde_heun",
+            "dpmpp_2m_sde_heun_gpu",
+            "dpmpp_3m_sde",
+            "dpmpp_3m_sde_gpu",
+            "ddpm",
+            "lcm",
+            "ipndm",
+            "ipndm_v",
+            "deis",
+            "res_multistep",
+            "res_multistep_cfg_pp",
+            "res_multistep_ancestral",
+            "res_multistep_ancestral_cfg_pp",
+            "gradient_estimation",
+            "gradient_estimation_cfg_pp",
+            "er_sde",
+            "seeds_2",
+            "seeds_3",
+            "sa_solver",
+            "sa_solver_pece",
+            "ddim",
+            "uni_pc",
+            "uni_pc_bh2"
+          ],
+          "link": null,
+          "widget": {
+            "name": "sampler_name"
+          }
+        },
+        {
+          "localized_name": "scheduler",
+          "name": "scheduler",
+          "type": [
+            "simple",
+            "sgm_uniform",
+            "karras",
+            "exponential",
+            "ddim_uniform",
+            "beta",
+            "normal",
+            "linear_quadratic",
+            "kl_optimal"
+          ],
+          "link": null,
+          "widget": {
+            "name": "scheduler"
+          }
+        },
+        {
+          "localized_name": "positive",
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 11
+        },
+        {
+          "localized_name": "negative",
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 12
+        },
+        {
+          "localized_name": "latent_image",
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 10
+        },
+        {
+          "localized_name": "denoise",
+          "name": "denoise",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "denoise"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "LATENT",
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            13
+          ]
+        }
+      ],
+      "title": "Base render / Euler a / 24 steps / CFG 5.5",
+      "properties": {
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        20260930,
+        24,
+        5.5,
+        "euler_ancestral",
+        "normal",
+        1.0
+      ],
+      "widgets_values_named": {
+        "seed": 20260930,
+        "steps": 24,
+        "cfg": 5.5,
+        "sampler_name": "euler_ancestral",
+        "scheduler": "normal",
+        "denoise": 1.0
+      }
+    },
+    {
+      "id": 8,
+      "type": "VAEDecodeTiled",
+      "pos": [
+        1620,
+        100
+      ],
+      "size": [
+        300,
+        170
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "samples",
+          "name": "samples",
+          "type": "LATENT",
+          "link": 13
+        },
+        {
+          "localized_name": "vae",
+          "name": "vae",
+          "type": "VAE",
+          "link": 14
+        },
+        {
+          "localized_name": "tile_size",
+          "name": "tile_size",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "tile_size"
+          }
+        },
+        {
+          "localized_name": "overlap",
+          "name": "overlap",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "overlap"
+          }
+        },
+        {
+          "localized_name": "temporal_size",
+          "name": "temporal_size",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "temporal_size"
+          }
+        },
+        {
+          "localized_name": "temporal_overlap",
+          "name": "temporal_overlap",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "temporal_overlap"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "title": "FP32 tiled VAE / 512 / 64",
+      "properties": {
+        "Node name for S&R": "VAEDecodeTiled"
+      },
+      "widgets_values": [
+        512,
+        64,
+        64,
+        8
+      ],
+      "widgets_values_named": {
+        "tile_size": 512,
+        "overlap": 64,
+        "temporal_size": 64,
+        "temporal_overlap": 8
+      }
+    },
+    {
+      "id": 20,
+      "type": "UltralyticsDetectorProvider",
+      "pos": [
+        1620,
+        400
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model_name",
+          "name": "model_name",
+          "type": [
+            "bbox/face_yolov8n.pt",
+            "bbox/hand_yolov8n.pt"
+          ],
+          "link": null,
+          "widget": {
+            "name": "model_name"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "BBOX_DETECTOR",
+          "name": "BBOX_DETECTOR",
+          "type": "BBOX_DETECTOR",
+          "links": [
+            21
+          ]
+        },
+        {
+          "localized_name": "SEGM_DETECTOR",
+          "name": "SEGM_DETECTOR",
+          "type": "SEGM_DETECTOR",
+          "links": []
+        }
+      ],
+      "title": "Face detector / YOLOv8n",
+      "properties": {
+        "Node name for S&R": "UltralyticsDetectorProvider"
+      },
+      "widgets_values": [
+        "bbox/face_yolov8n.pt"
+      ],
+      "widgets_values_named": {
+        "model_name": "bbox/face_yolov8n.pt"
+      }
+    },
+    {
+      "id": 17,
+      "type": "CLIPTextEncode",
+      "pos": [
+        720,
+        560
+      ],
+      "size": [
+        440,
+        180
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "text"
+          }
+        },
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 6
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            19
+          ]
+        }
+      ],
+      "title": "FaceDetailer positive",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "anime face, Emilia Re:Zero, symmetrical violet anime eyes, clear round irises, natural eye highlights, straight bangs, crown braid, white flower hair ornament, x-shaped hair clip, pointed elf ears, gentle warm smile, clean delicate lineart, refined anime cel shading, preserve silver-white hair and identity"
+      ],
+      "widgets_values_named": {
+        "text": "anime face, Emilia Re:Zero, symmetrical violet anime eyes, clear round irises, natural eye highlights, straight bangs, crown braid, white flower hair ornament, x-shaped hair clip, pointed elf ears, gentle warm smile, clean delicate lineart, refined anime cel shading, preserve silver-white hair and identity"
+      }
+    },
+    {
+      "id": 18,
+      "type": "CLIPTextEncode",
+      "pos": [
+        720,
+        780
+      ],
+      "size": [
+        440,
+        180
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "text"
+          }
+        },
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            20
+          ]
+        }
+      ],
+      "title": "FaceDetailer negative",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "blurry face, soft eyes, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, heterochromia, malformed pupils, extra eyes, missing eyes, distorted face, deformed mouth, old face, realistic, photo, 3d, over-smoothed plastic face, text, watermark"
+      ],
+      "widgets_values_named": {
+        "text": "blurry face, soft eyes, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, heterochromia, malformed pupils, extra eyes, missing eyes, distorted face, deformed mouth, old face, realistic, photo, 3d, over-smoothed plastic face, text, watermark"
+      }
+    },
+    {
+      "id": 21,
+      "type": "FaceDetailer",
+      "pos": [
+        2060,
+        80
+      ],
+      "size": [
+        360,
+        500
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 15
+        },
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 16
+        },
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 17
+        },
+        {
+          "localized_name": "vae",
+          "name": "vae",
+          "type": "VAE",
+          "link": 18
+        },
+        {
+          "localized_name": "guide_size",
+          "name": "guide_size",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "guide_size"
+          }
+        },
+        {
+          "localized_name": "guide_size_for",
+          "name": "guide_size_for",
+          "type": "BOOLEAN",
+          "link": null,
+          "widget": {
+            "name": "guide_size_for"
+          }
+        },
+        {
+          "localized_name": "max_size",
+          "name": "max_size",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "max_size"
+          }
+        },
+        {
+          "localized_name": "seed",
+          "name": "seed",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "seed"
+          }
+        },
+        {
+          "localized_name": "steps",
+          "name": "steps",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "steps"
+          }
+        },
+        {
+          "localized_name": "cfg",
+          "name": "cfg",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "cfg"
+          }
+        },
+        {
+          "localized_name": "sampler_name",
+          "name": "sampler_name",
+          "type": [
+            "euler",
+            "euler_cfg_pp",
+            "euler_ancestral",
+            "euler_ancestral_cfg_pp",
+            "heun",
+            "heunpp2",
+            "exp_heun_2_x0",
+            "exp_heun_2_x0_sde",
+            "dpm_2",
+            "dpm_2_ancestral",
+            "lms",
+            "dpm_fast",
+            "dpm_adaptive",
+            "dpmpp_2s_ancestral",
+            "dpmpp_2s_ancestral_cfg_pp",
+            "dpmpp_sde",
+            "dpmpp_sde_gpu",
+            "dpmpp_2m",
+            "dpmpp_2m_cfg_pp",
+            "dpmpp_2m_sde",
+            "dpmpp_2m_sde_gpu",
+            "dpmpp_2m_sde_heun",
+            "dpmpp_2m_sde_heun_gpu",
+            "dpmpp_3m_sde",
+            "dpmpp_3m_sde_gpu",
+            "ddpm",
+            "lcm",
+            "ipndm",
+            "ipndm_v",
+            "deis",
+            "res_multistep",
+            "res_multistep_cfg_pp",
+            "res_multistep_ancestral",
+            "res_multistep_ancestral_cfg_pp",
+            "gradient_estimation",
+            "gradient_estimation_cfg_pp",
+            "er_sde",
+            "seeds_2",
+            "seeds_3",
+            "sa_solver",
+            "sa_solver_pece",
+            "ddim",
+            "uni_pc",
+            "uni_pc_bh2"
+          ],
+          "link": null,
+          "widget": {
+            "name": "sampler_name"
+          }
+        },
+        {
+          "localized_name": "scheduler",
+          "name": "scheduler",
+          "type": [
+            "simple",
+            "sgm_uniform",
+            "karras",
+            "exponential",
+            "ddim_uniform",
+            "beta",
+            "normal",
+            "linear_quadratic",
+            "kl_optimal",
+            "AYS SDXL",
+            "AYS SD1",
+            "AYS SVD",
+            "GITS[coeff=1.2]",
+            "LTXV[default]",
+            "OSS FLUX",
+            "OSS Wan",
+            "OSS Chroma"
+          ],
+          "link": null,
+          "widget": {
+            "name": "scheduler"
+          }
+        },
+        {
+          "localized_name": "positive",
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 19
+        },
+        {
+          "localized_name": "negative",
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 20
+        },
+        {
+          "localized_name": "denoise",
+          "name": "denoise",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "denoise"
+          }
+        },
+        {
+          "localized_name": "feather",
+          "name": "feather",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "feather"
+          }
+        },
+        {
+          "localized_name": "noise_mask",
+          "name": "noise_mask",
+          "type": "BOOLEAN",
+          "link": null,
+          "widget": {
+            "name": "noise_mask"
+          }
+        },
+        {
+          "localized_name": "force_inpaint",
+          "name": "force_inpaint",
+          "type": "BOOLEAN",
+          "link": null,
+          "widget": {
+            "name": "force_inpaint"
+          }
+        },
+        {
+          "localized_name": "bbox_threshold",
+          "name": "bbox_threshold",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "bbox_threshold"
+          }
+        },
+        {
+          "localized_name": "bbox_dilation",
+          "name": "bbox_dilation",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "bbox_dilation"
+          }
+        },
+        {
+          "localized_name": "bbox_crop_factor",
+          "name": "bbox_crop_factor",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "bbox_crop_factor"
+          }
+        },
+        {
+          "localized_name": "sam_detection_hint",
+          "name": "sam_detection_hint",
+          "type": [
+            "center-1",
+            "horizontal-2",
+            "vertical-2",
+            "rect-4",
+            "diamond-4",
+            "mask-area",
+            "mask-points",
+            "mask-point-bbox",
+            "none"
+          ],
+          "link": null,
+          "widget": {
+            "name": "sam_detection_hint"
+          }
+        },
+        {
+          "localized_name": "sam_dilation",
+          "name": "sam_dilation",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "sam_dilation"
+          }
+        },
+        {
+          "localized_name": "sam_threshold",
+          "name": "sam_threshold",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "sam_threshold"
+          }
+        },
+        {
+          "localized_name": "sam_bbox_expansion",
+          "name": "sam_bbox_expansion",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "sam_bbox_expansion"
+          }
+        },
+        {
+          "localized_name": "sam_mask_hint_threshold",
+          "name": "sam_mask_hint_threshold",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "sam_mask_hint_threshold"
+          }
+        },
+        {
+          "localized_name": "sam_mask_hint_use_negative",
+          "name": "sam_mask_hint_use_negative",
+          "type": [
+            "False",
+            "Small",
+            "Outter"
+          ],
+          "link": null,
+          "widget": {
+            "name": "sam_mask_hint_use_negative"
+          }
+        },
+        {
+          "localized_name": "drop_size",
+          "name": "drop_size",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "drop_size"
+          }
+        },
+        {
+          "localized_name": "bbox_detector",
+          "name": "bbox_detector",
+          "type": "BBOX_DETECTOR",
+          "link": 21
+        },
+        {
+          "localized_name": "wildcard",
+          "name": "wildcard",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "wildcard"
+          }
+        },
+        {
+          "localized_name": "cycle",
+          "name": "cycle",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "cycle"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            22,
+            25
+          ]
+        },
+        {
+          "localized_name": "cropped_refined",
+          "name": "cropped_refined",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "localized_name": "cropped_enhanced_alpha",
+          "name": "cropped_enhanced_alpha",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "localized_name": "mask",
+          "name": "mask",
+          "type": "MASK",
+          "links": []
+        },
+        {
+          "localized_name": "detailer_pipe",
+          "name": "detailer_pipe",
+          "type": "DETAILER_PIPE",
+          "links": []
+        },
+        {
+          "localized_name": "cnet_images",
+          "name": "cnet_images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "title": "FaceDetailer / low denoise identity preservation",
+      "properties": {
+        "Node name for S&R": "FaceDetailer"
+      },
+      "widgets_values": [
+        512,
+        true,
+        768,
+        20260931,
+        12,
+        4.5,
+        "dpmpp_2m",
+        "karras",
+        0.24,
+        6,
+        true,
+        true,
+        0.45,
+        12,
+        2.5,
+        "none",
+        0,
+        0.93,
+        0,
+        0.7,
+        "False",
+        10,
+        "",
+        1
+      ],
+      "widgets_values_named": {
+        "guide_size": 512,
+        "guide_size_for": true,
+        "max_size": 768,
+        "seed": 20260931,
+        "steps": 12,
+        "cfg": 4.5,
+        "sampler_name": "dpmpp_2m",
+        "scheduler": "karras",
+        "denoise": 0.24,
+        "feather": 6,
+        "noise_mask": true,
+        "force_inpaint": true,
+        "bbox_threshold": 0.45,
+        "bbox_dilation": 12,
+        "bbox_crop_factor": 2.5,
+        "sam_detection_hint": "none",
+        "sam_dilation": 0,
+        "sam_threshold": 0.93,
+        "sam_bbox_expansion": 0,
+        "sam_mask_hint_threshold": 0.7,
+        "sam_mask_hint_use_negative": "False",
+        "drop_size": 10,
+        "wildcard": "",
+        "cycle": 1
+      }
+    },
+    {
+      "id": 24,
+      "type": "UltralyticsDetectorProvider",
+      "pos": [
+        2060,
+        650
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model_name",
+          "name": "model_name",
+          "type": [
+            "bbox/face_yolov8n.pt",
+            "bbox/hand_yolov8n.pt"
+          ],
+          "link": null,
+          "widget": {
+            "name": "model_name"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "BBOX_DETECTOR",
+          "name": "BBOX_DETECTOR",
+          "type": "BBOX_DETECTOR",
+          "links": [
+            23
+          ]
+        },
+        {
+          "localized_name": "SEGM_DETECTOR",
+          "name": "SEGM_DETECTOR",
+          "type": "SEGM_DETECTOR",
+          "links": []
+        }
+      ],
+      "title": "Hand detector / YOLOv8n",
+      "properties": {
+        "Node name for S&R": "UltralyticsDetectorProvider"
+      },
+      "widgets_values": [
+        "bbox/hand_yolov8n.pt"
+      ],
+      "widgets_values_named": {
+        "model_name": "bbox/hand_yolov8n.pt"
+      }
+    },
+    {
+      "id": 25,
+      "type": "ImpactSimpleDetectorSEGS",
+      "pos": [
+        2440,
+        650
+      ],
+      "size": [
+        340,
+        260
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "bbox_detector",
+          "name": "bbox_detector",
+          "type": "BBOX_DETECTOR",
+          "link": 23
+        },
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 22
+        },
+        {
+          "localized_name": "bbox_threshold",
+          "name": "bbox_threshold",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "bbox_threshold"
+          }
+        },
+        {
+          "localized_name": "bbox_dilation",
+          "name": "bbox_dilation",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "bbox_dilation"
+          }
+        },
+        {
+          "localized_name": "crop_factor",
+          "name": "crop_factor",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "crop_factor"
+          }
+        },
+        {
+          "localized_name": "drop_size",
+          "name": "drop_size",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "drop_size"
+          }
+        },
+        {
+          "localized_name": "sub_threshold",
+          "name": "sub_threshold",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "sub_threshold"
+          }
+        },
+        {
+          "localized_name": "sub_dilation",
+          "name": "sub_dilation",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "sub_dilation"
+          }
+        },
+        {
+          "localized_name": "sub_bbox_expansion",
+          "name": "sub_bbox_expansion",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "sub_bbox_expansion"
+          }
+        },
+        {
+          "localized_name": "sam_mask_hint_threshold",
+          "name": "sam_mask_hint_threshold",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "sam_mask_hint_threshold"
+          }
+        },
+        {
+          "localized_name": "sam_model_opt",
+          "name": "sam_model_opt",
+          "type": "SAM_MODEL",
+          "link": 36
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "SEGS",
+          "name": "SEGS",
+          "type": "SEGS",
+          "links": [
+            24
+          ]
+        }
+      ],
+      "title": "Detect visible hands",
+      "properties": {
+        "Node name for S&R": "ImpactSimpleDetectorSEGS"
+      },
+      "widgets_values": [
+        0.3,
+        8,
+        3.0,
+        5,
+        0.3,
+        4,
+        8,
+        0.7
+      ],
+      "widgets_values_named": {
+        "bbox_threshold": 0.3,
+        "bbox_dilation": 8,
+        "crop_factor": 3.0,
+        "drop_size": 5,
+        "sub_threshold": 0.3,
+        "sub_dilation": 4,
+        "sub_bbox_expansion": 8,
+        "sam_mask_hint_threshold": 0.7
+      }
+    },
+    {
+      "id": 26,
+      "type": "CLIPTextEncode",
+      "pos": [
+        720,
+        1010
+      ],
+      "size": [
+        440,
+        180
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "text"
+          }
+        },
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 8
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            29
+          ]
+        }
+      ],
+      "title": "HandDetailer positive",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "anime hand, natural open palm, five correctly separated fingers, clean finger joints, correct wrist, delicate pale hand, holding one snowflake, preserve sleeve and pose, clean anime lineart"
+      ],
+      "widgets_values_named": {
+        "text": "anime hand, natural open palm, five correctly separated fingers, clean finger joints, correct wrist, delicate pale hand, holding one snowflake, preserve sleeve and pose, clean anime lineart"
+      }
+    },
+    {
+      "id": 27,
+      "type": "CLIPTextEncode",
+      "pos": [
+        720,
+        1230
+      ],
+      "size": [
+        440,
+        180
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "text"
+          }
+        },
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 9
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            30
+          ]
+        }
+      ],
+      "title": "HandDetailer negative",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "malformed hand, extra fingers, missing fingers, fused fingers, twisted wrist, duplicated hand, extra arm, deformed sleeve, blurry, realistic, photo, text, watermark"
+      ],
+      "widgets_values_named": {
+        "text": "malformed hand, extra fingers, missing fingers, fused fingers, twisted wrist, duplicated hand, extra arm, deformed sleeve, blurry, realistic, photo, text, watermark"
+      }
+    },
+    {
+      "id": 28,
+      "type": "DetailerForEach",
+      "pos": [
+        2820,
+        620
+      ],
+      "size": [
+        360,
+        420
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 25
+        },
+        {
+          "localized_name": "segs",
+          "name": "segs",
+          "type": "SEGS",
+          "link": 24
+        },
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 26
+        },
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 27
+        },
+        {
+          "localized_name": "vae",
+          "name": "vae",
+          "type": "VAE",
+          "link": 28
+        },
+        {
+          "localized_name": "guide_size",
+          "name": "guide_size",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "guide_size"
+          }
+        },
+        {
+          "localized_name": "guide_size_for",
+          "name": "guide_size_for",
+          "type": "BOOLEAN",
+          "link": null,
+          "widget": {
+            "name": "guide_size_for"
+          }
+        },
+        {
+          "localized_name": "max_size",
+          "name": "max_size",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "max_size"
+          }
+        },
+        {
+          "localized_name": "seed",
+          "name": "seed",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "seed"
+          }
+        },
+        {
+          "localized_name": "steps",
+          "name": "steps",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "steps"
+          }
+        },
+        {
+          "localized_name": "cfg",
+          "name": "cfg",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "cfg"
+          }
+        },
+        {
+          "localized_name": "sampler_name",
+          "name": "sampler_name",
+          "type": [
+            "euler",
+            "euler_cfg_pp",
+            "euler_ancestral",
+            "euler_ancestral_cfg_pp",
+            "heun",
+            "heunpp2",
+            "exp_heun_2_x0",
+            "exp_heun_2_x0_sde",
+            "dpm_2",
+            "dpm_2_ancestral",
+            "lms",
+            "dpm_fast",
+            "dpm_adaptive",
+            "dpmpp_2s_ancestral",
+            "dpmpp_2s_ancestral_cfg_pp",
+            "dpmpp_sde",
+            "dpmpp_sde_gpu",
+            "dpmpp_2m",
+            "dpmpp_2m_cfg_pp",
+            "dpmpp_2m_sde",
+            "dpmpp_2m_sde_gpu",
+            "dpmpp_2m_sde_heun",
+            "dpmpp_2m_sde_heun_gpu",
+            "dpmpp_3m_sde",
+            "dpmpp_3m_sde_gpu",
+            "ddpm",
+            "lcm",
+            "ipndm",
+            "ipndm_v",
+            "deis",
+            "res_multistep",
+            "res_multistep_cfg_pp",
+            "res_multistep_ancestral",
+            "res_multistep_ancestral_cfg_pp",
+            "gradient_estimation",
+            "gradient_estimation_cfg_pp",
+            "er_sde",
+            "seeds_2",
+            "seeds_3",
+            "sa_solver",
+            "sa_solver_pece",
+            "ddim",
+            "uni_pc",
+            "uni_pc_bh2"
+          ],
+          "link": null,
+          "widget": {
+            "name": "sampler_name"
+          }
+        },
+        {
+          "localized_name": "scheduler",
+          "name": "scheduler",
+          "type": [
+            "simple",
+            "sgm_uniform",
+            "karras",
+            "exponential",
+            "ddim_uniform",
+            "beta",
+            "normal",
+            "linear_quadratic",
+            "kl_optimal",
+            "AYS SDXL",
+            "AYS SD1",
+            "AYS SVD",
+            "GITS[coeff=1.2]",
+            "LTXV[default]",
+            "OSS FLUX",
+            "OSS Wan",
+            "OSS Chroma"
+          ],
+          "link": null,
+          "widget": {
+            "name": "scheduler"
+          }
+        },
+        {
+          "localized_name": "positive",
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 29
+        },
+        {
+          "localized_name": "negative",
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 30
+        },
+        {
+          "localized_name": "denoise",
+          "name": "denoise",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "denoise"
+          }
+        },
+        {
+          "localized_name": "feather",
+          "name": "feather",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "feather"
+          }
+        },
+        {
+          "localized_name": "noise_mask",
+          "name": "noise_mask",
+          "type": "BOOLEAN",
+          "link": null,
+          "widget": {
+            "name": "noise_mask"
+          }
+        },
+        {
+          "localized_name": "force_inpaint",
+          "name": "force_inpaint",
+          "type": "BOOLEAN",
+          "link": null,
+          "widget": {
+            "name": "force_inpaint"
+          }
+        },
+        {
+          "localized_name": "wildcard",
+          "name": "wildcard",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "wildcard"
+          }
+        },
+        {
+          "localized_name": "cycle",
+          "name": "cycle",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "cycle"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            31,
+            33
+          ]
+        }
+      ],
+      "title": "HandDetailer / guide 640 / denoise 0.40",
+      "properties": {
+        "Node name for S&R": "DetailerForEach"
+      },
+      "widgets_values": [
+        640,
+        true,
+        1024,
+        20260932,
+        16,
+        4.5,
+        "dpmpp_2m",
+        "karras",
+        0.4,
+        8,
+        true,
+        true,
+        "",
+        1
+      ],
+      "widgets_values_named": {
+        "guide_size": 640,
+        "guide_size_for": true,
+        "max_size": 1024,
+        "seed": 20260932,
+        "steps": 16,
+        "cfg": 4.5,
+        "sampler_name": "dpmpp_2m",
+        "scheduler": "karras",
+        "denoise": 0.4,
+        "feather": 8,
+        "noise_mask": true,
+        "force_inpaint": true,
+        "wildcard": "",
+        "cycle": 1
+      }
+    },
+    {
+      "id": 29,
+      "type": "SaveImage",
+      "pos": [
+        3240,
+        80
+      ],
+      "size": [
+        300,
+        80
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 31
+        },
+        {
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "filename_prefix"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "title": "Save production native for inspection",
+      "properties": {
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "emilia/optimized/production_native"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "emilia/optimized/production_native"
+      }
+    },
+    {
+      "id": 13,
+      "type": "UpscaleModelLoader",
+      "pos": [
+        3240,
+        300
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model_name",
+          "name": "model_name",
+          "type": "COMBO",
+          "link": null,
+          "widget": {
+            "name": "model_name"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "UPSCALE_MODEL",
+          "name": "UPSCALE_MODEL",
+          "type": "UPSCALE_MODEL",
+          "links": [
+            32
+          ]
+        }
+      ],
+      "title": "RealESRGAN x4plus anime 6B",
+      "properties": {
+        "Node name for S&R": "UpscaleModelLoader"
+      },
+      "widgets_values": [
+        "RealESRGAN_x4plus_anime_6B.pth"
+      ],
+      "widgets_values_named": {
+        "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+      }
+    },
+    {
+      "id": 14,
+      "type": "ImageUpscaleWithModel",
+      "pos": [
+        3600,
+        300
+      ],
+      "size": [
+        300,
+        120
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "upscale_model",
+          "name": "upscale_model",
+          "type": "UPSCALE_MODEL",
+          "link": 32,
+          "widget": {
+            "name": "upscale_model"
+          }
+        },
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 33,
+          "widget": {
+            "name": "image"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            34
+          ]
+        }
+      ],
+      "title": "Upscale post-detail image 4x",
+      "properties": {
+        "Node name for S&R": "ImageUpscaleWithModel"
+      },
+      "widgets_values": [
+        31,
+        30
+      ],
+      "widgets_values_named": {
+        "upscale_model": 31,
+        "image": 30
+      }
+    },
+    {
+      "id": 15,
+      "type": "ImageScaleBy",
+      "pos": [
+        3960,
+        300
+      ],
+      "size": [
+        300,
+        120
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 34
+        },
+        {
+          "localized_name": "upscale_method",
+          "name": "upscale_method",
+          "type": [
+            "nearest-exact",
+            "bilinear",
+            "area",
+            "bicubic",
+            "lanczos"
+          ],
+          "link": null,
+          "widget": {
+            "name": "upscale_method"
+          }
+        },
+        {
+          "localized_name": "scale_by",
+          "name": "scale_by",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "scale_by"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            35
+          ]
+        }
+      ],
+      "title": "Downsample to clean 2x",
+      "properties": {
+        "Node name for S&R": "ImageScaleBy"
+      },
+      "widgets_values": [
+        "lanczos",
+        0.5
+      ],
+      "widgets_values_named": {
+        "upscale_method": "lanczos",
+        "scale_by": 0.5
+      }
+    },
+    {
+      "id": 16,
+      "type": "SaveImage",
+      "pos": [
+        4320,
+        300
+      ],
+      "size": [
+        300,
+        80
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 35
+        },
+        {
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "filename_prefix"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "title": "Save production 2x final",
+      "properties": {
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "emilia/optimized/production_2x"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "emilia/optimized/production_2x"
+      }
+    },
+    {
+      "id": 30,
+      "type": "SAMLoader",
+      "pos": [
+        2440,
+        380
+      ],
+      "size": [
+        300,
+        130
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model_name",
+          "name": "model_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "model_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "device_mode",
+          "name": "device_mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "device_mode"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "SAM_MODEL",
+          "name": "SAM_MODEL",
+          "type": "SAM_MODEL",
+          "links": [
+            36
+          ]
+        }
+      ],
+      "title": "SAM hand-mask refinement / optional",
+      "properties": {
+        "Node name for S&R": "SAMLoader"
+      },
+      "widgets_values": [
+        "sam_vit_b_01ec64.pth",
+        "AUTO"
+      ],
+      "widgets_values_named": {
+        "model_name": "sam_vit_b_01ec64.pth",
+        "device_mode": "AUTO"
+      }
+    }
+  ],
+  "links": [
+    [
+      1,
+      4,
+      0,
+      10,
+      0,
+      "MODEL"
+    ],
+    [
+      2,
+      4,
+      1,
+      10,
+      1,
+      "CLIP"
+    ],
+    [
+      3,
+      10,
+      0,
+      3,
+      0,
+      "MODEL"
+    ],
+    [
+      4,
+      10,
+      1,
+      6,
+      1,
+      "CLIP"
+    ],
+    [
+      5,
+      10,
+      1,
+      7,
+      1,
+      "CLIP"
+    ],
+    [
+      6,
+      10,
+      1,
+      17,
+      1,
+      "CLIP"
+    ],
+    [
+      7,
+      10,
+      1,
+      18,
+      1,
+      "CLIP"
+    ],
+    [
+      8,
+      10,
+      1,
+      26,
+      1,
+      "CLIP"
+    ],
+    [
+      9,
+      10,
+      1,
+      27,
+      1,
+      "CLIP"
+    ],
+    [
+      10,
+      5,
+      0,
+      3,
+      8,
+      "LATENT"
+    ],
+    [
+      11,
+      6,
+      0,
+      3,
+      6,
+      "CONDITIONING"
+    ],
+    [
+      12,
+      7,
+      0,
+      3,
+      7,
+      "CONDITIONING"
+    ],
+    [
+      13,
+      3,
+      0,
+      8,
+      0,
+      "LATENT"
+    ],
+    [
+      14,
+      4,
+      2,
+      8,
+      1,
+      "VAE"
+    ],
+    [
+      15,
+      8,
+      0,
+      21,
+      0,
+      "IMAGE"
+    ],
+    [
+      16,
+      10,
+      0,
+      21,
+      1,
+      "MODEL"
+    ],
+    [
+      17,
+      10,
+      1,
+      21,
+      2,
+      "CLIP"
+    ],
+    [
+      18,
+      4,
+      2,
+      21,
+      3,
+      "VAE"
+    ],
+    [
+      19,
+      17,
+      0,
+      21,
+      12,
+      "CONDITIONING"
+    ],
+    [
+      20,
+      18,
+      0,
+      21,
+      13,
+      "CONDITIONING"
+    ],
+    [
+      21,
+      20,
+      0,
+      21,
+      28,
+      "BBOX_DETECTOR"
+    ],
+    [
+      22,
+      21,
+      0,
+      25,
+      1,
+      "IMAGE"
+    ],
+    [
+      23,
+      24,
+      0,
+      25,
+      0,
+      "BBOX_DETECTOR"
+    ],
+    [
+      24,
+      25,
+      0,
+      28,
+      1,
+      "SEGS"
+    ],
+    [
+      25,
+      21,
+      0,
+      28,
+      0,
+      "IMAGE"
+    ],
+    [
+      26,
+      10,
+      0,
+      28,
+      2,
+      "MODEL"
+    ],
+    [
+      27,
+      10,
+      1,
+      28,
+      3,
+      "CLIP"
+    ],
+    [
+      28,
+      4,
+      2,
+      28,
+      4,
+      "VAE"
+    ],
+    [
+      29,
+      26,
+      0,
+      28,
+      13,
+      "CONDITIONING"
+    ],
+    [
+      30,
+      27,
+      0,
+      28,
+      14,
+      "CONDITIONING"
+    ],
+    [
+      31,
+      28,
+      0,
+      29,
+      0,
+      "IMAGE"
+    ],
+    [
+      32,
+      13,
+      0,
+      14,
+      0,
+      "UPSCALE_MODEL"
+    ],
+    [
+      33,
+      28,
+      0,
+      14,
+      1,
+      "IMAGE"
+    ],
+    [
+      34,
+      14,
+      0,
+      15,
+      0,
+      "IMAGE"
+    ],
+    [
+      35,
+      15,
+      0,
+      16,
+      0,
+      "IMAGE"
+    ],
+    [
+      36,
+      30,
+      0,
+      25,
+      10,
+      "SAM_MODEL"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.45,
+      "offset": [
+        -20,
+        -20
+      ]
+    },
+    "workflow": ""
+  },
+  "version": 0.4
+}

@@ -1,0 +1,191 @@
+{
+  "workflow": "app/emilia/emilia_lora_production.api.json",
+  "seeds": [
+    20261001,
+    20261002,
+    20261003
+  ],
+  "results": [
+    {
+      "index": 1,
+      "seed": 20261001,
+      "prompt_id": "d0cd5a55-95e8-4794-ab91-145e41b8fafa",
+      "status": "success",
+      "outputs": {
+        "29": {
+          "images": [
+            {
+              "filename": "set20260923_01_native_00001_.png",
+              "subfolder": "emilia\\evaluation",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "set20260923_01_2x_00001_.png",
+              "subfolder": "emilia\\evaluation",
+              "type": "output"
+            }
+          ]
+        }
+      },
+      "elapsed_seconds": 712.1,
+      "messages": [
+        [
+          "execution_start",
+          {
+            "prompt_id": "d0cd5a55-95e8-4794-ab91-145e41b8fafa",
+            "timestamp": 1790128077450
+          }
+        ],
+        [
+          "execution_cached",
+          {
+            "nodes": [],
+            "prompt_id": "d0cd5a55-95e8-4794-ab91-145e41b8fafa",
+            "timestamp": 1790128077460
+          }
+        ],
+        [
+          "execution_success",
+          {
+            "prompt_id": "d0cd5a55-95e8-4794-ab91-145e41b8fafa",
+            "timestamp": 1790128786973
+          }
+        ]
+      ]
+    },
+    {
+      "index": 2,
+      "seed": 20261002,
+      "prompt_id": "98211d50-fbb7-4947-8bc3-a28c58519ec5",
+      "status": "success",
+      "outputs": {
+        "29": {
+          "images": [
+            {
+              "filename": "set20260923_02_native_00001_.png",
+              "subfolder": "emilia\\evaluation",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "set20260923_02_2x_00001_.png",
+              "subfolder": "emilia\\evaluation",
+              "type": "output"
+            }
+          ]
+        }
+      },
+      "elapsed_seconds": 486.5,
+      "messages": [
+        [
+          "execution_start",
+          {
+            "prompt_id": "98211d50-fbb7-4947-8bc3-a28c58519ec5",
+            "timestamp": 1790128789603
+          }
+        ],
+        [
+          "execution_cached",
+          {
+            "nodes": [
+              "4",
+              "10",
+              "5",
+              "6",
+              "7",
+              "17",
+              "18",
+              "20",
+              "24",
+              "30",
+              "26",
+              "27",
+              "13"
+            ],
+            "prompt_id": "98211d50-fbb7-4947-8bc3-a28c58519ec5",
+            "timestamp": 1790128789612
+          }
+        ],
+        [
+          "execution_success",
+          {
+            "prompt_id": "98211d50-fbb7-4947-8bc3-a28c58519ec5",
+            "timestamp": 1790129272129
+          }
+        ]
+      ]
+    },
+    {
+      "index": 3,
+      "seed": 20261003,
+      "prompt_id": "b5f6cd66-ce03-4745-a241-d48f0b2fefa9",
+      "status": "success",
+      "outputs": {
+        "29": {
+          "images": [
+            {
+              "filename": "set20260923_03_native_00001_.png",
+              "subfolder": "emilia\\evaluation",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "set20260923_03_2x_00001_.png",
+              "subfolder": "emilia\\evaluation",
+              "type": "output"
+            }
+          ]
+        }
+      },
+      "elapsed_seconds": 661.8,
+      "messages": [
+        [
+          "execution_start",
+          {
+            "prompt_id": "b5f6cd66-ce03-4745-a241-d48f0b2fefa9",
+            "timestamp": 1790129276097
+          }
+        ],
+        [
+          "execution_cached",
+          {
+            "nodes": [
+              "4",
+              "10",
+              "5",
+              "6",
+              "7",
+              "17",
+              "18",
+              "20",
+              "24",
+              "30",
+              "26",
+              "27",
+              "13"
+            ],
+            "prompt_id": "b5f6cd66-ce03-4745-a241-d48f0b2fefa9",
+            "timestamp": 1790129276106
+          }
+        ],
+        [
+          "execution_success",
+          {
+            "prompt_id": "b5f6cd66-ce03-4745-a241-d48f0b2fefa9",
+            "timestamp": 1790129935705
+          }
+        ]
+      ]
+    }
+  ]
+}

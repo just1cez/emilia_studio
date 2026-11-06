@@ -1,0 +1,22 @@
+# Emilia Studio Portable Configuration Template
+# Copy this file to `config.toml` for local machine overrides.
+# When omitted, `emilia_studio.config` auto-resolves paths relative to the repository root
+# and honours `EMILIA_*` environment variables.
+
+[paths]
+# Leave commented out to auto-resolve relative to the repo root:
+# root_dir = "."
+# app_dir = "./app"
+# output_dir = "./app/output"
+# temp_dir = "./temp"
+# workflows_dir = "./workflows/api"
+# visual_workflows_dir = "./workflows/visual"
+# conda_python = "python"
+# ollama_exe = "ollama"
+
+[services]
+comfy_host = "127.0.0.1"
+comfy_port = 8188
+quality_port = 8199
+ollama_base = "http://127.0.0.1:11434"
+ollama_model = "qwen3.5:9b"

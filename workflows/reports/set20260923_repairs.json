@@ -1,0 +1,59 @@
+{
+  "workflow": "app/emilia/emilia_eye_repair.api.json",
+  "results": [
+    {
+      "index": 1,
+      "seed": 20261901,
+      "prompt_id": "342da2db-b653-4b58-98e9-53401cf3ade2",
+      "status": "success",
+      "outputs": {
+        "22": {
+          "images": [
+            {
+              "filename": "set20260923_01_repaired_native_00001_.png",
+              "subfolder": "emilia\\evaluation",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "set20260923_01_repaired_2x_00001_.png",
+              "subfolder": "emilia\\evaluation",
+              "type": "output"
+            }
+          ]
+        }
+      },
+      "elapsed_seconds": 250.7
+    },
+    {
+      "index": 3,
+      "seed": 20261903,
+      "prompt_id": "5e1abd44-9c27-456a-9f0b-406b33a95fee",
+      "status": "success",
+      "outputs": {
+        "22": {
+          "images": [
+            {
+              "filename": "set20260923_03_repaired_native_00001_.png",
+              "subfolder": "emilia\\evaluation",
+              "type": "output"
+            }
+          ]
+        },
+        "16": {
+          "images": [
+            {
+              "filename": "set20260923_03_repaired_2x_00001_.png",
+              "subfolder": "emilia\\evaluation",
+              "type": "output"
+            }
+          ]
+        }
+      },
+      "elapsed_seconds": 255.7
+    }
+  ]
+}
