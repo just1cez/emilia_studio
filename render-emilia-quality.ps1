@@ -1,5 +1,7 @@
 param(
     [UInt64]$Seed = 20261027,
+    [ValidateSet('quality', 'ultra')]
+    [string]$Profile = 'quality',
     [switch]$Pag,
     [switch]$AutoGate
 )
@@ -17,7 +19,7 @@ if (-not $Candidates -or $Candidates.Count -eq 0) {
 $Python = $Candidates[0]
 $Script = Join-Path $PSScriptRoot 'app\script_examples\render_emilia_quality.py'
 
-$Arguments = @($Script, '--seed', $Seed)
+$Arguments = @($Script, '--seed', $Seed, '--profile', $Profile)
 if ($Pag) {
     $Arguments += '--pag'
 }

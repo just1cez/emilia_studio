@@ -14,10 +14,13 @@ from typing import Any
 
 from .config import (
     DEFAULT_HIGHRES_NEGATIVE_PROMPT,
+    DEFAULT_ULTRA_NEGATIVE_PROMPT,
     EMILIA_ALIASES,
     EMILIA_CANONICAL,
     QUALITY_TAGS,
     STYLE_HINTS,
+    ULTRA_EMILIA_OUTFIT_CANONICAL,
+    ULTRA_FRAMING_LEADS,
     StudioConfig,
     load_config,
 )
@@ -187,20 +190,34 @@ class OllamaPromptCompiler:
             )
         return tags
 
-    def infer_composition_hints(self, idea: str, tags: str) -> tuple[str, float]:
+    def infer_composition_hints(
+        self, idea: str, tags: str, *, ultra_mode: bool = False
+    ) -> tuple[str, float]:
         """Infer framing (portrait/upper_body/full_body) and optimal IPAdapter face weight."""
         combined = f"{idea} {tags}".casefold()
         if any(k in combined for k in ("特写", "头像", "面部", "close-up", "portrait", "face focus")):
-            return "portrait", 0.50
+            return "portrait", (0.20 if ultra_mode else 0.50)
         if any(k in combined for k in ("半身", "腰部以上", "upper body", "cowboy shot", "medium shot")):
-            return "upper_body", 0.45
-        return "full_body", 0.40
+            return "upper_body", (0.18 if ultra_mode else 0.45)
+        return "full_body", (0.18 if ultra_mode else 0.40)
+
+    def build_emilia_ultra_prompt(
+        self, scene_and_pose_tags: str, framing: str = "full_body"
+    ) -> str:
+        """Assemble framing-first canonical Emilia Ultra prompt with exact off-shoulder dress & boots."""
+        framing_lead = ULTRA_FRAMING_LEADS.get(framing, ULTRA_FRAMING_LEADS["full_body"])
+        return deduplicate_tags(
+            f"masterpiece, best quality, absurdres, 1girl, solo, {framing_lead}, "
+            f"{self.config.ultra_outfit_canonical}, {scene_and_pose_tags}, "
+            "balanced body proportions, coherent anatomy, delicate clean lineart, soft anime cel shading"
+        )
 
     def compile_idea(
         self,
         idea: str,
         style: str = "anime",
         highres_quality_mode: bool = True,
+        ultra_mode: bool = True,
     ) -> CompiledPromptSpec:
         """Translate a Chinese idea into a full CompiledPromptSpec and unload Ollama from VRAM."""
         style_hint = self.config.style_hints.get(style, STYLE_HINTS["anime"])
@@ -254,11 +271,15 @@ class OllamaPromptCompiler:
 
         raw_tags = clean_generated_prompt(content)
         emilia_flag = is_emilia_request(idea, self.config.emilia_aliases)
-        framing, ipa_weight = self.infer_composition_hints(idea, raw_tags)
+        framing, ipa_weight = self.infer_composition_hints(
+            idea, raw_tags, ultra_mode=(highres_quality_mode and ultra_mode)
+        )
 
         if emilia_flag:
-            if highres_quality_mode:
-                # High-res quality mode integrates matching violet eyes and full identity anchors
+            if highres_quality_mode and ultra_mode:
+                combined = self.build_emilia_ultra_prompt(raw_tags, framing=framing)
+                neg_prompt = self.config.ultra_negative_prompt
+            elif highres_quality_mode:
                 highres_identity = (
                     r"masterpiece, best quality, anime illustration, emilia \(re:zero\), 1girl, solo, "
                     "silver-white long hair, crown braid, straight bangs, matching violet eyes, "
@@ -266,11 +287,14 @@ class OllamaPromptCompiler:
                     "white and lavender dress with purple trim, green gemstone brooch, detached bell sleeves"
                 )
                 combined = deduplicate_tags(f"{highres_identity}, {raw_tags}, {self.config.quality_tags}")
+                neg_prompt = self.config.base_negative_prompt
             else:
                 combined = deduplicate_tags(f"{self.config.emilia_canonical}, {raw_tags}")
                 combined = f"{combined}, {self.config.quality_tags}"
+                neg_prompt = DEFAULT_HIGHRES_NEGATIVE_PROMPT
         else:
             combined = f"{deduplicate_tags(raw_tags)}, {self.config.quality_tags}"
+            neg_prompt = DEFAULT_ULTRA_NEGATIVE_PROMPT if ultra_mode else DEFAULT_HIGHRES_NEGATIVE_PROMPT
 
         return CompiledPromptSpec(
             user_idea=idea,
@@ -278,7 +302,7 @@ class OllamaPromptCompiler:
             style=style,
             scene_and_pose_tags=raw_tags,
             positive_prompt=combined,
-            negative_prompt=self.config.base_negative_prompt if highres_quality_mode else DEFAULT_HIGHRES_NEGATIVE_PROMPT,
+            negative_prompt=neg_prompt,
             framing=framing,
             recommended_width=1152 if highres_quality_mode else 832,
             recommended_height=1728 if highres_quality_mode else 1216,

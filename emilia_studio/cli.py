@@ -32,10 +32,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_render.add_argument("--seed", type=int, default=20261027, help="Base generation seed")
     p_render.add_argument("--port", type=int, default=8199, help="ComfyUI server port")
     p_render.add_argument("--pag", action="store_true", help="Enable PerturbedAttentionGuidance (scale 1.0)")
+    p_render.add_argument(
+        "--profile",
+        choices=("quality", "ultra"),
+        default="quality",
+        help="quality: bit-exact 1152x1728 baseline; ultra: multi-scale 832->1152->2304 Hires.fix + canonical outfit lock",
+    )
     p_render.add_argument("--prompt", type=str, default=None, help="Custom positive English prompt")
     p_render.add_argument("--auto-gate", action="store_true", help="Enable automatic seed retry and eye-repair gate")
     p_render.add_argument("--max-retries", type=int, default=2, help="Max seed retries when auto-gate rejects anatomy")
-
     # 2. idea: Chinese natural language -> Ollama -> HighRes Quality or Fast LoRA
     p_idea = sub.add_parser(
         "idea",
@@ -45,9 +50,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_idea.add_argument("--seed", type=int, default=None, help="Random seed if omitted")
     p_idea.add_argument("--port", type=int, default=8199, help="ComfyUI server port")
     p_idea.add_argument("--style", choices=("anime", "illustration", "cinematic"), default="anime")
-    p_idea.add_argument("--pag", action="store_true", help="Enable PAG scale 1.0")
+    p_idea.add_argument(
+        "--profile",
+        choices=("ultra", "quality"),
+        default="ultra",
+        help="ultra (default): multi-scale 832->1152->2304 with canonical outfit lock; quality: legacy 1152 direct",
+    )
+    p_idea.add_argument("--pag", action="store_true", help="Enable PAG guidance")
     p_idea.add_argument("--auto-gate", action="store_true", help="Enable automatic eye-repair and anatomy gate")
-
     # 3. inspect: run CPU-only quality and violet-iris inspection on any PNG
     p_inspect = sub.add_parser(
         "inspect",
@@ -105,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
                     seed=args.seed,
                     port=args.port,
                     pag=args.pag,
+                    profile=args.profile,
                     positive_prompt=args.prompt,
                     strict_seed_lock=not args.auto_gate,
                     auto_eye_repair=args.auto_gate,
@@ -117,8 +128,17 @@ def main(argv: list[str] | None = None) -> int:
             idea_text = " ".join(args.idea).strip()
             compiler = OllamaPromptCompiler(config=config)
             compiler.ensure_ollama()
-            spec = compiler.compile_idea(idea_text, style=args.style, highres_quality_mode=True)
-            print(f"编译完成 [{spec.framing}, IPAdapter={spec.recommended_ipadapter_weight}]:\n{spec.positive_prompt}", flush=True)
+            is_ultra = args.profile == "ultra"
+            spec = compiler.compile_idea(
+                idea_text,
+                style=args.style,
+                highres_quality_mode=True,
+                ultra_mode=is_ultra,
+            )
+            print(
+                f"编译完成 [{args.profile}/{spec.framing}, IPAdapter={spec.recommended_ipadapter_weight}]:\n{spec.positive_prompt}",
+                flush=True,
+            )
             seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1)
             engine = EmiliaRenderEngine(config=config)
             asyncio.run(
@@ -126,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
                     seed=seed,
                     port=args.port,
                     pag=args.pag,
+                    profile=args.profile,
                     positive_prompt=spec.positive_prompt,
                     negative_prompt=spec.negative_prompt,
                     ipadapter_weight=spec.recommended_ipadapter_weight,

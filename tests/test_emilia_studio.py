@@ -282,3 +282,39 @@ def test_lanczos_and_sigma_cache_bit_exact() -> None:
     _ = attn_patch(q, q, q, {"n_heads": 4, "sigmas": sigmas})
     assert hasattr(sigmas, "_emilia_sigma_val")
     assert abs(sigmas._emilia_sigma_val - 1.2345) < 1e-5
+
+
+def test_ultra_multiscale_workflow_and_outfit_lock() -> None:
+    cfg = load_config()
+    builder = EmiliaWorkflowBuilder(cfg)
+    g_nat = builder.build_ultra_native(seed=20261104)
+    # Pass 1 renders at native SDXL 832x1216 bucket with V-only ease in-out IPAdapter
+    assert g_nat["5"]["inputs"]["width"] == 832
+    assert g_nat["5"]["inputs"]["height"] == 1216
+    assert g_nat["42"]["inputs"]["weight_type"] == "ease in-out"
+    assert g_nat["42"]["inputs"]["embeds_scaling"] == "V only"
+    assert g_nat["10"]["inputs"]["strength_model"] == 0.42
+    # Pass 2 upscales to 1152x1728 and refines without IPAdapter
+    assert g_nat["51"]["inputs"]["width"] == 1152
+    assert g_nat["51"]["inputs"]["height"] == 1728
+    assert g_nat["53"]["inputs"]["model"] == ["11", 0]
+    assert g_nat["53"]["inputs"]["denoise"] == 0.34
+
+    g_fin = builder.build_ultra_finish("emilia_ultra_selected_native.png", seed=20261104)
+    assert g_fin["10"]["inputs"]["strength_model"] == 0.38
+    assert g_fin["21"]["inputs"]["guide_size"] == 768
+    assert g_fin["21"]["inputs"]["denoise"] == 0.28
+    assert g_fin["21"]["inputs"]["noise_mask_feather"] == 0
+    assert g_fin["28"]["inputs"]["guide_size"] == 640
+    assert g_fin["28"]["inputs"]["denoise"] == 0.30
+    assert g_fin["28"]["inputs"]["noise_mask_feather"] == 0
+
+    compiler = OllamaPromptCompiler(cfg)
+    f_port, w_port = compiler.infer_composition_hints("爱蜜莉雅特写头像", "portrait", ultra_mode=True)
+    assert f_port == "portrait"
+    assert w_port == 0.20
+    ultra_prompt = compiler.build_emilia_ultra_prompt("standing in flower garden", framing="full_body")
+    assert "detached white collar" in ultra_prompt
+    assert "bare shoulders" in ultra_prompt
+    assert "white knee-high boots" in ultra_prompt
+    assert "white capelet" not in ultra_prompt

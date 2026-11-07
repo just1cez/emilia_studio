@@ -72,6 +72,80 @@ DEFAULT_HAND_DETAILER_NEGATIVE_PROMPT: str = (
     "duplicated hand, extra arm, deformed sleeve, blurry, realistic, photo, text, watermark"
 )
 
+# Ultra Multi-Scale Hires.fix (832x1216 -> 1152x1728 -> 2304x3456) canonical identity & outfit lock
+ULTRA_EMILIA_OUTFIT_CANONICAL: str = (
+    r"rezero emilia, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, "
+    "official character design, anime key visual, silver-white hair, long hair, straight bangs, "
+    "crown braid, symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, "
+    "white rose hair ornament, x hair ornament, purple hair ribbon, "
+    "detached white collar, single green emerald crystal pendant at throat, bare shoulders, "
+    "white and purple off-shoulder dress, detached wide white juliet sleeves, frilled purple cuffs, "
+    "purple corset waist, layered frilled white mini skirt, long split white coattails with purple lining, "
+    "purple thighhigh stockings, white knee-high boots with purple V-shaped cuffs"
+)
+
+ULTRA_FRAMING_LEADS: dict[str, str] = {
+    "full_body": (
+        "full body, medium-long shot, entire body visible from head to toe, "
+        "generous headroom above head, both feet and white knee-high boots completely visible on ground"
+    ),
+    "upper_body": (
+        "upper body, cowboy shot, generous headroom above head, entire head and torso in frame"
+    ),
+    "portrait": (
+        "portrait, upper body, generous headroom above head, entire head and hair flower fully in frame"
+    ),
+}
+
+DEFAULT_ULTRA_POSITIVE_PROMPT: str = (
+    "masterpiece, best quality, absurdres, 1girl, solo, "
+    f"{ULTRA_FRAMING_LEADS['full_body']}, {ULTRA_EMILIA_OUTFIT_CANONICAL}, "
+    "standing on a sunlit stone garden path, blooming flowers, stone archway, soft warm daylight, "
+    "gentle warm smile, looking at viewer, balanced body proportions, coherent anatomy, "
+    "delicate clean lineart, soft anime cel shading"
+)
+
+DEFAULT_ULTRA_NEGATIVE_PROMPT: str = (
+    "worst quality, low quality, lowres, unfinished, sketch, blurry, overexposed, flat lighting, "
+    "bad anatomy, bad proportions, long torso, long legs, warped legs, bowed legs, knock-kneed, "
+    "extra legs, third leg, extra limbs, fused legs, asymmetrical boots, mismatched footwear, "
+    "stocking feet, shoeless, barefoot, cropped feet, feet out of frame, standing on rocks, "
+    "bad hands, malformed hands, fused fingers, extra fingers, missing fingers, "
+    "cape, capelet, cloak, poncho, shawl, hood, hooded cloak, white cloak, high collar, turtleneck, "
+    "round gold button, gold clasp, double brooch, floor-length gown, wedding dress, "
+    "background character, distant person, tiny figure in background, pedestrian, crowd, multiple girls, "
+    "asymmetrical eyes, crossed eyes, concentric iris rings, ringed eyes, spiral eyes, "
+    "red eyes, blue eyes, pink eyes, heterochromia, cropped head, text, watermark, signature, photo, realistic, 3d, nsfw"
+)
+
+DEFAULT_ULTRA_FACE_POSITIVE_PROMPT: str = (
+    r"masterpiece, best quality, rezero emilia, emilia \(re:zero\), anime face, "
+    "symmetrical violet eyes, clear glossy purple irises, soft vertical oval pupils, "
+    "bright white eye highlights, delicate eyelashes, subtle nose and lip shading, "
+    "natural warm smile, silver-white hair, straight bangs, crown braid, "
+    "white flower hair ornament, x hair ornament, pointed elf ears, "
+    "clean delicate lineart, layered anime cel shading"
+)
+
+DEFAULT_ULTRA_FACE_NEGATIVE_PROMPT: str = (
+    "worst quality, low quality, blurry face, concentric iris rings, ringed eyes, "
+    "spiral eyes, target eyes, multiple pupils, asymmetrical eyes, crossed eyes, "
+    "red eyes, blue eyes, pink eyes, heterochromia, dot mouth, flat shading, "
+    "distorted face, deformed mouth, realistic, photo, 3d, text, watermark"
+)
+
+DEFAULT_ULTRA_HAND_POSITIVE_PROMPT: str = (
+    "masterpiece, best quality, anime hands, five slender fingers, "
+    "clear finger separation, natural knuckles and fingernails, correct wrist anatomy, "
+    "pale fair skin, white and purple sleeve cuff, clean delicate lineart, layered anime cel shading"
+)
+
+DEFAULT_ULTRA_HAND_NEGATIVE_PROMPT: str = (
+    "worst quality, low quality, malformed hand, extra fingers, missing fingers, "
+    "fused fingers, six fingers, four fingers, mutated hands, twisted wrist, "
+    "duplicated hand, extra arm, blurry, realistic, photo, text, watermark"
+)
+
 # Eye repair fallback prompts
 DEFAULT_EYE_REPAIR_BASE_POSITIVE_PROMPT: str = (
     r"1girl, solo, rezero emilia, emilia \(re:zero\), silver-white hair, straight bangs, "
@@ -294,6 +368,13 @@ class StudioConfig:
     lora_safe_negative_prompt: str = DEFAULT_LORA_SAFE_NEGATIVE_PROMPT
     lora_production_positive_prompt: str = DEFAULT_LORA_PRODUCTION_POSITIVE_PROMPT
     lora_production_negative_prompt: str = DEFAULT_LORA_PRODUCTION_NEGATIVE_PROMPT
+    ultra_outfit_canonical: str = ULTRA_EMILIA_OUTFIT_CANONICAL
+    ultra_positive_prompt: str = DEFAULT_ULTRA_POSITIVE_PROMPT
+    ultra_negative_prompt: str = DEFAULT_ULTRA_NEGATIVE_PROMPT
+    ultra_face_positive_prompt: str = DEFAULT_ULTRA_FACE_POSITIVE_PROMPT
+    ultra_face_negative_prompt: str = DEFAULT_ULTRA_FACE_NEGATIVE_PROMPT
+    ultra_hand_positive_prompt: str = DEFAULT_ULTRA_HAND_POSITIVE_PROMPT
+    ultra_hand_negative_prompt: str = DEFAULT_ULTRA_HAND_NEGATIVE_PROMPT
 
     def __post_init__(self) -> None:
         self.root_dir = Path(self.root_dir)

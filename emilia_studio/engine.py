@@ -305,19 +305,22 @@ class EmiliaRenderEngine:
         seed: int = 20261027,
         port: int = 8199,
         pag: bool = False,
+        profile: str = "quality",
         positive_prompt: str | None = None,
         negative_prompt: str | None = None,
-        ipadapter_weight: float = 0.4,
+        ipadapter_weight: float | None = None,
         user_idea: str | None = None,
         strict_seed_lock: bool = True,
         auto_eye_repair: bool = False,
         max_seed_retries: int = 0,
         isolation_mode: str = "process",
     ) -> dict[str, Any]:
-        """Execute full HighRes Native -> Quality Gate -> Finish 2x pipeline and record to ledger."""
+        """Execute full 2-stage Native -> Quality Gate -> Finish 2x pipeline ('quality' or 'ultra' profile) and record to ledger."""
         assert self.config.app_dir is not None
+        is_ultra = profile == "ultra"
+        eff_ipa_weight = (0.18 if is_ultra else 0.40) if ipadapter_weight is None else ipadapter_weight
         run_id = uuid.uuid4().hex[:12]
-        run_dir = self.config.app_dir / "temp" / ("quality_" + run_id)
+        run_dir = self.config.app_dir / "temp" / (f"{profile}_" + run_id)
         run_dir.mkdir(parents=True, exist_ok=True)
 
         current_seed = seed
@@ -328,13 +331,22 @@ class EmiliaRenderEngine:
 
         while True:
             attempt += 1
-            native_graph = self.builder.build_highres_native(
-                seed=current_seed,
-                pag=pag,
-                positive_prompt=positive_prompt,
-                negative_prompt=negative_prompt,
-                ipadapter_weight=ipadapter_weight,
-            )
+            if is_ultra:
+                native_graph = self.builder.build_ultra_native(
+                    seed=current_seed,
+                    pag=pag,
+                    positive_prompt=positive_prompt,
+                    negative_prompt=negative_prompt,
+                    ipadapter_weight=eff_ipa_weight,
+                )
+            else:
+                native_graph = self.builder.build_highres_native(
+                    seed=current_seed,
+                    pag=pag,
+                    positive_prompt=positive_prompt,
+                    negative_prompt=negative_prompt,
+                    ipadapter_weight=eff_ipa_weight,
+                )
             generation = await self.render_stage_isolated(
                 native_graph,
                 "native" if attempt == 1 else f"native_retry_{attempt}",
@@ -396,11 +408,18 @@ class EmiliaRenderEngine:
                 eye_repair_result["outputs"]["22"]["images"][0],
             )
 
-        finish_graph = self.builder.build_highres_finish(
-            image_path=str(selected),
-            seed=current_seed,
-            pag=pag,
-        )
+        if is_ultra:
+            finish_graph = self.builder.build_ultra_finish(
+                image_path=str(selected),
+                seed=current_seed,
+                pag=pag,
+            )
+        else:
+            finish_graph = self.builder.build_highres_finish(
+                image_path=str(selected),
+                seed=current_seed,
+                pag=pag,
+            )
         finishing = await self.render_stage_isolated(
             finish_graph,
             "finish",
@@ -424,7 +443,12 @@ class EmiliaRenderEngine:
             )
         receipt: dict[str, Any] = {
             "seed": current_seed,
-            "guidance": "PAG scale 1.0" if pag else "baseline",
+            "profile": profile,
+            "guidance": (
+                ("Ultra Multi-Scale + PAG" if pag else "Ultra Multi-Scale (832->1152->2304)")
+                if is_ultra
+                else ("PAG scale 1.0" if pag else "baseline")
+            ),
             "python": sys.executable,
             "isolation": "Native process exited before finishing process started; no model overlap across stages.",
             "temperature_power_software_stop": False,
@@ -448,10 +472,11 @@ class EmiliaRenderEngine:
         try:
             self.ledger.record_run(
                 seed=current_seed,
-                mode="quality_pag" if pag else "quality",
+                mode=(f"{profile}_pag" if pag else profile),
                 guidance=receipt["guidance"],
                 prompt_idea=user_idea,
-                positive_prompt=positive_prompt or self.config.base_positive_prompt,
+                positive_prompt=positive_prompt
+                or (self.config.ultra_positive_prompt if is_ultra else self.config.base_positive_prompt),
                 native_path=str(selected),
                 final_path=str(final),
                 native_sha256=native_report.pixel_sha256,

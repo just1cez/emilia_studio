@@ -253,9 +253,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("idea", nargs="+", help="中文生图想法")
     parser.add_argument(
         "--mode",
-        choices=("quality", "fast"),
-        default="quality",
-        help="quality: 1152x1728 IPAdapter + 面部/手部SAM精修 + 2304x3456 超分 (默认); fast: 832x1216 快速单阶段",
+        choices=("ultra", "quality", "fast"),
+        default="ultra",
+        help="ultra: 832->1152 多尺度Hires+服饰锁定+面手精修+2304x3456超分 (默认); quality: 旧版1152直出; fast: 832x1216单阶段",
     )
     parser.add_argument("--seed", type=int, default=None, help="指定随机种子")
     parser.add_argument("--pag", action="store_true", help="在 quality 模式下启用 PAG scale 1.0")
@@ -285,11 +285,17 @@ def main(argv: list[str] | None = None) -> int:
     compiler = OllamaPromptCompiler(CONFIG)
     compiler.ensure_ollama()
 
-    if args.mode == "quality":
-        print("正在让 Ollama 编译高画质结构化提示词……", flush=True)
-        spec = compiler.compile_idea(idea, style=args.style, highres_quality_mode=True)
+    if args.mode in ("ultra", "quality"):
+        is_ultra = args.mode == "ultra"
+        print(f"正在让 Ollama 编译高画质结构化提示词 [{args.mode}]……", flush=True)
+        spec = compiler.compile_idea(
+            idea,
+            style=args.style,
+            highres_quality_mode=True,
+            ultra_mode=is_ultra,
+        )
         print(
-            f"英文提示词 [{spec.framing}, IPAdapter={spec.recommended_ipadapter_weight}]：{spec.positive_prompt}",
+            f"英文提示词 [{args.mode}/{spec.framing}, IPAdapter={spec.recommended_ipadapter_weight}]：{spec.positive_prompt}",
             flush=True,
         )
         seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1)
@@ -299,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
                 seed=seed,
                 port=CONFIG.quality_port,
                 pag=args.pag,
+                profile=args.mode,
                 positive_prompt=spec.positive_prompt,
                 negative_prompt=spec.negative_prompt,
                 ipadapter_weight=spec.recommended_ipadapter_weight,

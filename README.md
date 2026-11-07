@@ -85,15 +85,15 @@ Copy `config.example.toml` to `config.toml` (optional; paths auto-resolve by def
 python -m emilia_studio.cli setup --sync
 ```
 
-#### 2. Render 2304×3456 Artwork (Fixed Seed or Auto-Gate)
+#### 2. Render 2304×3456 Artwork (Ultra Multi-Scale or Bit-Exact Baseline)
 ```powershell
+# Recommended: Next-Gen Ultra Multi-Scale Hires.fix (832x1216 -> 1152x1728 -> 2304x3456) with canonical outfit lock
+.\render-emilia-quality.ps1 -Seed 20261027 -Profile ultra -AutoGate
+
 # Reproducible fixed-seed baseline (matches Round 1 SHA-256 pixel hash)
-.\render-emilia-quality.ps1 -Seed 20261027
+.\render-emilia-quality.ps1 -Seed 20261027 -Profile quality
 
-# Unattended mode with automatic multi-subject rejection & violet-iris repair gate
-.\render-emilia-quality.ps1 -Seed 20261027 -AutoGate
-
-# Optional PerturbedAttentionGuidance (PAG scale 1.0) composition variant
+# Optional PerturbedAttentionGuidance (PAG) composition variant
 .\render-emilia-quality.ps1 -Seed 20261027 -Pag
 ```
 
@@ -201,15 +201,15 @@ flowchart LR
 python -m emilia_studio.cli setup --sync
 ```
 
-#### 2. 运行 2304×3456 高画质渲染（固定种子或自动质检门禁）
+#### 2. 运行 2304×3456 高画质渲染（Ultra 多尺度精修或基准复现模式）
 ```powershell
+# 推荐：新一代 Ultra 多尺度 Hires.fix 模式（832x1216 -> 1152x1728 全身精修 -> 2304x3456，锁定原版露肩分离领礼服与自然全身比例）
+.\render-emilia-quality.ps1 -Seed 20261027 -Profile ultra -AutoGate
+
 # 固定种子可复现基准模式（输出像素 SHA-256 与 Round 1 100% 一致）
-.\render-emilia-quality.ps1 -Seed 20261027
+.\render-emilia-quality.ps1 -Seed 20261027 -Profile quality
 
-# 开启无人值守自动质检门禁（自动拦截多主体废图 + 自动修复蓝粉异色瞳）
-.\render-emilia-quality.ps1 -Seed 20261027 -AutoGate
-
-# 可选开启社区 PAG (PerturbedAttentionGuidance scale 1.0) 构图变体
+# 可选开启社区 PAG (PerturbedAttentionGuidance) 构图变体
 .\render-emilia-quality.ps1 -Seed 20261027 -Pag
 ```
 

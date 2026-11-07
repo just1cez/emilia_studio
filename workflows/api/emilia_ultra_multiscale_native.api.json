@@ -1,0 +1,292 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "official_face_center_clean.png"
+    },
+    "_meta": {
+      "title": "Official clean center face reference"
+    }
+  },
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "Illustrious-XL-v0.1.safetensors"
+    },
+    "_meta": {
+      "title": "Illustrious XL v0.1"
+    }
+  },
+  "10": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "4",
+        1
+      ],
+      "lora_name": "emilia-re-zero-re.safetensors",
+      "strength_model": 0.42,
+      "strength_clip": 0.42
+    },
+    "_meta": {
+      "title": "Emilia LoRA (Base Pass)"
+    }
+  },
+  "11": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "4",
+        1
+      ],
+      "lora_name": "emilia-re-zero-re.safetensors",
+      "strength_model": 0.38,
+      "strength_clip": 0.38
+    },
+    "_meta": {
+      "title": "Emilia LoRA (1152x1728 Hires Refinement Pass)"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "masterpiece, best quality, absurdres, 1girl, solo, full body, medium-long shot, entire body visible from head to toe, generous headroom above head, both feet and white knee-high boots completely visible on ground, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, anime key visual, silver-white hair, long hair, straight bangs, crown braid, symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, white rose hair ornament, x hair ornament, purple hair ribbon, detached white collar, single green emerald crystal pendant at throat, bare shoulders, white and purple off-shoulder dress, detached wide white juliet sleeves, frilled purple cuffs, purple corset waist, layered frilled white mini skirt, long split white coattails with purple lining, purple thighhigh stockings, white knee-high boots with purple V-shaped cuffs, standing on a sunlit stone garden path, blooming flowers, stone archway, soft warm daylight, gentle warm smile, looking at viewer, balanced body proportions, coherent anatomy, delicate clean lineart, soft anime cel shading",
+      "clip": [
+        "10",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Ultra canonical outfit + scene conditioning"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "worst quality, low quality, lowres, unfinished, sketch, blurry, overexposed, flat lighting, bad anatomy, bad proportions, long torso, long legs, warped legs, bowed legs, knock-kneed, extra legs, third leg, extra limbs, fused legs, asymmetrical boots, mismatched footwear, stocking feet, shoeless, barefoot, cropped feet, feet out of frame, standing on rocks, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, cape, capelet, cloak, poncho, shawl, hood, hooded cloak, white cloak, high collar, turtleneck, round gold button, gold clasp, double brooch, floor-length gown, wedding dress, background character, distant person, tiny figure in background, pedestrian, crowd, multiple girls, asymmetrical eyes, crossed eyes, concentric iris rings, ringed eyes, spiral eyes, red eyes, blue eyes, pink eyes, heterochromia, cropped head, text, watermark, signature, photo, realistic, 3d, nsfw",
+      "clip": [
+        "10",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Anatomy, footwear & cloak/collar negative guardrails"
+    }
+  },
+  "40": {
+    "class_type": "IPAdapterModelLoader",
+    "inputs": {
+      "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+    },
+    "_meta": {
+      "title": "IPAdapter Plus Face SDXL"
+    }
+  },
+  "41": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": {
+      "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+    },
+    "_meta": {
+      "title": "CLIP Vision ViT-H"
+    }
+  },
+  "42": {
+    "class_type": "IPAdapterAdvanced",
+    "inputs": {
+      "model": [
+        "10",
+        0
+      ],
+      "ipadapter": [
+        "40",
+        0
+      ],
+      "image": [
+        "1",
+        0
+      ],
+      "weight": 0.18,
+      "weight_type": "ease in-out",
+      "combine_embeds": "average",
+      "start_at": 0.15,
+      "end_at": 0.65,
+      "embeds_scaling": "V only",
+      "clip_vision": [
+        "41",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Gentle V-only ease in-out face anchor"
+    }
+  },
+  "5": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 832,
+      "height": 1216,
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "SDXL Native 832x1216 Proportion Canvas"
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "42",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ],
+      "seed": 20261027,
+      "steps": 28,
+      "cfg": 5.0,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "denoise": 1.0
+    },
+    "_meta": {
+      "title": "Pass 1: 832x1216 Global Anatomy & Outfit Render"
+    }
+  },
+  "50": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "FP32 Tiled Decode 832x1216"
+    }
+  },
+  "51": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "50",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": 1152,
+      "height": 1728,
+      "crop": "disabled"
+    },
+    "_meta": {
+      "title": "Lanczos Pixel Upscale to 1152x1728"
+    }
+  },
+  "52": {
+    "class_type": "VAEEncodeTiled",
+    "inputs": {
+      "pixels": [
+        "51",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "FP32 Tiled Encode 1152x1728"
+    }
+  },
+  "53": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "11",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "52",
+        0
+      ],
+      "seed": 20261028,
+      "steps": 16,
+      "cfg": 4.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 0.34
+    },
+    "_meta": {
+      "title": "Pass 2: Full-Canvas 1152x1728 Body/Leg/Fabric Hires.fix"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": [
+        "53",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "FP32 Tiled Decode 1152x1728"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "emilia/ultra/01_base"
+    },
+    "_meta": {
+      "title": "Save 1152x1728 Multi-Scale Base"
+    }
+  }
+}
