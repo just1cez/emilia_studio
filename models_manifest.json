@@ -17,11 +17,25 @@
       "purpose": "Character identity LoRA (strength 0.8/0.8)"
     },
     {
+      "name": "Emilia Re:Zero Canonical Outfit LoRA (S1/S2)",
+      "relative_path": "models/loras/Emilia_Rezero_Q-000005.safetensors",
+      "size_bytes": 228457236,
+      "stage": "both",
+      "purpose": "Canonical anime outfit LoRA (3-tier scalloped peplum, split front tabard, gold 4-leaf clover motif)"
+    },
+    {
       "name": "IPAdapter Plus Face SDXL ViT-H",
       "relative_path": "models/ipadapter/ip-adapter-plus-face_sdxl_vit-h.safetensors",
       "size_bytes": 847517512,
       "stage": "native",
       "purpose": "Official face reference conditioning (weight 0.40, end_at 0.75)"
+    },
+    {
+      "name": "IPAdapter Plus General SDXL ViT-H",
+      "relative_path": "models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
+      "size_bytes": 847517512,
+      "stage": "native",
+      "purpose": "Spatial-masked official skirt & bodice geometry conditioning (weight 0.45, V only)"
     },
     {
       "name": "CLIP-ViT-H-14 LAION2B",
@@ -65,6 +79,12 @@
       "relative_path": "input/official_face_center_clean.png",
       "size_bytes": 124058,
       "purpose": "Canonical IPAdapter reference image for Stage 1 native generation"
+    },
+    {
+      "name": "Official Emilia Skirt & Bodice Reference Sheet",
+      "relative_path": "input/emilia_official_skirt_and_bodice.png",
+      "size_bytes": 440305,
+      "purpose": "Official character design crop of Emilia's bodice, 3-tier scalloped peplum, and split tabard skirt"
     }
   ],
   "custom_nodes": [

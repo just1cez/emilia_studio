@@ -72,25 +72,30 @@ DEFAULT_HAND_DETAILER_NEGATIVE_PROMPT: str = (
     "duplicated hand, extra arm, deformed sleeve, blurry, realistic, photo, text, watermark"
 )
 
-# Ultra Multi-Scale Hires.fix (832x1216 -> 1152x1728 -> 2304x3456) canonical identity & outfit lock
+# Ultra Multi-Scale Hires.fix (832x1216 -> 1152x1728 -> 2304x3456) canonical identity, official skirt geometry & lighting lock
 ULTRA_EMILIA_OUTFIT_CANONICAL: str = (
-    r"rezero emilia, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, "
-    "official character design, anime key visual, silver-white hair, long hair, straight bangs, "
+    r"emilia_rezero, rezero emilia, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, "
+    "official character design, anime key visual, silver-white hair, very long hair, straight bangs, "
     "crown braid, symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, "
     "white rose hair ornament, x hair ornament, purple hair ribbon, "
-    "detached white collar, single green emerald crystal pendant at throat, bare shoulders, "
-    "white and purple off-shoulder dress, detached wide white juliet sleeves, frilled purple cuffs, "
-    "purple corset waist, layered frilled white mini skirt, long split white coattails with purple lining, "
-    "purple thighhigh stockings, white knee-high boots with purple V-shaped cuffs"
+    "detached white high collar with scalloped purple trim, green diamond crystal pendant at throat, bare shoulders, "
+    "white sweetheart bustier cups with purple frilled trim, "
+    "white corset waist panel with six vertical purple dash markings, "
+    "three-tiered white petal-scalloped peplum overskirt with lavender edges, "
+    "white box-pleated miniskirt with thin purple stripe near hem, "
+    "long split white dress coattails on both sides, "
+    "detached wide white juliet bell sleeves with purple frilled upper cuffs and long purple sleeve tails with yellow hawk-bird emblem, "
+    "zettai ryouiki, bare thighs, white thighhigh stockings with purple zig-zag V-shaped cuffs, "
+    "white high-heel ankle boots with purple V-cuffs"
 )
 
 ULTRA_FRAMING_LEADS: dict[str, str] = {
     "full_body": (
         "full body, medium-long shot, entire body visible from head to toe, "
-        "generous headroom above head, both feet and white knee-high boots completely visible on ground"
+        "generous headroom above head, both feet and white ankle boots completely visible on ground"
     ),
     "upper_body": (
-        "upper body, cowboy shot, generous headroom above head, entire head and torso in frame"
+        "upper body, cowboy shot, generous headroom above head, entire head, waist, and pleated skirt visible in frame"
     ),
     "portrait": (
         "portrait, upper body, generous headroom above head, entire head and hair flower fully in frame"
@@ -98,26 +103,27 @@ ULTRA_FRAMING_LEADS: dict[str, str] = {
 }
 
 DEFAULT_ULTRA_POSITIVE_PROMPT: str = (
-    "masterpiece, best quality, absurdres, 1girl, solo, "
+    "masterpiece, best quality, absurdres, polished anime key visual illustration, 1girl, solo, "
     f"{ULTRA_FRAMING_LEADS['full_body']}, {ULTRA_EMILIA_OUTFIT_CANONICAL}, "
-    "standing on a sunlit stone garden path, blooming flowers, stone archway, soft warm daylight, "
-    "gentle warm smile, looking at viewer, balanced body proportions, coherent anatomy, "
-    "delicate clean lineart, soft anime cel shading"
+    "standing on a sunlit stone garden path, blooming white roses, stone archway, "
+    "intricate background foliage, soft golden hour volumetric light, warm key light and cool ambient shadows, "
+    "natural shadow gradients on face and dress pleats, balanced exposure, delicate clean lineart, luminous shading"
 )
 
 DEFAULT_ULTRA_NEGATIVE_PROMPT: str = (
-    "worst quality, low quality, lowres, unfinished, sketch, blurry, overexposed, flat lighting, "
+    "worst quality, low quality, lowres, unfinished, sketch, blurry, overexposed, neon greens, oversaturated, "
+    "flat lighting, harsh contrast, blown-out highlights, anime screencap, flat background, simple background, "
+    "white background, glowing outline, halo around body, "
     "bad anatomy, bad proportions, long torso, long legs, warped legs, bowed legs, knock-kneed, "
     "extra legs, third leg, extra limbs, fused legs, asymmetrical boots, mismatched footwear, "
-    "stocking feet, shoeless, barefoot, cropped feet, feet out of frame, standing on rocks, "
+    "stocking feet, shoeless, barefoot, cropped feet, feet out of frame, "
     "bad hands, malformed hands, fused fingers, extra fingers, missing fingers, "
-    "cape, capelet, cloak, poncho, shawl, hood, hooded cloak, white cloak, high collar, turtleneck, "
-    "round gold button, gold clasp, double brooch, floor-length gown, wedding dress, "
-    "background character, distant person, tiny figure in background, pedestrian, crowd, multiple girls, "
+    "hood, hooded cloak, white cloak, fur hood, cape hood, purple bodysuit, bodysuit, "
+    "solid purple corset, dark purple apron, floor-length gown, wedding dress, "
+    "round gold button, double brooch, background character, distant person, crowd, multiple girls, "
     "asymmetrical eyes, crossed eyes, concentric iris rings, ringed eyes, spiral eyes, "
     "red eyes, blue eyes, pink eyes, heterochromia, cropped head, text, watermark, signature, photo, realistic, 3d, nsfw"
 )
-
 DEFAULT_ULTRA_FACE_POSITIVE_PROMPT: str = (
     r"masterpiece, best quality, rezero emilia, emilia \(re:zero\), anime face, "
     "symmetrical violet eyes, clear glossy purple irises, soft vertical oval pupils, "

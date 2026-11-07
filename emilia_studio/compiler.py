@@ -204,14 +204,15 @@ class OllamaPromptCompiler:
     def build_emilia_ultra_prompt(
         self, scene_and_pose_tags: str, framing: str = "full_body"
     ) -> str:
-        """Assemble framing-first canonical Emilia Ultra prompt with exact off-shoulder dress & boots."""
+        """Assemble framing-first canonical Emilia Ultra prompt with exact official skirt & painterly lighting."""
         framing_lead = ULTRA_FRAMING_LEADS.get(framing, ULTRA_FRAMING_LEADS["full_body"])
         return deduplicate_tags(
             f"masterpiece, best quality, absurdres, 1girl, solo, {framing_lead}, "
             f"{self.config.ultra_outfit_canonical}, {scene_and_pose_tags}, "
-            "balanced body proportions, coherent anatomy, delicate clean lineart, soft anime cel shading"
+            "cinematic volumetric lighting, luminous rim light, subsurface scattering on skin and silver hair, "
+            "soft ambient occlusion in skirt pleats, rich color depth, balanced body proportions, "
+            "coherent anatomy, delicate clean lineart, layered anime cel shading"
         )
-
     def compile_idea(
         self,
         idea: str,

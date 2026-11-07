@@ -147,23 +147,43 @@ class EmiliaWorkflowBuilder:
         width: int = 1152,
         height: int = 1728,
         base_steps: int = 28,
-        hires_steps: int = 16,
-        cfg_base: float = 5.0,
+        hires_steps: int = 18,
+        cfg_base: float = 4.5,
         cfg_hires: float = 4.5,
-        hires_denoise: float = 0.34,
-        lora_strength_base: float = 0.42,
-        lora_strength_hires: float = 0.38,
+        hires_denoise: float = 0.40,
+        rescale_cfg_multiplier: float = 0.75,
+        lora_name: str | None = None,
+        lora_strength_base: float = 0.25,
+        lora_strength_hires: float = 0.0,
         ipadapter_weight: float = 0.18,
+        skirt_ipadapter_weight: float = 0.45,
         ipadapter_start_at: float = 0.15,
-        ipadapter_end_at: float = 0.65,
+        ipadapter_end_at: float = 0.60,
         filename_prefix: str | None = None,
     ) -> Dict[str, Any]:
-        """Constructs the multi-scale 832x1216 -> 1152x1728 Hires.fix native graph for coherent full-body proportions & canonical outfit."""
+        """Constructs the multi-scale 832x1216 -> 1152x1728 Hires.fix native graph with spatial-masked official Skirt IPAdapter & RescaleCFG painterly lighting."""
         pos = positive_prompt or self.config.ultra_positive_prompt
         neg = negative_prompt or self.config.ultra_negative_prompt
         out_prefix = filename_prefix or (
             "emilia/ultra/01_pag_base" if pag else "emilia/ultra/01_base"
         )
+        app_dir = self.config.app_dir
+        if lora_name is None:
+            if app_dir is not None and (app_dir / "models" / "loras" / "Emilia_Rezero_Q-000005.safetensors").is_file():
+                lora_name = "Emilia_Rezero_Q-000005.safetensors"
+            else:
+                lora_name = "emilia-re-zero-re.safetensors"
+
+        has_general_ipa = bool(
+            app_dir is not None
+            and (app_dir / "models" / "ipadapter" / "ip-adapter-plus_sdxl_vit-h.safetensors").is_file()
+        )
+        has_skirt_ref = bool(
+            (app_dir is not None and (app_dir / "input" / "emilia_official_skirt_and_bodice.png").is_file())
+            or (self.config.root_dir / "assets" / "official_references" / "emilia_official_skirt_and_bodice.png").is_file()
+        )
+        use_skirt_ipa = skirt_ipadapter_weight > 0 and has_general_ipa and has_skirt_ref
+
         graph: Dict[str, Any] = {
             "1": {
                 "class_type": "LoadImage",
@@ -180,18 +200,18 @@ class EmiliaWorkflowBuilder:
                 "inputs": {
                     "model": ["4", 0],
                     "clip": ["4", 1],
-                    "lora_name": "emilia-re-zero-re.safetensors",
+                    "lora_name": lora_name,
                     "strength_model": lora_strength_base,
                     "strength_clip": lora_strength_base,
                 },
-                "_meta": {"title": "Emilia LoRA (Base Pass)"},
+                "_meta": {"title": "Emilia Canonical Outfit LoRA (Base Pass)"},
             },
             "11": {
                 "class_type": "LoraLoader",
                 "inputs": {
                     "model": ["4", 0],
                     "clip": ["4", 1],
-                    "lora_name": "emilia-re-zero-re.safetensors",
+                    "lora_name": lora_name,
                     "strength_model": lora_strength_hires,
                     "strength_clip": lora_strength_hires,
                 },
@@ -200,12 +220,20 @@ class EmiliaWorkflowBuilder:
             "6": {
                 "class_type": "CLIPTextEncode",
                 "inputs": {"text": pos, "clip": ["10", 1]},
-                "_meta": {"title": "Ultra canonical outfit + scene conditioning"},
+                "_meta": {"title": "Pass 1: Canonical outfit + scene conditioning"},
+            },
+            "61": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {
+                    "text": pos,
+                    "clip": ["4", 1] if lora_strength_hires == 0 else ["11", 1],
+                },
+                "_meta": {"title": "Pass 2: Painterly Illustrious lighting & detail conditioning"},
             },
             "7": {
                 "class_type": "CLIPTextEncode",
-                "inputs": {"text": neg, "clip": ["10", 1]},
-                "_meta": {"title": "Anatomy, footwear & cloak/collar negative guardrails"},
+                "inputs": {"text": neg, "clip": ["4", 1]},
+                "_meta": {"title": "Anatomy, footwear, cloak & overexposure guardrails"},
             },
             "40": {
                 "class_type": "IPAdapterModelLoader",
@@ -240,12 +268,94 @@ class EmiliaWorkflowBuilder:
             },
         }
         base_model_ref: list[Any] = ["42", 0] if ipadapter_weight > 0 else ["10", 0]
+
+        if use_skirt_ipa:
+            graph["2"] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": "emilia_official_skirt_and_bodice.png"},
+                "_meta": {"title": "Official Emilia bodice, 3-tier scalloped peplum & pleated skirt sheet"},
+            }
+            graph["103"] = {
+                "class_type": "PrepImageForClipVision",
+                "inputs": {
+                    "image": ["2", 0],
+                    "interpolation": "LANCZOS",
+                    "crop_position": "center",
+                    "sharpening": 0.1,
+                },
+                "_meta": {"title": "Prepare official skirt reference for CLIP Vision"},
+            }
+            graph["200"] = {
+                "class_type": "SolidMask",
+                "inputs": {"value": 0.0, "width": base_width, "height": base_height},
+            }
+            graph["201"] = {
+                "class_type": "SolidMask",
+                "inputs": {
+                    "value": 1.0,
+                    "width": round(base_width * 0.58),
+                    "height": round(base_height * 0.53),
+                },
+            }
+            graph["202"] = {
+                "class_type": "MaskComposite",
+                "inputs": {
+                    "destination": ["200", 0],
+                    "source": ["201", 0],
+                    "x": round(base_width * 0.21),
+                    "y": round(base_height * 0.28),
+                    "operation": "add",
+                },
+            }
+            graph["203"] = {
+                "class_type": "FeatherMask",
+                "inputs": {
+                    "mask": ["202", 0],
+                    "left": 96,
+                    "top": 96,
+                    "right": 96,
+                    "bottom": 96,
+                },
+                "_meta": {"title": "Spatial torso/skirt attention mask (protects background lighting)"},
+            }
+            graph["43"] = {
+                "class_type": "IPAdapterModelLoader",
+                "inputs": {"ipadapter_file": "ip-adapter-plus_sdxl_vit-h.safetensors"},
+                "_meta": {"title": "General SDXL IPAdapter Plus (Outfit & Skirt Geometry)"},
+            }
+            graph["44"] = {
+                "class_type": "IPAdapterAdvanced",
+                "inputs": {
+                    "model": base_model_ref,
+                    "ipadapter": ["43", 0],
+                    "image": ["103", 0],
+                    "weight": skirt_ipadapter_weight,
+                    "weight_type": "ease in-out",
+                    "combine_embeds": "norm average",
+                    "start_at": 0.10,
+                    "end_at": ipadapter_end_at,
+                    "embeds_scaling": "V only",
+                    "attn_mask": ["203", 0],
+                    "clip_vision": ["41", 0],
+                },
+                "_meta": {"title": "Spatial-masked official skirt & bodice conditioning"},
+            }
+            base_model_ref = ["44", 0]
+
         if pag:
             graph["60"] = {
                 "class_type": "PerturbedAttentionGuidance",
                 "inputs": {"model": base_model_ref, "scale": pag_scale},
             }
             base_model_ref = ["60", 0]
+
+        if rescale_cfg_multiplier > 0:
+            graph["46"] = {
+                "class_type": "RescaleCFG",
+                "inputs": {"model": base_model_ref, "multiplier": rescale_cfg_multiplier},
+                "_meta": {"title": "RescaleCFG (prevents highlight blowout & neon saturation)"},
+            }
+            base_model_ref = ["46", 0]
 
         graph["3"] = {
             "class_type": "KSampler",
@@ -261,7 +371,7 @@ class EmiliaWorkflowBuilder:
                 "scheduler": "karras",
                 "denoise": 1.0,
             },
-            "_meta": {"title": "Pass 1: 832x1216 Global Anatomy & Outfit Render"},
+            "_meta": {"title": "Pass 1: 832x1216 Global Anatomy & Official Skirt Render"},
         }
         graph["50"] = {
             "class_type": "VAEDecodeTiled",
@@ -298,11 +408,20 @@ class EmiliaWorkflowBuilder:
             },
             "_meta": {"title": "FP32 Tiled Encode 1152x1728"},
         }
+        hires_model_ref: list[Any] = ["4", 0] if lora_strength_hires == 0 else ["11", 0]
+        if rescale_cfg_multiplier > 0:
+            graph["55"] = {
+                "class_type": "RescaleCFG",
+                "inputs": {"model": hires_model_ref, "multiplier": rescale_cfg_multiplier},
+                "_meta": {"title": "Pass 2 RescaleCFG for luminous painterly lighting"},
+            }
+            hires_model_ref = ["55", 0]
+
         graph["53"] = {
             "class_type": "KSampler",
             "inputs": {
-                "model": ["11", 0],
-                "positive": ["6", 0],
+                "model": hires_model_ref,
+                "positive": ["61", 0],
                 "negative": ["7", 0],
                 "latent_image": ["52", 0],
                 "seed": seed + 1,
@@ -312,7 +431,7 @@ class EmiliaWorkflowBuilder:
                 "scheduler": "karras",
                 "denoise": hires_denoise,
             },
-            "_meta": {"title": "Pass 2: Full-Canvas 1152x1728 Body/Leg/Fabric Hires.fix"},
+            "_meta": {"title": "Pass 2: Full-Canvas 1152x1728 Painterly Lighting & Skirt Hires.fix"},
         }
         graph["8"] = {
             "class_type": "VAEDecodeTiled",
@@ -341,7 +460,8 @@ class EmiliaWorkflowBuilder:
         image_path: str,
         seed: int = 20261027,
         pag: bool = False,
-        lora_strength: float = 0.38,
+        lora_name: str | None = None,
+        lora_strength: float = 0.25,
         face_denoise: float = 0.28,
         hand_denoise: float = 0.30,
         face_steps: int = 20,
@@ -353,6 +473,12 @@ class EmiliaWorkflowBuilder:
         upscale_factor: float = 2.0,
     ) -> Dict[str, Any]:
         """Constructs the upgraded Stage 2 Face/Hand SAM finishing + 2x RealESRGAN graph."""
+        app_dir = self.config.app_dir
+        if lora_name is None:
+            if app_dir is not None and (app_dir / "models" / "loras" / "Emilia_Rezero_Q-000005.safetensors").is_file():
+                lora_name = "Emilia_Rezero_Q-000005.safetensors"
+            else:
+                lora_name = "emilia-re-zero-re.safetensors"
         graph = self.build_highres_finish(
             image_path=image_path,
             seed=seed,
@@ -363,6 +489,7 @@ class EmiliaWorkflowBuilder:
             hand_steps=hand_steps,
             upscale_factor=upscale_factor,
         )
+        graph["10"]["inputs"]["lora_name"] = lora_name
         graph["10"]["inputs"]["strength_model"] = lora_strength
         graph["10"]["inputs"]["strength_clip"] = lora_strength
         graph["17"]["inputs"]["text"] = self.config.ultra_face_positive_prompt

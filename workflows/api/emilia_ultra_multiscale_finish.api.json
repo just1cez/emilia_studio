@@ -2,7 +2,7 @@
   "1": {
     "class_type": "LoadImage",
     "inputs": {
-      "image": "emilia_ultra_selected_native.png"
+      "image": "emilia_ultra_selected_base.png"
     },
     "_meta": {
       "title": "Selected native artwork / not the official reference face"
@@ -28,9 +28,9 @@
         "4",
         1
       ],
-      "lora_name": "emilia-re-zero-re.safetensors",
-      "strength_model": 0.38,
-      "strength_clip": 0.38
+      "lora_name": "Emilia_Rezero_Q-000005.safetensors",
+      "strength_model": 0.25,
+      "strength_clip": 0.25
     },
     "_meta": {
       "title": "Emilia LoRA / 0.8 identity lock"

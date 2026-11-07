@@ -28,12 +28,12 @@
         "4",
         1
       ],
-      "lora_name": "emilia-re-zero-re.safetensors",
-      "strength_model": 0.42,
-      "strength_clip": 0.42
+      "lora_name": "Emilia_Rezero_Q-000005.safetensors",
+      "strength_model": 0.25,
+      "strength_clip": 0.25
     },
     "_meta": {
-      "title": "Emilia LoRA (Base Pass)"
+      "title": "Emilia Canonical Outfit LoRA (Base Pass)"
     }
   },
   "11": {
@@ -47,9 +47,9 @@
         "4",
         1
       ],
-      "lora_name": "emilia-re-zero-re.safetensors",
-      "strength_model": 0.38,
-      "strength_clip": 0.38
+      "lora_name": "Emilia_Rezero_Q-000005.safetensors",
+      "strength_model": 0.0,
+      "strength_clip": 0.0
     },
     "_meta": {
       "title": "Emilia LoRA (1152x1728 Hires Refinement Pass)"
@@ -58,27 +58,40 @@
   "6": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "text": "masterpiece, best quality, absurdres, 1girl, solo, full body, medium-long shot, entire body visible from head to toe, generous headroom above head, both feet and white knee-high boots completely visible on ground, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, anime key visual, silver-white hair, long hair, straight bangs, crown braid, symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, white rose hair ornament, x hair ornament, purple hair ribbon, detached white collar, single green emerald crystal pendant at throat, bare shoulders, white and purple off-shoulder dress, detached wide white juliet sleeves, frilled purple cuffs, purple corset waist, layered frilled white mini skirt, long split white coattails with purple lining, purple thighhigh stockings, white knee-high boots with purple V-shaped cuffs, standing on a sunlit stone garden path, blooming flowers, stone archway, soft warm daylight, gentle warm smile, looking at viewer, balanced body proportions, coherent anatomy, delicate clean lineart, soft anime cel shading",
+      "text": "masterpiece, best quality, absurdres, polished anime key visual illustration, 1girl, solo, full body, medium-long shot, entire body visible from head to toe, generous headroom above head, both feet and white ankle boots completely visible on ground, emilia_rezero, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, anime key visual, silver-white hair, very long hair, straight bangs, crown braid, symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, white rose hair ornament, x hair ornament, purple hair ribbon, detached white high collar with scalloped purple trim, green diamond crystal pendant at throat, bare shoulders, white sweetheart bustier cups with purple frilled trim, white corset waist panel with six vertical purple dash markings, three-tiered white petal-scalloped peplum overskirt with lavender edges, white box-pleated miniskirt with thin purple stripe near hem, long split white dress coattails on both sides, detached wide white juliet bell sleeves with purple frilled upper cuffs and long purple sleeve tails with yellow hawk-bird emblem, zettai ryouiki, bare thighs, white thighhigh stockings with purple zig-zag V-shaped cuffs, white high-heel ankle boots with purple V-cuffs, standing on a sunlit stone garden path, blooming white roses, stone archway, intricate background foliage, soft golden hour volumetric light, warm key light and cool ambient shadows, natural shadow gradients on face and dress pleats, balanced exposure, delicate clean lineart, luminous shading",
       "clip": [
         "10",
         1
       ]
     },
     "_meta": {
-      "title": "Ultra canonical outfit + scene conditioning"
+      "title": "Pass 1: Canonical outfit + scene conditioning"
+    }
+  },
+  "61": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "masterpiece, best quality, absurdres, polished anime key visual illustration, 1girl, solo, full body, medium-long shot, entire body visible from head to toe, generous headroom above head, both feet and white ankle boots completely visible on ground, emilia_rezero, rezero emilia, emilia \\(re:zero\\), re:zero kara hajimeru isekai seikatsu, official character design, anime key visual, silver-white hair, very long hair, straight bangs, crown braid, symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, white rose hair ornament, x hair ornament, purple hair ribbon, detached white high collar with scalloped purple trim, green diamond crystal pendant at throat, bare shoulders, white sweetheart bustier cups with purple frilled trim, white corset waist panel with six vertical purple dash markings, three-tiered white petal-scalloped peplum overskirt with lavender edges, white box-pleated miniskirt with thin purple stripe near hem, long split white dress coattails on both sides, detached wide white juliet bell sleeves with purple frilled upper cuffs and long purple sleeve tails with yellow hawk-bird emblem, zettai ryouiki, bare thighs, white thighhigh stockings with purple zig-zag V-shaped cuffs, white high-heel ankle boots with purple V-cuffs, standing on a sunlit stone garden path, blooming white roses, stone archway, intricate background foliage, soft golden hour volumetric light, warm key light and cool ambient shadows, natural shadow gradients on face and dress pleats, balanced exposure, delicate clean lineart, luminous shading",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Pass 2: Painterly Illustrious lighting & detail conditioning"
     }
   },
   "7": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "text": "worst quality, low quality, lowres, unfinished, sketch, blurry, overexposed, flat lighting, bad anatomy, bad proportions, long torso, long legs, warped legs, bowed legs, knock-kneed, extra legs, third leg, extra limbs, fused legs, asymmetrical boots, mismatched footwear, stocking feet, shoeless, barefoot, cropped feet, feet out of frame, standing on rocks, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, cape, capelet, cloak, poncho, shawl, hood, hooded cloak, white cloak, high collar, turtleneck, round gold button, gold clasp, double brooch, floor-length gown, wedding dress, background character, distant person, tiny figure in background, pedestrian, crowd, multiple girls, asymmetrical eyes, crossed eyes, concentric iris rings, ringed eyes, spiral eyes, red eyes, blue eyes, pink eyes, heterochromia, cropped head, text, watermark, signature, photo, realistic, 3d, nsfw",
+      "text": "worst quality, low quality, lowres, unfinished, sketch, blurry, overexposed, neon greens, oversaturated, flat lighting, harsh contrast, blown-out highlights, anime screencap, flat background, simple background, white background, glowing outline, halo around body, bad anatomy, bad proportions, long torso, long legs, warped legs, bowed legs, knock-kneed, extra legs, third leg, extra limbs, fused legs, asymmetrical boots, mismatched footwear, stocking feet, shoeless, barefoot, cropped feet, feet out of frame, bad hands, malformed hands, fused fingers, extra fingers, missing fingers, hood, hooded cloak, white cloak, fur hood, cape hood, purple bodysuit, bodysuit, solid purple corset, dark purple apron, floor-length gown, wedding dress, round gold button, double brooch, background character, distant person, crowd, multiple girls, asymmetrical eyes, crossed eyes, concentric iris rings, ringed eyes, spiral eyes, red eyes, blue eyes, pink eyes, heterochromia, cropped head, text, watermark, signature, photo, realistic, 3d, nsfw",
       "clip": [
-        "10",
+        "4",
         1
       ]
     },
     "_meta": {
-      "title": "Anatomy, footwear & cloak/collar negative guardrails"
+      "title": "Anatomy, footwear, cloak & overexposure guardrails"
     }
   },
   "40": {
@@ -118,7 +131,7 @@
       "weight_type": "ease in-out",
       "combine_embeds": "average",
       "start_at": 0.15,
-      "end_at": 0.65,
+      "end_at": 0.6,
       "embeds_scaling": "V only",
       "clip_vision": [
         "41",
@@ -140,11 +153,139 @@
       "title": "SDXL Native 832x1216 Proportion Canvas"
     }
   },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "emilia_official_skirt_and_bodice.png"
+    },
+    "_meta": {
+      "title": "Official Emilia bodice, 3-tier scalloped peplum & pleated skirt sheet"
+    }
+  },
+  "103": {
+    "class_type": "PrepImageForClipVision",
+    "inputs": {
+      "image": [
+        "2",
+        0
+      ],
+      "interpolation": "LANCZOS",
+      "crop_position": "center",
+      "sharpening": 0.1
+    },
+    "_meta": {
+      "title": "Prepare official skirt reference for CLIP Vision"
+    }
+  },
+  "200": {
+    "class_type": "SolidMask",
+    "inputs": {
+      "value": 0.0,
+      "width": 832,
+      "height": 1216
+    }
+  },
+  "201": {
+    "class_type": "SolidMask",
+    "inputs": {
+      "value": 1.0,
+      "width": 483,
+      "height": 644
+    }
+  },
+  "202": {
+    "class_type": "MaskComposite",
+    "inputs": {
+      "destination": [
+        "200",
+        0
+      ],
+      "source": [
+        "201",
+        0
+      ],
+      "x": 175,
+      "y": 340,
+      "operation": "add"
+    }
+  },
+  "203": {
+    "class_type": "FeatherMask",
+    "inputs": {
+      "mask": [
+        "202",
+        0
+      ],
+      "left": 96,
+      "top": 96,
+      "right": 96,
+      "bottom": 96
+    },
+    "_meta": {
+      "title": "Spatial torso/skirt attention mask (protects background lighting)"
+    }
+  },
+  "43": {
+    "class_type": "IPAdapterModelLoader",
+    "inputs": {
+      "ipadapter_file": "ip-adapter-plus_sdxl_vit-h.safetensors"
+    },
+    "_meta": {
+      "title": "General SDXL IPAdapter Plus (Outfit & Skirt Geometry)"
+    }
+  },
+  "44": {
+    "class_type": "IPAdapterAdvanced",
+    "inputs": {
+      "model": [
+        "42",
+        0
+      ],
+      "ipadapter": [
+        "43",
+        0
+      ],
+      "image": [
+        "103",
+        0
+      ],
+      "weight": 0.45,
+      "weight_type": "ease in-out",
+      "combine_embeds": "norm average",
+      "start_at": 0.1,
+      "end_at": 0.6,
+      "embeds_scaling": "V only",
+      "attn_mask": [
+        "203",
+        0
+      ],
+      "clip_vision": [
+        "41",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Spatial-masked official skirt & bodice conditioning"
+    }
+  },
+  "46": {
+    "class_type": "RescaleCFG",
+    "inputs": {
+      "model": [
+        "44",
+        0
+      ],
+      "multiplier": 0.75
+    },
+    "_meta": {
+      "title": "RescaleCFG (prevents highlight blowout & neon saturation)"
+    }
+  },
   "3": {
     "class_type": "KSampler",
     "inputs": {
       "model": [
-        "42",
+        "46",
         0
       ],
       "positive": [
@@ -161,13 +302,13 @@
       ],
       "seed": 20261027,
       "steps": 28,
-      "cfg": 5.0,
+      "cfg": 4.5,
       "sampler_name": "dpmpp_2m_sde",
       "scheduler": "karras",
       "denoise": 1.0
     },
     "_meta": {
-      "title": "Pass 1: 832x1216 Global Anatomy & Outfit Render"
+      "title": "Pass 1: 832x1216 Global Anatomy & Official Skirt Render"
     }
   },
   "50": {
@@ -226,15 +367,28 @@
       "title": "FP32 Tiled Encode 1152x1728"
     }
   },
+  "55": {
+    "class_type": "RescaleCFG",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "multiplier": 0.75
+    },
+    "_meta": {
+      "title": "Pass 2 RescaleCFG for luminous painterly lighting"
+    }
+  },
   "53": {
     "class_type": "KSampler",
     "inputs": {
       "model": [
-        "11",
+        "55",
         0
       ],
       "positive": [
-        "6",
+        "61",
         0
       ],
       "negative": [
@@ -246,14 +400,14 @@
         0
       ],
       "seed": 20261028,
-      "steps": 16,
+      "steps": 18,
       "cfg": 4.5,
       "sampler_name": "dpmpp_2m",
       "scheduler": "karras",
-      "denoise": 0.34
+      "denoise": 0.4
     },
     "_meta": {
-      "title": "Pass 2: Full-Canvas 1152x1728 Body/Leg/Fabric Hires.fix"
+      "title": "Pass 2: Full-Canvas 1152x1728 Painterly Lighting & Skirt Hires.fix"
     }
   },
   "8": {

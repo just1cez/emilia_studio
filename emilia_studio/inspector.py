@@ -258,12 +258,11 @@ class QualityInspector:
             if crop.size == 0:
                 return np.empty((0,), dtype=np.float32)
             ch, cs, cv = _rgb_to_hsv_deg(crop)
-            # Isolate saturated iris pixels; exclude skin tones (hue 8..55 deg), sclera (low S), and dark lashes (low V)
-            mask = (cs > 0.32) & (cv > 0.20) & (cv < 0.92) & ~((ch >= 8.0) & (ch <= 55.0))
+            # Isolate saturated iris pixels; exclude warm skin/eyelash tones (hue 0..65 and 345..360 deg), sclera (low S), and dark lashes (low V)
+            mask = (cs > 0.32) & (cv > 0.20) & (cv < 0.92) & (ch >= 65.0) & (ch <= 345.0)
             if int(np.count_nonzero(mask)) < 8:
-                mask = (cs > 0.22) & (cv > 0.15) & (cv < 0.95) & ~((ch >= 10.0) & (ch <= 50.0))
+                mask = (cs > 0.22) & (cv > 0.15) & (cv < 0.95) & (ch >= 65.0) & (ch <= 345.0)
             return ch[mask]
-
         l_hues = _extract_iris_hues(left_crop)
         r_hues = _extract_iris_hues(right_crop)
 

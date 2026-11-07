@@ -199,13 +199,20 @@ def main(argv: list[str] | None = None) -> int:
             assert config.app_dir is not None
             synced_files: list[str] = []
             if getattr(args, "sync", False) and config.app_dir.is_dir():
-                # 1. Sync reference assets
+                # 1. Sync reference assets (canonical face + multi-angle official reference pack)
                 ref_src = config.root_dir / "assets" / "official_face_center_clean.png"
                 if ref_src.is_file():
                     ref_dst = config.app_dir / "input" / "official_face_center_clean.png"
                     ref_dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(ref_src, ref_dst)
                     synced_files.append("input/official_face_center_clean.png")
+                ref_pack_dir = config.root_dir / "assets" / "official_references"
+                if ref_pack_dir.is_dir():
+                    input_dir = config.app_dir / "input"
+                    input_dir.mkdir(parents=True, exist_ok=True)
+                    for rf in sorted(ref_pack_dir.glob("*.png")):
+                        shutil.copy2(rf, input_dir / rf.name)
+                        synced_files.append(f"input/{rf.name}")
                 # 2. Sync emilia_runtime_patches custom node
                 patch_src = config.root_dir / "patches" / "emilia_runtime_patches" / "__init__.py"
                 if patch_src.is_file():

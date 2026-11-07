@@ -384,11 +384,12 @@ class EmiliaRenderEngine:
         assert selected is not None and native_report is not None
 
         eye_repair_result: dict[str, Any] | None = None
-        if (
+        needs_eye_repair = (
             not strict_seed_lock
             and auto_eye_repair
             and native_report.recommended_action == "repair_eyes"
-        ):
+        )
+        if needs_eye_repair and not is_ultra:
             print(
                 f"quality-gate: eye drift detected ({native_report.reasons}); running targeted eye repair...",
                 flush=True,
@@ -409,10 +410,16 @@ class EmiliaRenderEngine:
             )
 
         if is_ultra:
+            if needs_eye_repair:
+                print(
+                    f"quality-gate: eye hue drift detected ({native_report.reasons}); elevating Stage 2 FaceDetailer denoise to 0.36 for single-pass violet iris correction...",
+                    flush=True,
+                )
             finish_graph = self.builder.build_ultra_finish(
                 image_path=str(selected),
                 seed=current_seed,
                 pag=pag,
+                face_denoise=0.36 if needs_eye_repair else 0.28,
             )
         else:
             finish_graph = self.builder.build_highres_finish(
