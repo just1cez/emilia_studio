@@ -23,10 +23,9 @@ from .ledger import ExperimentLedger
 from .workflows import EmiliaWorkflowBuilder
 
 
-def _output_path(app_dir: Path, meta: dict[str, Any]) -> Path:
-    subfolder = meta.get("subfolder", "")
-    filename = meta["filename"]
-    return (app_dir / "output" / subfolder / filename) if subfolder else (app_dir / "output" / filename)
+def _output_path(output_dir: Path, meta: dict[str, Any]) -> Path:
+    """Resolve SaveImage metadata against the directory passed to ComfyUI."""
+    return output_dir / meta.get("subfolder", "") / meta["filename"]
 
 
 @dataclass
@@ -60,20 +59,38 @@ class EmiliaRenderEngine:
     ) -> None:
         self.config = config or load_config()
         self.builder = builder or EmiliaWorkflowBuilder(self.config)
-        self.inspector = inspector or QualityInspector(app_dir=self.config.app_dir)
+        self.inspector = inspector or QualityInspector(
+            app_dir=self.config.app_dir, python_executable=self.config.conda_python
+        )
         self.ledger = ledger or ExperimentLedger(config=self.config)
+        self._active_temp_dir: Path | None = None
+
+    def _python_executable(self) -> str:
+        if self.config.conda_python is not None:
+            executable = str(self.config.conda_python)
+            if getattr(sys, "frozen", False):
+                import shutil
+
+                resolved = shutil.which(executable) or executable
+                if Path(resolved).resolve() == Path(sys.executable).resolve():
+                    raise RuntimeError("conda_python must be an external Python interpreter, not Emilia.")
+            return executable
+        if getattr(sys, "frozen", False):
+            raise RuntimeError("Configure conda_python with an external Python interpreter to launch ComfyUI.")
+        return sys.executable
 
     def _resolve_local_load_image_ref(self, image_path: Path) -> str | None:
         """Return zero-copy ComfyUI LoadImage annotated reference if image_path is inside local output/input/temp dirs."""
         if self.config.app_dir is None or not image_path.is_file():
             return None
         resolved = image_path.resolve()
-        candidates: list[tuple[Path, str]] = []
-        if self.config.output_dir is not None:
-            candidates.append((self.config.output_dir.resolve(), "[output]"))
-        candidates.append(((self.config.app_dir / "output").resolve(), "[output]"))
-        candidates.append(((self.config.app_dir / "input").resolve(), "[input]"))
-        candidates.append(((self.config.app_dir / "temp").resolve(), "[temp]"))
+        output_dir = self.config.output_dir or self.config.app_dir / "output"
+        temp_dir = self._active_temp_dir or self.config.temp_dir or self.config.app_dir / "temp"
+        candidates = [
+            (output_dir.resolve(), "[output]"),
+            ((self.config.app_dir / "input").resolve(), "[input]"),
+            (temp_dir.resolve(), "[temp]"),
+        ]
         for base_dir, tag in candidates:
             try:
                 rel = resolved.relative_to(base_dir).as_posix()
@@ -138,7 +155,16 @@ class EmiliaRenderEngine:
                 if response.status != 200:
                     raise RuntimeError(submitted)
             prompt_id = submitted["prompt_id"]
-            print(f"{stage}: queued {prompt_id}", flush=True)
+            print(f"{stage}: queued {prompt_id}", file=sys.stderr, flush=True)
+            from .tui import ProgressBar
+
+            pbar: ProgressBar | None = None
+            current_max: int = 0
+            current_node: str | None = None
+            progress_node: str | None = None
+            previous_value = -1
+            pass_number = 0
+            reset_progress = False
             while True:
                 message = await ws.receive()
                 if message.type == aiohttp.WSMsgType.BINARY:
@@ -151,14 +177,34 @@ class EmiliaRenderEngine:
                     continue
                 if kind in ("execution_error", "execution_interrupted"):
                     raise RuntimeError(f"{stage}: {payload}")
-                if kind == "progress" and (
-                    payload["value"] == 1
-                    or payload["value"] == payload["max"]
-                    or payload["value"] % 8 == 0
-                ):
-                    print(f'{stage}: {payload["value"]}/{payload["max"]}', flush=True)
-                if kind == "executing" and payload.get("node") is None:
-                    break
+                if kind == "executing":
+                    node = payload.get("node")
+                    if node is None:
+                        break
+                    current_node = str(node)
+                    reset_progress = True
+                if kind == "progress":
+                    val = int(payload["value"])
+                    mx = int(payload["max"])
+                    node = payload.get("node", current_node)
+                    node = str(node) if node is not None else None
+                    if (
+                        pbar is None or reset_progress or node != progress_node
+                        or mx != current_max or val < previous_value
+                        or (previous_value >= current_max and val <= previous_value)
+                    ):
+                        if pbar is not None and pbar.is_tty:
+                            print(file=sys.stderr, flush=True)
+                        pass_number = pass_number + 1 if node == progress_node else 1
+                        current_max = mx
+                        progress_node = node
+                        label = f"{stage} node {node}" if node is not None else stage
+                        pbar = ProgressBar(
+                            f"{label} pass {pass_number}", total=mx, unit="step", stream=sys.stderr
+                        )
+                        reset_progress = False
+                    pbar.update(val, total=mx)
+                    previous_value = val
 
             async with session.get(f"{base_url}/history/{prompt_id}") as response:
                 response.raise_for_status()
@@ -171,7 +217,10 @@ class EmiliaRenderEngine:
                 (log_dir / "history.json").write_text(
                     json.dumps(history, indent=2), encoding="utf-8"
                 )
-            print(f"{stage}: completed in {elapsed:.1f}s", flush=True)
+            if pbar is not None and pbar.is_tty:
+                pbar.finish(f"{stage}: completed in {elapsed:.1f}s")
+            else:
+                print(f"{stage}: completed in {elapsed:.1f}s", file=sys.stderr, flush=True)
             return StageResult(
                 stage=stage,
                 prompt_id=prompt_id,
@@ -214,12 +263,15 @@ class EmiliaRenderEngine:
                 )
         home = run_dir / stage
         (home / "user").mkdir(parents=True, exist_ok=True)
-        (home / "temp").mkdir(parents=True, exist_ok=True)
-        python_exe = str(self.config.conda_python or sys.executable)
+        stage_temp = (home / "temp").resolve()
+        stage_temp.mkdir(parents=True, exist_ok=True)
+        output_dir = (self.config.output_dir or self.config.app_dir / "output").resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        python_exe = self._python_executable()
         command = [
             python_exe,
             "-u",
-            str(self.config.app_dir / "main.py"),
+            str((self.config.app_dir / "main.py").resolve()),
             "--listen",
             "127.0.0.1",
             "--port",
@@ -233,9 +285,11 @@ class EmiliaRenderEngine:
             "--disable-api-nodes",
             "--disable-auto-launch",
             "--user-directory",
-            str(home / "user"),
+            str((home / "user").resolve()),
             "--temp-directory",
-            str(home / "temp"),
+            str(stage_temp),
+            "--output-directory",
+            str(output_dir),
             "--database-url",
             "sqlite:///:memory:",
             "--log-stdout",
@@ -255,6 +309,7 @@ class EmiliaRenderEngine:
                 stdout=log,
                 stderr=subprocess.STDOUT,
             )
+            self._active_temp_dir = stage_temp
             try:
                 async with aiohttp.ClientSession(
                     timeout=aiohttp.ClientTimeout(total=60),
@@ -291,6 +346,7 @@ class EmiliaRenderEngine:
                     )
                     return stage_res.to_dict()
             finally:
+                self._active_temp_dir = None
                 if process.poll() is None:
                     process.terminate()
                     try:
@@ -320,7 +376,9 @@ class EmiliaRenderEngine:
         is_ultra = profile == "ultra"
         eff_ipa_weight = (0.18 if is_ultra else 0.40) if ipadapter_weight is None else ipadapter_weight
         run_id = uuid.uuid4().hex[:12]
-        run_dir = self.config.app_dir / "temp" / (f"{profile}_" + run_id)
+        temp_dir = self.config.temp_dir or self.config.app_dir / "temp"
+        output_dir = (self.config.output_dir or self.config.app_dir / "output").resolve()
+        run_dir = temp_dir.resolve() / (f"{profile}_" + run_id)
         run_dir.mkdir(parents=True, exist_ok=True)
 
         current_seed = seed
@@ -354,7 +412,7 @@ class EmiliaRenderEngine:
                 port,
             )
             selected = _output_path(
-                self.config.app_dir,
+                output_dir,
                 generation["outputs"]["9"]["images"][0],
             )
             native_report = self.inspector.inspect_image(
@@ -375,6 +433,7 @@ class EmiliaRenderEngine:
             ):
                 print(
                     f"quality-gate: seed {current_seed} rejected ({native_report.reasons}); retrying with new seed...",
+                    file=sys.stderr,
                     flush=True,
                 )
                 current_seed += 1000
@@ -392,6 +451,7 @@ class EmiliaRenderEngine:
         if needs_eye_repair and not is_ultra:
             print(
                 f"quality-gate: eye drift detected ({native_report.reasons}); running targeted eye repair...",
+                file=sys.stderr,
                 flush=True,
             )
             repair_graph = self.builder.build_eye_repair(
@@ -405,7 +465,7 @@ class EmiliaRenderEngine:
                 port,
             )
             selected = _output_path(
-                self.config.app_dir,
+                output_dir,
                 eye_repair_result["outputs"]["22"]["images"][0],
             )
 
@@ -413,6 +473,7 @@ class EmiliaRenderEngine:
             if needs_eye_repair:
                 print(
                     f"quality-gate: eye hue drift detected ({native_report.reasons}); elevating Stage 2 FaceDetailer denoise to 0.36 for single-pass violet iris correction...",
+                    file=sys.stderr,
                     flush=True,
                 )
             finish_graph = self.builder.build_ultra_finish(
@@ -434,7 +495,7 @@ class EmiliaRenderEngine:
             port,
         )
         final = _output_path(
-            self.config.app_dir,
+            output_dir,
             finishing["outputs"]["16"]["images"][0],
         )
         final_report = self.inspector.inspect_image(
@@ -456,7 +517,7 @@ class EmiliaRenderEngine:
                 if is_ultra
                 else ("PAG scale 1.0" if pag else "baseline")
             ),
-            "python": sys.executable,
+            "python": self._python_executable(),
             "isolation": "Native process exited before finishing process started; no model overlap across stages.",
             "temperature_power_software_stop": False,
             "native": str(selected),
@@ -502,6 +563,6 @@ class EmiliaRenderEngine:
         except Exception:
             pass
 
-        print(f"FINISHED: {final}", flush=True)
-        print(f"RECEIPT: {receipt_path}", flush=True)
+        print(f"FINISHED: {final}", file=sys.stderr, flush=True)
+        print(f"RECEIPT: {receipt_path}", file=sys.stderr, flush=True)
         return receipt

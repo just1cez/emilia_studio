@@ -226,3 +226,9 @@ Following a 10-image diverse scene evaluation (`output/emilia/quality/03_finishe
 2. **Painterly Lighting via `RescaleCFG(0.75)` & Pure Illustrious Pass 2 (`denoise=0.40`)**:
    - Added `RescaleCFG(multiplier=0.75)` to both Pass 1 (`832x1216`) and Pass 2 (`1152x1728`, `denoise=0.40`, `lora_strength_hires=0.0`) so high-contrast volumetric lighting, sunset rim light, and moonlight glow render without flat anime overexposure or white background washout.
    - Updated `QualityInspector._extract_iris_hues` (`65.0 <= ch <= 345.0`) to exclude warm golden eyelash/skin highlights (`43-58 deg`) and routed `ultra` eye-hue adjustments directly through Stage 2 `FaceDetailer` (`guide_size=768, denoise=0.36`) instead of running the legacy `guide_size=640` `emilia_eye_repair` graph before Stage 2.
+
+## Portable CLI runtime verification
+
+The controller now bundles read-only resources, while ComfyUI and CPU YOLO use the configured external Python. Output, temporary logs and ledger remain in configurable writable directories. No model weights are included in the wheel/executable.
+
+Standalone executable smoke: seed `20261027`, quality profile, launched outside the repository with bundled API graphs; native `261.6086275 s`, finish `69.5341173 s`, command wall `416.36 s`. Native decoded SHA256 `3b58d9daf2770d0ad7e87b971912b854e1e7495f9e99a09f348af9bf258c9425`; final decoded SHA256 `d7fe10c200535d8656ab633248ca7cc651ee6d2e60bd309c23c43fa1ce5af63e`. The output-directory cutover preserves baseline pixels. External CPU inspection incurs process startup cost; this run is not evidence of a speedup.

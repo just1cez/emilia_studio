@@ -1,18 +1,19 @@
 # Emilia Studio Portable Configuration Template
-# Copy this file to `config.toml` for local machine overrides.
-# When omitted, `emilia_studio.config` auto-resolves paths relative to the repository root
-# and honours `EMILIA_*` environment variables.
+# Use `emilia config init --root-dir <workspace> --python <inference-python>`.
+# Priority: environment fields > explicit/EMILIA_CONFIG_TOML file > user file > source checkout file.
+# Relative TOML paths resolve beside the TOML file, never against the working directory.
 
 [paths]
-# Leave commented out to auto-resolve relative to the repo root:
+# Installed defaults use a writable user workspace; source checkouts retain their root.
 # root_dir = "."
 # app_dir = "./app"
 # output_dir = "./app/output"
 # temp_dir = "./temp"
 # workflows_dir = "./workflows/api"
 # visual_workflows_dir = "./workflows/visual"
-# conda_python = "python"
-# ollama_exe = "ollama"
+# conda_python = "C:/Miniconda/envs/comfyui/python.exe"
+# ollama_exe = "C:/Users/you/AppData/Local/Programs/Ollama/ollama.exe"
+# resources_dir = "./resources"  # optional immutable resource override; normally bundled
 
 [services]
 comfy_host = "127.0.0.1"

@@ -180,7 +180,7 @@ class EmiliaWorkflowBuilder:
         )
         has_skirt_ref = bool(
             (app_dir is not None and (app_dir / "input" / "emilia_official_skirt_and_bodice.png").is_file())
-            or (self.config.root_dir / "assets" / "official_references" / "emilia_official_skirt_and_bodice.png").is_file()
+            or (self.config.assets_dir / "official_references" / "emilia_official_skirt_and_bodice.png").is_file()
         )
         use_skirt_ipa = skirt_ipadapter_weight > 0 and has_general_ipa and has_skirt_ref
 

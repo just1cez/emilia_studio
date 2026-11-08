@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -275,50 +276,182 @@ DEFAULT_FACE_NEGATIVE_PROMPT: str = DEFAULT_FACE_DETAILER_NEGATIVE_PROMPT
 DEFAULT_HAND_POSITIVE_PROMPT: str = DEFAULT_HAND_DETAILER_POSITIVE_PROMPT
 DEFAULT_HAND_NEGATIVE_PROMPT: str = DEFAULT_HAND_DETAILER_NEGATIVE_PROMPT
 
+# Built-in curated scene & lighting presets for one-command CLI invocation
+BUILTIN_SCENE_PRESETS: dict[str, dict[str, Any]] = {
+    "sunset-terrace": {
+        "title": "黄昏宫殿露台 (Golden Sunset Terrace)",
+        "framing": "full_body",
+        "default_seed": 20261108,
+        "tags": (
+            "standing on an ornate marble palace terrace at sunset, three-quarter view, "
+            "wind gently blowing silver hair and dress coattails, warm golden-orange sunset glow "
+            "and cool twilight rim light, glowing floating ice crystals, serene confident smile, looking at viewer"
+        ),
+    },
+    "crystal-sanctuary": {
+        "title": "水晶森林圣域 (Enchanted Crystal Sanctuary)",
+        "framing": "full_body",
+        "default_seed": 20261109,
+        "tags": (
+            "walking gracefully through an enchanted crystal forest sanctuary, sunbeams piercing through canopy, "
+            "dappled volumetric god rays, glowing blue mana particles and white petals floating in the air, "
+            "gentle hand near chest, looking at viewer"
+        ),
+    },
+    "moonlit-balcony": {
+        "title": "月夜古堡露台 (Moonlit Castle Balcony)",
+        "framing": "full_body",
+        "default_seed": 20261104,
+        "tags": (
+            "standing on a grand stone balcony at night under a luminous full moon, "
+            "warm golden lantern light from the left and cool silver moonlight from the right, "
+            "summoning a translucent glowing ice crystal snowflake in one hand, starry night sky, "
+            "gentle mystical smile, looking at viewer"
+        ),
+    },
+    "rose-garden": {
+        "title": "晴日白蔷薇庭院 (Sunlit White Rose Garden)",
+        "framing": "full_body",
+        "default_seed": 20261027,
+        "tags": (
+            "standing on a sunlit stone garden path, blooming white roses, stone archway, "
+            "intricate background foliage, soft golden hour volumetric light, warm key light and cool ambient shadows, "
+            "hands relaxed, gentle smile, looking at viewer"
+        ),
+    },
+    "royal-portrait": {
+        "title": "王选礼服半身特写 (Royal Selection Portrait)",
+        "framing": "portrait",
+        "default_seed": 20261105,
+        "tags": (
+            "close-up portrait, upper body, soft sunlit cathedral window background, "
+            "delicate floating light particles, gentle warm smile, sparkling violet irises, "
+            "luminous hair rim light, looking at viewer"
+        ),
+    },
+    "snowy-capital": {
+        "title": "王都初雪漫步 (First Snow in Royal Capital)",
+        "framing": "full_body",
+        "default_seed": 20261106,
+        "tags": (
+            "walking along a cobblestone street in a fantasy medieval town during gentle snowfall, "
+            "warm shop window lights glowing in the background, soft winter twilight, "
+            "holding a glowing ice crystal, gentle warm breath, looking back at viewer with a smile"
+        ),
+    },
+}
 
-def _resolve_root_dir() -> Path:
-    env_root = os.environ.get("EMILIA_ROOT_DIR")
-    if env_root:
-        return Path(env_root).resolve()
-    default_root = Path("D:/comfyui")
-    if default_root.exists():
-        return default_root
-    return Path(__file__).resolve().parents[1]
+
+def get_user_config_dir() -> Path:
+    """Return the platform-appropriate global user config directory for Emilia Studio."""
+    env_dir = os.environ.get("EMILIA_CONFIG_DIR")
+    if env_dir:
+        return Path(env_dir).expanduser().resolve()
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "EmiliaStudio"
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg) / "emilia-studio"
+    return Path.home() / ".config" / "emilia-studio"
 
 
-def _resolve_conda_python(root_dir: Path) -> Path:
+def get_user_config_path() -> Path:
+    """Return the default global config.toml file path."""
+    env_cfg = os.environ.get("EMILIA_CONFIG_TOML")
+    if env_cfg:
+        return Path(env_cfg).expanduser().resolve()
+    return get_user_config_dir() / "config.toml"
+
+
+def get_bundled_resources_dir() -> Path | None:
+    """Return read-only resources installed in the wheel or frozen application."""
+    package_resources = Path(__file__).resolve().parent / "resources"
+    if package_resources.is_dir():
+        return package_resources
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidate = Path(meipass) / "emilia_bundled"
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def get_source_checkout_dir() -> Path | None:
+    """Recognize this package's checkout, never the caller's working directory."""
+    if getattr(sys, "frozen", False):
+        return None
+    candidate = Path(__file__).resolve().parents[1]
+    if (candidate / "pyproject.toml").is_file() and (candidate / "models_manifest.json").is_file():
+        return candidate
+    return None
+
+
+def get_user_data_dir() -> Path:
+    """Return a writable workspace without creating it during configuration reads."""
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        return (Path(local) if local else Path.home() / "AppData" / "Local") / "EmiliaStudio"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "EmiliaStudio"
+    data_home = os.environ.get("XDG_DATA_HOME")
+    return (Path(data_home) if data_home else Path.home() / ".local" / "share") / "emilia-studio"
+
+
+def _resolve_root_dir(explicit_root: str | Path | None = None) -> Path:
+    root = explicit_root if explicit_root is not None else os.environ.get("EMILIA_ROOT_DIR")
+    if root:
+        return Path(root).expanduser().resolve()
+    return get_source_checkout_dir() or get_user_data_dir()
+
+
+def _external_python(path: str | Path) -> Path:
+    candidate = Path(path).expanduser()
+    if getattr(sys, "frozen", False):
+        resolved = shutil.which(str(candidate)) or candidate
+        if Path(resolved).resolve() == Path(sys.executable).resolve():
+            raise ValueError("conda_python must be an external Python interpreter, not the Emilia executable")
+    return candidate
+
+
+def _resolve_conda_python(root_dir: Path) -> Path | None:
     env_py = os.environ.get("EMILIA_CONDA_PYTHON")
     if env_py:
-        return Path(env_py)
-    candidates = [
-        Path("D:/conda-data/envs/comfyui/python.exe"),
-        root_dir / "env" / "python.exe",
-        Path(sys.executable),
-    ]
+        return _external_python(env_py)
+    executable = Path("python.exe") if sys.platform == "win32" else Path("bin/python")
+    candidates = [root_dir / "env" / executable, root_dir / ".venv" / executable]
+    if sys.platform == "win32":
+        candidates.append(root_dir / ".venv" / "Scripts" / "python.exe")
+    if not getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable))
+    for name in ("python", "python3"):
+        found = shutil.which(name)
+        if found:
+            candidates.append(Path(found))
     for candidate in candidates:
         if candidate.is_file():
-            return candidate
-    return Path(sys.executable)
+            try:
+                return _external_python(candidate)
+            except ValueError:
+                continue
+    # Keep unrelated commands usable; doctor/inference reports the missing Python.
+    return None
 
 
 def _resolve_ollama_exe() -> Path:
     env_ollama = os.environ.get("EMILIA_OLLAMA_EXE")
     if env_ollama:
-        return Path(env_ollama)
-    primary = Path("D:/Ollama/ollama.exe")
-    if primary.is_file():
-        return primary
+        return Path(env_ollama).expanduser()
     which_ollama = shutil.which("ollama")
     if which_ollama:
-        which_path = Path(which_ollama)
-        if which_path.is_file():
-            return which_path
+        return Path(which_ollama)
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        local_candidate = Path(local_app_data) / "Programs" / "Ollama" / "ollama.exe"
-        if local_candidate.is_file():
-            return local_candidate
-    return primary
+        candidate = Path(local_app_data) / "Programs" / "Ollama" / "ollama.exe"
+        if candidate.is_file():
+            return candidate
+    return Path("ollama")
 
 
 @dataclass
@@ -333,6 +466,8 @@ class StudioConfig:
     visual_workflows_dir: Path | None = None
     conda_python: Path | None = None
     ollama_exe: Path | None = None
+    resources_dir: Path | None = None
+    config_source: str = "auto-discovered"
 
     comfy_host: str = field(
         default_factory=lambda: os.environ.get("EMILIA_COMFY_HOST", "127.0.0.1")
@@ -383,7 +518,17 @@ class StudioConfig:
     ultra_hand_negative_prompt: str = DEFAULT_ULTRA_HAND_NEGATIVE_PROMPT
 
     def __post_init__(self) -> None:
-        self.root_dir = Path(self.root_dir)
+        self.root_dir = Path(self.root_dir).expanduser().resolve()
+        if self.resources_dir is None:
+            env_resources = os.environ.get("EMILIA_RESOURCES_DIR")
+            self.resources_dir = (
+                Path(env_resources).expanduser().resolve() if env_resources else
+                get_bundled_resources_dir() or get_source_checkout_dir() or
+                Path(__file__).resolve().parent / "resources"
+            )
+        else:
+            self.resources_dir = Path(self.resources_dir).expanduser().resolve()
+
         if self.app_dir is None:
             env_app = os.environ.get("EMILIA_APP_DIR")
             self.app_dir = Path(env_app) if env_app else self.root_dir / "app"
@@ -406,10 +551,8 @@ class StudioConfig:
             env_wf = os.environ.get("EMILIA_WORKFLOWS_DIR")
             if env_wf:
                 self.workflows_dir = Path(env_wf)
-            elif (self.root_dir / "workflows" / "api").is_dir():
-                self.workflows_dir = self.root_dir / "workflows" / "api"
             else:
-                self.workflows_dir = self.app_dir / "emilia"
+                self.workflows_dir = self.resources_dir / "workflows" / "api"
         else:
             self.workflows_dir = Path(self.workflows_dir)
 
@@ -417,16 +560,14 @@ class StudioConfig:
             env_vwf = os.environ.get("EMILIA_VISUAL_WORKFLOWS_DIR")
             if env_vwf:
                 self.visual_workflows_dir = Path(env_vwf)
-            elif (self.root_dir / "workflows" / "visual").is_dir():
-                self.visual_workflows_dir = self.root_dir / "workflows" / "visual"
             else:
-                self.visual_workflows_dir = self.app_dir / "user" / "default" / "workflows"
+                self.visual_workflows_dir = self.resources_dir / "workflows" / "visual"
         else:
             self.visual_workflows_dir = Path(self.visual_workflows_dir)
         if self.conda_python is None:
             self.conda_python = _resolve_conda_python(self.root_dir)
         else:
-            self.conda_python = Path(self.conda_python)
+            self.conda_python = _external_python(self.conda_python)
 
         if self.ollama_exe is None:
             self.ollama_exe = _resolve_ollama_exe()
@@ -447,12 +588,72 @@ class StudioConfig:
         return f"http://{self.comfy_host}:{self.quality_port}"
 
     @property
+    def manifest_path(self) -> Path:
+        """Read-only model manifest shipped with this application."""
+        return self.resources_dir / "models_manifest.json"
+
+    @property
+    def assets_dir(self) -> Path:
+        """Read-only reference images shipped with this application."""
+        return self.resources_dir / "assets"
+
+    @property
+    def patches_dir(self) -> Path:
+        """Read-only runtime patches shipped with this application."""
+        return self.resources_dir / "patches"
+
+    @property
     def ledger_db_path(self) -> Path:
-        """Default SQLite ledger path."""
-        if (self.root_dir / "workflows").is_dir():
-            return self.root_dir / "workflows" / "studio_ledger.sqlite3"
-        assert self.workflows_dir is not None
-        return self.workflows_dir / "studio_ledger.sqlite3"
+        """Writable ledger, preserving the source-checkout location."""
+        return self.root_dir / "workflows" / "studio_ledger.sqlite3"
+
+    def to_toml_string(self) -> str:
+        """Serialize overrides without persisting frozen extraction directories."""
+        paths = {
+            "root_dir": self.root_dir,
+            "app_dir": self.app_dir,
+            "output_dir": self.output_dir,
+            "temp_dir": self.temp_dir,
+        }
+        default_resources = (
+            get_bundled_resources_dir() or get_source_checkout_dir() or
+            Path(__file__).resolve().parent / "resources"
+        )
+        if self.resources_dir != default_resources:
+            paths["resources_dir"] = self.resources_dir
+        if self.workflows_dir != self.resources_dir / "workflows" / "api":
+            paths["workflows_dir"] = self.workflows_dir
+        if self.visual_workflows_dir != self.resources_dir / "workflows" / "visual":
+            paths["visual_workflows_dir"] = self.visual_workflows_dir
+        for key in ("conda_python", "ollama_exe"):
+            value = getattr(self, key)
+            resolved = shutil.which(str(value)) if value is not None else None
+            if resolved or (value is not None and value.is_absolute()):
+                paths[key] = Path(resolved) if resolved else value
+        lines = [
+            "# Emilia Studio configuration; relative paths resolve beside this file.",
+            "[paths]",
+        ]
+        for key, value in paths.items():
+            lines.append(f"{key} = {json.dumps(str(value).replace(chr(92), '/'), ensure_ascii=False)}")
+        lines.extend([
+            "", "[endpoints]",
+            f"comfy_host = {json.dumps(self.comfy_host, ensure_ascii=False)}",
+            f"comfy_port = {self.comfy_port}",
+            f"quality_port = {self.quality_port}",
+            f"ollama_base = {json.dumps(self.ollama_base, ensure_ascii=False)}",
+            f"ollama_model = {json.dumps(self.ollama_model, ensure_ascii=False)}",
+            "",
+        ])
+        return "\n".join(lines)
+
+    def save_user_config(self, target_path: str | Path | None = None) -> Path:
+        """Persist current configuration to global user config.toml."""
+        out_path = Path(target_path) if target_path is not None else get_user_config_path()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(self.to_toml_string(), encoding="utf-8")
+        return out_path
+
 
 def _flatten_toml(data: dict[str, Any]) -> dict[str, Any]:
     flat: dict[str, Any] = {}
@@ -466,34 +667,31 @@ def _flatten_toml(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_config(config_path: str | Path | None = None) -> StudioConfig:
-    """Load StudioConfig with optional TOML file overrides and environment variable precedence."""
-    root = _resolve_root_dir()
-    toml_overrides: dict[str, Any] = {}
+    """Load explicit/env config, then user config, then this checkout's config.
 
-    if config_path is None:
-        env_cfg = os.environ.get("EMILIA_CONFIG_TOML")
-        candidate = Path(env_cfg) if env_cfg else root / "config.toml"
-        if candidate.is_file():
-            config_path = candidate
+    Environment values override TOML values. Relative TOML paths are anchored
+    to the selected file, not the process's current working directory.
+    """
+    selected = config_path if config_path is not None else os.environ.get("EMILIA_CONFIG_TOML")
+    if selected is None:
+        user_config = get_user_config_dir() / "config.toml"
+        source = get_source_checkout_dir()
+        if user_config.is_file():
+            selected = user_config
+        elif source is not None and (source / "config.toml").is_file():
+            selected = source / "config.toml"
 
-    if config_path is not None:
-        cfg_file = Path(config_path)
-        if cfg_file.is_file():
-            with cfg_file.open("rb") as f:
-                raw_toml = tomllib.load(f)
-            toml_overrides = _flatten_toml(raw_toml)
+    cfg_file = Path(selected).expanduser().resolve() if selected is not None else None
+    overrides: dict[str, Any] = {}
+    if cfg_file is not None:
+        # Explicit missing or malformed configuration must not silently fall back.
+        with cfg_file.open("rb") as stream:
+            overrides = _flatten_toml(tomllib.load(stream))
 
-    kwargs: dict[str, Any] = {}
-    valid_fields = {f.name for f in StudioConfig.__dataclass_fields__.values()}
+    kwargs: dict[str, Any] = {"config_source": str(cfg_file) if cfg_file else "auto-discovered"}
     path_fields = {
-        "root_dir",
-        "app_dir",
-        "output_dir",
-        "temp_dir",
-        "workflows_dir",
-        "visual_workflows_dir",
-        "conda_python",
-        "ollama_exe",
+        "root_dir", "app_dir", "output_dir", "temp_dir", "workflows_dir",
+        "visual_workflows_dir", "conda_python", "ollama_exe", "resources_dir",
     }
     env_map = {
         "root_dir": "EMILIA_ROOT_DIR",
@@ -502,6 +700,7 @@ def load_config(config_path: str | Path | None = None) -> StudioConfig:
         "temp_dir": "EMILIA_TEMP_DIR",
         "workflows_dir": "EMILIA_WORKFLOWS_DIR",
         "visual_workflows_dir": "EMILIA_VISUAL_WORKFLOWS_DIR",
+        "resources_dir": "EMILIA_RESOURCES_DIR",
         "conda_python": "EMILIA_CONDA_PYTHON",
         "ollama_exe": "EMILIA_OLLAMA_EXE",
         "comfy_host": "EMILIA_COMFY_HOST",
@@ -510,13 +709,19 @@ def load_config(config_path: str | Path | None = None) -> StudioConfig:
         "ollama_base": "EMILIA_OLLAMA_BASE",
         "ollama_model": "EMILIA_OLLAMA_MODEL",
     }
-
-    for k, v in toml_overrides.items():
-        if k in valid_fields:
-            # Environment variables take precedence over config.toml
-            env_key = env_map.get(k)
-            if env_key and env_key in os.environ:
+    for key, value in overrides.items():
+        if key not in StudioConfig.__dataclass_fields__ or key == "config_source":
+            continue
+        if key in path_fields:
+            if not value:
                 continue
-            kwargs[k] = Path(v) if k in path_fields else v
-
+            value = Path(value).expanduser()
+            if not value.is_absolute():
+                value = cfg_file.parent / value
+            value = value.resolve()
+        kwargs[key] = value
+    for key, variable in env_map.items():
+        value = os.environ.get(variable)
+        if value:
+            kwargs[key] = Path(value).expanduser() if key in path_fields else value
     return StudioConfig(**kwargs)

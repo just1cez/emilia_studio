@@ -10,7 +10,8 @@ import shutil
 import sys
 from pathlib import Path
 from .compiler import BridgeError, OllamaPromptCompiler
-from .config import load_config
+from .config import BUILTIN_SCENE_PRESETS, load_config
+from .commands import add_commands, handle
 from .engine import EmiliaRenderEngine
 from .inspector import QualityInspector
 from .ledger import ExperimentLedger
@@ -22,7 +23,10 @@ def build_parser() -> argparse.ArgumentParser:
         prog="emilia-studio",
         description="Emilia Studio — Declarative High-Res SDXL + IPAdapter + Detailer + Upscale Pipeline & Ledger",
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument('--version', action='version', version='emilia-studio 2.1.0')
+    parser.add_argument('--config', type=Path, help='Explicit TOML configuration file')
+    sub = parser.add_subparsers(dest="command")
+    add_commands(sub)
 
     # 1. render: quality pipeline (fixed seed or custom prompt)
     p_render = sub.add_parser(
@@ -30,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the 2-stage HighRes Quality (1152x1728 -> 2304x3456) render pipeline.",
     )
     p_render.add_argument("--seed", type=int, default=20261027, help="Base generation seed")
-    p_render.add_argument("--port", type=int, default=8199, help="ComfyUI server port")
+    p_render.add_argument("--port", type=int, default=None, help="Override configured rendering port")
     p_render.add_argument("--pag", action="store_true", help="Enable PerturbedAttentionGuidance (scale 1.0)")
     p_render.add_argument(
         "--profile",
@@ -39,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="quality: bit-exact 1152x1728 baseline; ultra: multi-scale 832->1152->2304 Hires.fix + canonical outfit lock",
     )
     p_render.add_argument("--prompt", type=str, default=None, help="Custom positive English prompt")
+    p_render.add_argument('--preset', choices=tuple(BUILTIN_SCENE_PRESETS))
     p_render.add_argument("--auto-gate", action="store_true", help="Enable automatic seed retry and eye-repair gate")
     p_render.add_argument("--max-retries", type=int, default=2, help="Max seed retries when auto-gate rejects anatomy")
     # 2. idea: Chinese natural language -> Ollama -> HighRes Quality or Fast LoRA
@@ -48,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_idea.add_argument("idea", nargs="+", help="Chinese image description / idea")
     p_idea.add_argument("--seed", type=int, default=None, help="Random seed if omitted")
-    p_idea.add_argument("--port", type=int, default=8199, help="ComfyUI server port")
+    p_idea.add_argument("--port", type=int, default=None, help="Override configured rendering port")
     p_idea.add_argument("--style", choices=("anime", "illustration", "cinematic"), default="anime")
     p_idea.add_argument(
         "--profile",
@@ -105,15 +110,23 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    config = load_config()
 
     try:
+        config = load_config(args.config)
+        result = handle(args, config, main, parser)
+        if result is not None:
+            return result
+        if args.command == 'render' and args.preset:
+            if args.prompt:
+                raise ValueError('Use --preset or --prompt, not both')
+            preset = BUILTIN_SCENE_PRESETS[args.preset]
+            args.prompt = OllamaPromptCompiler(config).build_emilia_ultra_prompt(preset['tags'], preset['framing'])
         if args.command == "render":
             engine = EmiliaRenderEngine(config=config)
             asyncio.run(
                 engine.render_quality_pipeline(
                     seed=args.seed,
-                    port=args.port,
+                    port=args.port if args.port is not None else config.quality_port,
                     pag=args.pag,
                     profile=args.profile,
                     positive_prompt=args.prompt,
@@ -144,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
             asyncio.run(
                 engine.render_quality_pipeline(
                     seed=seed,
-                    port=args.port,
+                    port=args.port if args.port is not None else config.quality_port,
                     pag=args.pag,
                     profile=args.profile,
                     positive_prompt=spec.positive_prompt,
@@ -159,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "inspect":
-            inspector = QualityInspector(app_dir=config.app_dir)
+            inspector = QualityInspector(app_dir=config.app_dir, python_executable=config.conda_python)
             report = inspector.inspect_image(args.image, stage=args.stage)
             print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
             return 0 if report.passed else 2
@@ -192,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "setup":
-            manifest_path = config.root_dir / "models_manifest.json"
+            manifest_path = config.manifest_path
             if not manifest_path.is_file():
                 raise RuntimeError(f"Manifest not found: {manifest_path}")
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -200,13 +213,13 @@ def main(argv: list[str] | None = None) -> int:
             synced_files: list[str] = []
             if getattr(args, "sync", False) and config.app_dir.is_dir():
                 # 1. Sync reference assets (canonical face + multi-angle official reference pack)
-                ref_src = config.root_dir / "assets" / "official_face_center_clean.png"
+                ref_src = config.assets_dir / "official_face_center_clean.png"
                 if ref_src.is_file():
                     ref_dst = config.app_dir / "input" / "official_face_center_clean.png"
                     ref_dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(ref_src, ref_dst)
                     synced_files.append("input/official_face_center_clean.png")
-                ref_pack_dir = config.root_dir / "assets" / "official_references"
+                ref_pack_dir = config.assets_dir / "official_references"
                 if ref_pack_dir.is_dir():
                     input_dir = config.app_dir / "input"
                     input_dir.mkdir(parents=True, exist_ok=True)
@@ -214,14 +227,14 @@ def main(argv: list[str] | None = None) -> int:
                         shutil.copy2(rf, input_dir / rf.name)
                         synced_files.append(f"input/{rf.name}")
                 # 2. Sync emilia_runtime_patches custom node
-                patch_src = config.root_dir / "patches" / "emilia_runtime_patches" / "__init__.py"
+                patch_src = config.patches_dir / "emilia_runtime_patches" / "__init__.py"
                 if patch_src.is_file():
                     patch_dst = config.app_dir / "custom_nodes" / "emilia_runtime_patches" / "__init__.py"
                     patch_dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(patch_src, patch_dst)
                     synced_files.append("custom_nodes/emilia_runtime_patches/__init__.py")
                 # 3. Sync visual workflows into app/user/default/workflows
-                vis_src_dir = config.root_dir / "workflows" / "visual"
+                vis_src_dir = config.visual_workflows_dir
                 if vis_src_dir.is_dir():
                     vis_dst_dir = config.app_dir / "user" / "default" / "workflows"
                     vis_dst_dir.mkdir(parents=True, exist_ok=True)
@@ -274,9 +287,12 @@ def main(argv: list[str] | None = None) -> int:
     except BridgeError as exc:
         print(f"错误：{exc}", file=sys.stderr)
         return 1
-    except Exception as exc:
+    except (ValueError, OSError, RuntimeError) as exc:
         print(f"执行失败：{exc}", file=sys.stderr)
-        raise
+        return 1
+    except KeyboardInterrupt:
+        print('Cancelled.', file=sys.stderr)
+        return 130
 
     return 0
 

@@ -1,0 +1,9 @@
+include build_support.py
+include config.example.toml
+include models_manifest.json
+recursive-include assets *.png
+recursive-include workflows/api *.json
+recursive-include workflows/visual *.json
+recursive-include patches *.patch
+recursive-include patches/emilia_runtime_patches *.py
+recursive-include packaging *.py *.spec *.ps1

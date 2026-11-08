@@ -3,73 +3,109 @@
   "description": "Required model weights, reference assets, and pinned custom nodes for Emilia Studio.",
   "models": [
     {
+      "key": "illustrious-xl",
       "name": "Illustrious-XL v0.1",
       "relative_path": "models/checkpoints/Illustrious-XL-v0.1.safetensors",
       "size_bytes": 6938040760,
       "stage": "both",
+      "download_url": "https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0/resolve/main/Illustrious-XL-v0.1.safetensors",
+      "sha256": "3e15ba00387db678ab4a099f75771c4f5ac67fda9e7100a01d263eaf30145aa9",
+      "source_url": "https://huggingface.co/api/models/OnomaAIResearch/Illustrious-xl-early-release-v0/tree/main",
       "purpose": "Base SDXL anime checkpoint"
     },
     {
+      "key": "emilia-lora-legacy",
       "name": "Emilia (Re:Zero) LoRA",
       "relative_path": "models/loras/emilia-re-zero-re.safetensors",
       "size_bytes": 228466588,
       "stage": "both",
+      "source_url": "https://civitai.com/",
+      "manual_instructions": "No verified public download URL is available. Obtain the original Emilia (Re:Zero) SDXL LoRA from its creator or your existing installation, confirm its identity and license, and place it at models/loras/emilia-re-zero-re.safetensors under your ComfyUI directory. Expected installed size: 228466588 bytes. The previously listed Civitai version ID was unverified and has been removed; do not substitute a model based only on its filename or size.",
       "purpose": "Character identity LoRA (strength 0.8/0.8)"
     },
     {
+      "key": "emilia-lora-canonical",
       "name": "Emilia Re:Zero Canonical Outfit LoRA (S1/S2)",
       "relative_path": "models/loras/Emilia_Rezero_Q-000005.safetensors",
       "size_bytes": 228457236,
       "stage": "both",
+      "source_url": "https://civitai.com/",
+      "manual_instructions": "No verified public download URL is available. Obtain the original Emilia Re:Zero Canonical Outfit SDXL LoRA from its creator or your existing installation, confirm its identity and license, and place it at models/loras/Emilia_Rezero_Q-000005.safetensors under your ComfyUI directory. Expected installed size: 228457236 bytes. The previously listed Civitai version ID was unverified and has been removed; do not substitute a model based only on its filename or size.",
       "purpose": "Canonical anime outfit LoRA (3-tier scalloped peplum, split front tabard, gold 4-leaf clover motif)"
     },
     {
+      "key": "ipadapter-face",
       "name": "IPAdapter Plus Face SDXL ViT-H",
       "relative_path": "models/ipadapter/ip-adapter-plus-face_sdxl_vit-h.safetensors",
       "size_bytes": 847517512,
       "stage": "native",
+      "download_url": "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus-face_sdxl_vit-h.safetensors",
+      "sha256": "677ad8860204f7d0bfba12d29e6c31ded9beefdf3e4bbd102518357d31a292c1",
+      "source_url": "https://huggingface.co/api/models/h94/IP-Adapter/tree/main/sdxl_models",
       "purpose": "Official face reference conditioning (weight 0.40, end_at 0.75)"
     },
     {
+      "key": "ipadapter-plus",
       "name": "IPAdapter Plus General SDXL ViT-H",
       "relative_path": "models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
       "size_bytes": 847517512,
       "stage": "native",
+      "download_url": "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors",
+      "sha256": "3f5062b8400c94b7159665b21ba5c62acdcd7682262743d7f2aefedef00e6581",
+      "source_url": "https://huggingface.co/api/models/h94/IP-Adapter/tree/main/sdxl_models",
       "purpose": "Spatial-masked official skirt & bodice geometry conditioning (weight 0.45, V only)"
     },
     {
+      "key": "clip-vit-h",
       "name": "CLIP-ViT-H-14 LAION2B",
       "relative_path": "models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
       "size_bytes": 2528373448,
       "stage": "native",
+      "download_url": "https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors",
+      "sha256": "6ca9667da1ca9e0b0f75e46bb030f7e011f44f86cbfb8d5a36590fcd7507b030",
+      "source_url": "https://huggingface.co/api/models/h94/IP-Adapter/tree/main/models/image_encoder",
       "purpose": "CLIP Vision encoder for IPAdapter Plus Face"
     },
     {
+      "key": "realesrgan-anime",
       "name": "RealESRGAN x4plus Anime 6B",
       "relative_path": "models/upscale_models/RealESRGAN_x4plus_anime_6B.pth",
       "size_bytes": 17938799,
       "stage": "finish",
+      "download_url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
+      "source_url": "https://github.com/xinntao/Real-ESRGAN/releases/tag/v0.2.2.4",
       "purpose": "4x anime upscaler (followed by 0.5x Lanczos downsample to 2304x3456)"
     },
     {
+      "key": "sam-vit-b",
       "name": "SAM ViT-B",
       "relative_path": "models/sams/sam_vit_b_01ec64.pth",
       "size_bytes": 375042383,
       "stage": "finish",
+      "download_url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+      "source_url": "https://github.com/facebookresearch/segment-anything#model-checkpoints",
       "purpose": "Segment Anything mask refinement for hand detailing"
     },
     {
+      "key": "yolo-face",
       "name": "YOLOv8n Face Detector",
       "relative_path": "models/ultralytics/bbox/face_yolov8n.pt",
       "size_bytes": 6230011,
       "stage": "finish_and_inspector",
+      "download_url": "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8n.pt",
+      "sha256": "70b640f8f60b1cf0dcc72f30caf3da9495eb2fb6509da48c53374ad6806e6a9c",
+      "source_url": "https://huggingface.co/api/models/Bingsu/adetailer/tree/main",
       "purpose": "Face bounding box detection for FaceDetailer and CPU QualityInspector"
     },
     {
+      "key": "yolo-hand",
       "name": "YOLOv8n Hand Detector",
       "relative_path": "models/ultralytics/bbox/hand_yolov8n.pt",
       "size_bytes": 6237883,
       "stage": "finish_and_inspector",
+      "download_url": "https://huggingface.co/Bingsu/adetailer/resolve/main/hand_yolov8n.pt",
+      "sha256": "3991202eb69e9ddcb3b9ba80cdeb41e734ffaf844403d6c9f47d515cd88c6f29",
+      "source_url": "https://huggingface.co/api/models/Bingsu/adetailer/tree/main",
       "purpose": "Hand bounding box detection for ImpactSimpleDetectorSEGS and CPU QualityInspector"
     }
   ],

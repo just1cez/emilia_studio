@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "emilia-studio"
-version = "2.0.0"
-description = "Declarative High-Res SDXL + IPAdapter + Detailer + Upscale Pipeline, Quality Inspector, Ollama Compiler, and SQLite Ledger for Emilia (Re:Zero)"
+version = "2.1.0"
+description = "Declarative High-Res SDXL + IPAdapter + Detailer + Upscale Pipeline, Quality Inspector, Ollama Compiler, Interactive TUI, and SQLite Ledger for Emilia (Re:Zero)"
 requires-python = ">=3.11"
 dependencies = [
     "aiohttp",
@@ -13,8 +13,18 @@ dependencies = [
     "Pillow",
 ]
 
+[project.optional-dependencies]
+build = ["build==1.3.0", "pyinstaller==6.16.0"]
+inspection = ["ultralytics>=8.3,<9"]
+
 [project.scripts]
 emilia-studio = "emilia_studio.cli:main"
+emilia = "emilia_studio.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["emilia_studio*"]
+
+# build_support copies the canonical top-level resources only into build/lib.
+# No generated resource duplicates are maintained in the source package.
+[tool.setuptools.cmdclass]
+build_py = "build_support.ResourceBuildPy"

@@ -1,4 +1,4 @@
-# Emilia Studio (v2.0)
+# Emilia Studio (v2.1)
 
 <div align="center">
 
@@ -10,6 +10,45 @@
 </div>
 
 ---
+## CLI application / 命令行应用
+
+The CLI ships as a Python wheel (`emilia`, `emilia-studio`) and a Windows console executable (`emilia.exe`). These contain the controller and reference/workflow resources, **not** ComfyUI, CUDA, model weights or Ollama. Keep those in a separate inference environment. The frozen controller invokes the configured Python for CPU YOLO inspection; it does not load GPU models itself.
+
+```powershell
+python -m pip install .
+emilia config init --root-dir D:/comfyui --app-dir D:/comfyui/app --python D:/conda-data/envs/comfyui/python.exe
+emilia doctor
+emilia setup --sync
+emilia
+```
+
+无参数启动显示由 `/`、`\`、`_`、`--` 组成的 EMILIA 标志，并在交互终端进入命令提示符；输入 `help` 查看帮助，`exit` 退出。重定向输入时只显示欢迎页，不等待输入。直接子命令不会插入欢迎图案，原有 JSON 查询输出保持可解析。
+
+| Command | Behavior |
+| --- | --- |
+| `config init/show/set/path` | 保存、查看和修改用户 TOML 配置；`init --force` 才覆盖已有文件 |
+| `doctor` | 检查 ComfyUI、推理 Python、依赖、模型大小、参考图和节点目录；缺失时返回非零 |
+| `pull --list` / `pull yolo-face` / `pull all` | 列出或下载模型，显示字节、速度和 ETA；支持断点续传和可用 SHA256 校验 |
+| `presets` / `presets rose-garden` | 列出场景或打印完整提示词，无需调用 Ollama |
+| `render --profile ultra --preset rose-garden` | 用预设执行真实两阶段渲染，显示采样进度 |
+| `idea "爱蜜莉雅在月光下的花园"` | CPU Ollama 编译提示词后渲染 |
+| `gallery --limit 10` / `gallery --open 1` | 浏览最近 PNG，按显示序号打开图片 |
+| `banner` / `shell` / `--version` | 欢迎图案、交互命令行、版本 |
+
+配置优先级：字段环境变量 > `--config` / `EMILIA_CONFIG_TOML` 指定文件 > 用户配置 > 源码目录配置。用户配置位于 Windows `%APPDATA%/EmiliaStudio/config.toml`，其他平台使用 XDG 配置目录。`EMILIA_CONFIG_DIR` 可覆盖用户配置目录。相对 TOML 路径以文件所在目录为基准。安装包资源与可写工作目录分离；不会把任意当前目录的 `config.toml` 当作配置。
+
+下载写入 `.part`，长度及可用 SHA256 校验通过后才替换目标。失败保留已有目标；重新运行同一命令续传。两个 Emilia LoRA 的旧下载 ID 无法确认，**不会自动下载猜测版本**；`pull` 会打印手动安装说明并返回非零。`doctor` 的大小检查不是完整校验和审计，也不证明 GPU 渲染成功。
+
+Build from source:
+
+```powershell
+python -m pip install ".[build]"
+python -m build
+powershell -File packaging/build_windows.ps1 -Python D:/conda-data/envs/comfyui/python.exe
+```
+
+Wheel/exe can be launched from another directory after configuring the external runtime. Rebuild resources from their top-level source on each build; do not edit generated package resource copies.
+
 
 <a id="english"></a>
 

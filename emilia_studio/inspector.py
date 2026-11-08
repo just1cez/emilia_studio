@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import io
+import json
+import shutil
+import subprocess
+import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -19,6 +24,10 @@ def _resolve_default_app_dir() -> Path:
 
 
 _YOLO_MODEL_CACHE: dict[str, Any] = {}
+
+
+class InspectionRuntimeError(RuntimeError):
+    """Required CPU detection could not run in the configured environment."""
 
 def _rgb_to_hsv_deg(rgb_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Convert uint8 RGB array (H, W, 3) to (H_deg [0..360), S [0..1], V [0..1])."""
@@ -126,6 +135,7 @@ class QualityInspector:
         hand_conf_threshold: float = 0.30,
         heterochromia_threshold_deg: float = 32.0,
         violet_hue_range_deg: tuple[float, float] = (250.0, 302.0),
+        python_executable: str | Path | None = None,
     ) -> None:
         self.app_dir = Path(app_dir) if app_dir is not None else _resolve_default_app_dir()
         self.use_yolo = use_yolo
@@ -133,6 +143,7 @@ class QualityInspector:
         self.hand_conf_threshold = hand_conf_threshold
         self.heterochromia_threshold_deg = heterochromia_threshold_deg
         self.violet_hue_range_deg = violet_hue_range_deg
+        self.python_executable = str(python_executable) if python_executable is not None else None
 
         self.face_model_path = self.app_dir / "models" / "ultralytics" / "bbox" / "face_yolov8n.pt"
         self.hand_model_path = self.app_dir / "models" / "ultralytics" / "bbox" / "hand_yolov8n.pt"
@@ -142,30 +153,77 @@ class QualityInspector:
         self._yolo_load_attempted: bool = False
 
     def _ensure_yolo_models(self) -> bool:
-        """Lazily load YOLO face and hand detectors onto CPU (zero GPU VRAM)."""
+        """Load local CPU detectors, or select the configured external interpreter."""
         if not self.use_yolo:
             return False
         if self._yolo_load_attempted:
-            return self._face_model is not None
-        self._yolo_load_attempted = True
+            return self._face_model is not None and self._hand_model is not None
+        for path in (self.face_model_path, self.hand_model_path):
+            if not path.is_file():
+                raise InspectionRuntimeError(f"Required YOLO model is missing: {path}")
         try:
+            if getattr(sys, "frozen", False):
+                raise ImportError("Frozen Emilia uses an external CPU inference environment")
             from ultralytics import YOLO
 
-            if self.face_model_path.is_file():
-                f_key = str(self.face_model_path.resolve())
-                if f_key not in _YOLO_MODEL_CACHE:
-                    _YOLO_MODEL_CACHE[f_key] = YOLO(f_key)
-                self._face_model = _YOLO_MODEL_CACHE[f_key]
-            if self.hand_model_path.is_file():
-                h_key = str(self.hand_model_path.resolve())
-                if h_key not in _YOLO_MODEL_CACHE:
-                    _YOLO_MODEL_CACHE[h_key] = YOLO(h_key)
-                self._hand_model = _YOLO_MODEL_CACHE[h_key]
-            return self._face_model is not None
-        except Exception:
+            for path in (self.face_model_path, self.hand_model_path):
+                key = str(path.resolve())
+                if key not in _YOLO_MODEL_CACHE:
+                    _YOLO_MODEL_CACHE[key] = YOLO(key)
+            self._face_model = _YOLO_MODEL_CACHE[str(self.face_model_path.resolve())]
+            self._hand_model = _YOLO_MODEL_CACHE[str(self.hand_model_path.resolve())]
+        except Exception as exc:
             self._face_model = None
             self._hand_model = None
-            return False
+            if self.python_executable is None:
+                raise InspectionRuntimeError(
+                    "CPU YOLO is unavailable; configure conda_python with torch and ultralytics installed."
+                ) from exc
+        self._yolo_load_attempted = True
+        return self._face_model is not None and self._hand_model is not None
+
+    def _detect_anatomy_external(self, image: Image.Image) -> tuple[
+        list[tuple[float, float, float, float]], list[float],
+        list[tuple[float, float, float, float]], list[float], str,
+    ]:
+        """Run the bundled standalone worker without requiring an installed Emilia package."""
+        executable = self.python_executable
+        if executable is None:
+            raise InspectionRuntimeError("Configure conda_python for CPU YOLO inspection.")
+        resolved_executable = shutil.which(executable) or executable
+        if getattr(sys, "frozen", False) and Path(resolved_executable).resolve() == Path(sys.executable).resolve():
+            raise InspectionRuntimeError("conda_python must be an external Python interpreter, not Emilia.")
+        worker = Path(__file__).with_name("inspection_worker.py")
+        if not worker.is_file():
+            raise InspectionRuntimeError(f"Bundled inspection worker is missing: {worker}")
+        with io.BytesIO() as encoded:
+            image.save(encoded, format="PNG")
+            try:
+                result = subprocess.run(
+                    [
+                        executable, "-u", str(worker),
+                        str(self.face_model_path.resolve()), str(self.hand_model_path.resolve()),
+                        str(self.face_conf_threshold), str(self.hand_conf_threshold),
+                    ],
+                    input=encoded.getvalue(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    check=False,
+                )
+            except OSError as exc:
+                raise InspectionRuntimeError(f"Cannot launch CPU YOLO interpreter {executable}: {exc}") from exc
+        if result.returncode != 0:
+            detail = result.stderr.decode("utf-8", errors="replace").strip()
+            raise InspectionRuntimeError(f"CPU YOLO inspection failed using {executable}: {detail}")
+        try:
+            data = json.loads(result.stdout)
+            return (
+                [tuple(float(value) for value in box) for box in data["face_boxes"]],
+                [float(value) for value in data["face_confidences"]],
+                [tuple(float(value) for value in box) for box in data["hand_boxes"]],
+                [float(value) for value in data["hand_confidences"]],
+                "yolo_cpu",
+            )
+        except (ValueError, KeyError, TypeError) as exc:
+            raise InspectionRuntimeError("CPU YOLO worker returned an invalid detection response.") from exc
 
     def detect_anatomy(
         self, image: Image.Image
@@ -176,7 +234,7 @@ class QualityInspector:
         list[float],
         str,
     ]:
-        """Run CPU-only face and hand detection or return heuristic fallback."""
+        """Run real CPU YOLO; heuristics are available only when explicitly disabled."""
         rgb = image.convert("RGB") if image.mode != "RGB" else image
         if self._ensure_yolo_models():
             face_boxes: list[tuple[float, float, float, float]] = []
@@ -208,7 +266,10 @@ class QualityInspector:
 
             return face_boxes, face_confs, hand_boxes, hand_confs, "yolo_cpu"
 
-        # Heuristic upper-body face region when YOLO is disabled or unavailable
+        if self.use_yolo:
+            return self._detect_anatomy_external(rgb)
+
+        # Explicitly disabled detection retains the existing heuristic inspection mode.
         w, h = rgb.size
         heuristic_box = (0.30 * w, 0.08 * h, 0.70 * w, 0.34 * h)
         return [heuristic_box], [1.0], [], [], "heuristic_cpu"
@@ -390,6 +451,8 @@ class QualityInspector:
                 primary_face = face_boxes[0] if face_boxes else None
                 iris = self.analyze_iris_color(rgb_im, face_bbox=primary_face, rgb_array=arr)
                 iris["anatomy_detector_source"] = detector_source
+        except InspectionRuntimeError:
+            raise
         except Exception as exc:
             return InspectionReport(
                 image_path=str(path),
