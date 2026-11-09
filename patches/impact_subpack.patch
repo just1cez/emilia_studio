@@ -1,0 +1,40 @@
+diff --git a/modules/subcore.py b/modules/subcore.py
+index d309226..6c806dd 100644
+--- a/modules/subcore.py
++++ b/modules/subcore.py
+@@ -323,25 +323,22 @@ def inference_bbox(
+     confidence: float = 0.3,
+     device: str = "",
+ ):
+-    pred = model(image, conf=confidence, device=device)
++    pred = model(image, conf=confidence, device=device, verbose=False)
+ 
+     bboxes = pred[0].boxes.xyxy.cpu().numpy()
+-    cv2_image = np.array(image)
+-    if len(cv2_image.shape) == 3:
+-        cv2_image = cv2_image[:, :, ::-1].copy()  # Convert RGB to BGR for cv2 processing
+-    else:
+-        # Handle the grayscale image here
+-        # For example, you might want to convert it to a 3-channel grayscale image for consistency:
+-        cv2_image = cv2.cvtColor(cv2_image, cv2.COLOR_GRAY2BGR)
+-    cv2_gray = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2GRAY)
++    w_img, h_img = image.size
+ 
+     segms = []
+     for x0, y0, x1, y1 in bboxes:
+-        cv2_mask = np.zeros(cv2_gray.shape, np.uint8)
+-        cv2.rectangle(cv2_mask, (int(x0), int(y0)), (int(x1), int(y1)), 255, -1)
+-        cv2_mask_bool = cv2_mask.astype(bool)
++        cv2_mask_bool = np.zeros((h_img, w_img), dtype=bool)
++        ix0, iy0, ix1, iy1 = int(x0), int(y0), int(x1), int(y1)
++        if ix0 > ix1:
++            ix0, ix1 = ix1, ix0
++        if iy0 > iy1:
++            iy0, iy1 = iy1, iy0
++        if ix1 >= 0 and iy1 >= 0 and ix0 < w_img and iy0 < h_img:
++            cv2_mask_bool[max(0, iy0):min(h_img, iy1 + 1), max(0, ix0):min(w_img, ix1 + 1)] = True
+         segms.append(cv2_mask_bool)
+-
+     n, m = bboxes.shape
+     if n == 0:
+         return [[], [], [], []]

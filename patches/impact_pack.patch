@@ -37,3 +37,23 @@ index a75a5bf..0e374b5 100644
  class SAM2Wrapper:
      def __init__(self, config, modelname, is_auto_mode, safe_to_gpu=None, device_mode="AUTO"):
          self.config = config
+diff --git a/modules/impact/impact_pack.py b/modules/impact/impact_pack.py
+index c776c03..9fb26f2 100644
+--- a/modules/impact/impact_pack.py
++++ b/modules/impact/impact_pack.py
+@@ -163,7 +163,14 @@ class SAMLoader:
+             else:
+                 model_kind = 'vit_b'
+ 
+-            sam = sam_model_registry[model_kind](checkpoint=modelname)
++            try:
++                with torch.device("meta"):
++                    sam = sam_model_registry[model_kind](checkpoint=None)
++                sam_sd = torch.load(modelname, map_location="cpu", mmap=True, weights_only=True)
++                sam.load_state_dict(sam_sd, assign=True)
++                sam.eval()
++            except Exception:
++                sam = sam_model_registry[model_kind](checkpoint=modelname)
+ 
+         size = os.path.getsize(modelname)
+         safe_to = core.SafeToGPU(size)

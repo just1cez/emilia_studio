@@ -12,6 +12,9 @@ from typing import Any
 from .config import StudioConfig, load_config
 
 
+_INITIALIZED_DBS: set[tuple[str, int]] = set()
+
+
 class ExperimentLedger:
     """SQLite ledger tracking Emilia Studio renders and benchmark rounds."""
 
@@ -19,8 +22,11 @@ class ExperimentLedger:
         self.config = config or load_config()
         self.db_path = Path(db_path) if db_path else self.config.ledger_db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
-
+        resolved_key = str(self.db_path.resolve())
+        stat_size = self.db_path.stat().st_size if self.db_path.is_file() else 0
+        if (resolved_key, 1) not in _INITIALIZED_DBS or stat_size == 0:
+            self._init_db()
+            _INITIALIZED_DBS.add((resolved_key, 1))
     _RUN_COLS: tuple[str, ...] = (
         "timestamp", "seed", "mode", "guidance", "prompt_idea", "positive_prompt",
         "native_path", "final_path", "native_sha256", "final_sha256",

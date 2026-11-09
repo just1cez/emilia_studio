@@ -28,6 +28,19 @@ def _output_path(output_dir: Path, meta: dict[str, Any]) -> Path:
     """Resolve SaveImage metadata against the directory passed to ComfyUI."""
     return output_dir / meta.get("subfolder", "") / meta["filename"]
 
+
+
+def _assert_port_available(host: str, port: int) -> None:
+    """Check port availability in <1 ms via exclusive socket bind instead of 2s Winsock SYN retry."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        try:
+            sock.bind((host, port))
+        except OSError as exc:
+            raise RuntimeError(
+                f"Port {port} is occupied; existing ComfyUI was not stopped."
+            ) from exc
 class QualityGateRejected(RuntimeError):
     """Generation stopped by the gate; its completed work has a receipt."""
 
@@ -91,6 +104,11 @@ class EmiliaRenderEngine:
         )
         self.ledger = ledger or ExperimentLedger(config=self.config)
         self._active_temp_dir: Path | None = None
+        self._active_process: subprocess.Popen[Any] | None = None
+        self._pending_inspector_warmup: tuple[bool] | None = None
+        self._warmup_task: asyncio.Task[Any] | None = None
+        self._pending_stage_inspection: Any = None
+        self._completed_stage_inspection: InspectionReport | None = None
 
     def _python_executable(self) -> str:
         if self.config.conda_python is not None:
@@ -106,6 +124,23 @@ class EmiliaRenderEngine:
             raise RuntimeError("Configure conda_python with an external Python interpreter to launch ComfyUI.")
         return sys.executable
 
+
+    def _stage_custom_node_whitelist(self, stage: str) -> list[str]:
+        """Return stage-minimal custom_nodes directory whitelist when all target directories exist."""
+        if self.config.app_dir is None:
+            return []
+        cn_root = self.config.app_dir / "custom_nodes"
+        if not cn_root.is_dir():
+            return []
+        if stage.startswith(("native", "batch_native")):
+            desired = ["comfyui-ipadapter-plus", "emilia_runtime_patches"]
+        elif stage.startswith(("finish", "eye_repair", "batch_finish", "batch_eye_repair")):
+            desired = ["comfyui-impact-pack", "comfyui-impact-subpack", "emilia_runtime_patches"]
+        else:
+            return []
+        if all((cn_root / name).exists() for name in desired):
+            return desired
+        return []
     def _resolve_local_load_image_ref(self, image_path: Path) -> str | None:
         """Return zero-copy ComfyUI LoadImage annotated reference if image_path is inside local output/input/temp dirs."""
         if self.config.app_dir is None or not image_path.is_file():
@@ -211,6 +246,12 @@ class EmiliaRenderEngine:
                     current_node = str(node)
                     reset_progress = True
                 if kind == "progress":
+                    if self._pending_inspector_warmup is not None:
+                        (warm_pose,) = self._pending_inspector_warmup
+                        self._pending_inspector_warmup = None
+                        self._warmup_task = asyncio.create_task(
+                            asyncio.to_thread(self.inspector.warmup, run_pose=warm_pose)
+                        )
                     val = int(payload["value"])
                     mx = int(payload["max"])
                     node = payload.get("node", current_node)
@@ -281,6 +322,9 @@ class EmiliaRenderEngine:
         extra_pnginfo: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run a single stage in an isolated ComfyUI child process and exit cleanly."""
+        pending_inspect = self._pending_stage_inspection
+        self._pending_stage_inspection = None
+        self._completed_stage_inspection = None
         async with self._stage_server_session(stage, run_dir, port) as (session, base, home):
             stage_res = await self._execute_graph_on_session(
                 session=session,
@@ -290,18 +334,39 @@ class EmiliaRenderEngine:
                 log_dir=home,
                 extra_pnginfo=extra_pnginfo,
             )
-            return stage_res.to_dict()
+            res_dict = stage_res.to_dict()
+            if pending_inspect is not None and self._active_process is not None:
+                proc = self._active_process
+                if proc.poll() is None:
+                    proc.terminate()
+                if self._warmup_task is not None:
+                    try:
+                        await self._warmup_task
+                    except Exception:
+                        pass
+                    self._warmup_task = None
+
+                async def _wait_proc() -> None:
+                    if proc.poll() is None:
+                        try:
+                            await asyncio.to_thread(proc.wait, timeout=30)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            await asyncio.to_thread(proc.wait, timeout=10)
+
+                _, report = await asyncio.gather(
+                    _wait_proc(),
+                    asyncio.to_thread(pending_inspect, res_dict),
+                )
+                self._completed_stage_inspection = report
+            return res_dict
 
     @asynccontextmanager
     async def _stage_server_session(self, stage: str, run_dir: Path, port: int):
         """Context manager launching a single isolated ComfyUI server for a batch of same-stage graphs."""
         assert self.config.app_dir is not None
         base = f"http://127.0.0.1:{port}"
-        with socket.socket() as sock:
-            if sock.connect_ex(("127.0.0.1", port)) == 0:
-                raise RuntimeError(
-                    f"Port {port} is occupied; existing ComfyUI was not stopped."
-                )
+        _assert_port_available("127.0.0.1", port)
         home = run_dir / stage
         (home / "user").mkdir(parents=True, exist_ok=True)
         stage_temp = (home / "temp").resolve()
@@ -321,6 +386,7 @@ class EmiliaRenderEngine:
             "0.8",
             "--fp32-vae",
             "--disable-pinned-memory",
+            "--mmap-torch-files",
             "--preview-method",
             "none",
             "--disable-api-nodes",
@@ -335,14 +401,19 @@ class EmiliaRenderEngine:
             "sqlite:///:memory:",
             "--log-stdout",
         ]
+        whitelist = self._stage_custom_node_whitelist(stage)
+        if whitelist:
+            command.extend(["--disable-all-custom-nodes", "--whitelist-custom-nodes", *whitelist])
         environment = os.environ.copy()
         environment.update(
             HF_HUB_OFFLINE="1",
             TRANSFORMERS_OFFLINE="1",
             HF_HUB_DISABLE_TELEMETRY="1",
             DO_NOT_TRACK="1",
+            EMILIA_HEADLESS_FAST_BOOT="1",
         )
-        with (home / "server.log").open("w", encoding="utf-8") as log:
+        server_log_path = home / "server.log"
+        with server_log_path.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(
                 command,
                 cwd=self.config.app_dir,
@@ -351,17 +422,29 @@ class EmiliaRenderEngine:
                 stderr=subprocess.STDOUT,
             )
             self._active_temp_dir = stage_temp
+            self._active_process = process
             try:
                 async with aiohttp.ClientSession(
                     timeout=aiohttp.ClientTimeout(total=60),
                     trust_env=False,
                 ) as session:
                     deadline = time.monotonic() + 300
+                    log_ready_deadline = time.monotonic() + 25.0
+                    log_seen_ready = False
                     while True:
                         if process.poll() is not None:
                             raise RuntimeError(
-                                f'{stage} server exited; see {home / "server.log"}'
+                                f"{stage} server exited; see {server_log_path}"
                             )
+                        if not log_seen_ready and time.monotonic() < log_ready_deadline:
+                            try:
+                                if server_log_path.is_file() and "To see the GUI go to:" in server_log_path.read_text(encoding="utf-8", errors="ignore"):
+                                    log_seen_ready = True
+                            except OSError:
+                                pass
+                            if not log_seen_ready:
+                                await asyncio.sleep(0.025)
+                                continue
                         try:
                             async with session.get(
                                 base + "/system_stats",
@@ -373,12 +456,13 @@ class EmiliaRenderEngine:
                             pass
                         if time.monotonic() >= deadline:
                             raise TimeoutError(
-                                f'{stage} server did not start; see {home / "server.log"}'
+                                f"{stage} server did not start; see {server_log_path}"
                             )
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.05)
                     yield session, base, home
             finally:
                 self._active_temp_dir = None
+                self._active_process = None
                 if process.poll() is None:
                     process.terminate()
                     try:
@@ -527,15 +611,28 @@ class EmiliaRenderEngine:
                     seed=current_seed, pag=pag, positive_prompt=positive_prompt,
                     negative_prompt=negative_prompt, ipadapter_weight=eff_ipa_weight,
                 )
-            generation = await self.render_stage_isolated(
-                native_graph, "native" if attempt == 1 else f"native_retry_{attempt}", run_dir, port,
-            )
-            native = selected = _output_path(output_dir, generation["outputs"]["9"]["images"][0])
-            native_report = self.inspector.inspect_image(
-                selected, expected_size=(1152, 1728), stage="native",
+            if attempt == 1:
+                self._pending_inspector_warmup = (req_framing == "full_body",)
+            self._pending_stage_inspection = lambda gen: self.inspector.inspect_image(
+                _output_path(output_dir, gen["outputs"]["9"]["images"][0]),
+                expected_size=(1152, 1728), stage="native",
                 solo_prompt=True, strict_seed_lock=strict_seed_lock,
                 framing=req_framing, require_full_body_pose=require_pose,
             )
+            generation = await self.render_stage_isolated(
+                native_graph, "native" if attempt == 1 else f"native_retry_{attempt}", run_dir, port,
+            )
+            self._pending_stage_inspection = None
+            native = selected = _output_path(output_dir, generation["outputs"]["9"]["images"][0])
+            if self._completed_stage_inspection is not None:
+                native_report = self._completed_stage_inspection
+                self._completed_stage_inspection = None
+            else:
+                native_report = self.inspector.inspect_image(
+                    selected, expected_size=(1152, 1728), stage="native",
+                    solo_prompt=True, strict_seed_lock=strict_seed_lock,
+                    framing=req_framing, require_full_body_pose=require_pose,
+                )
             attempts.append({"seed": current_seed, "generation": generation, "inspection": native_report.to_dict()})
             if not native_report.dimensions_match:
                 reject("Native output dimensions differ from the quality workflow contract.")
@@ -564,13 +661,24 @@ class EmiliaRenderEngine:
                 repair_graph["18"]["inputs"]["text"] = self.config.ultra_face_negative_prompt
                 repair_graph["21"]["inputs"]["feather"] = 12
                 repair_graph["21"]["inputs"]["noise_mask_feather"] = 0
-            eye_repair_result = await self.render_stage_isolated(repair_graph, "eye_repair", run_dir, port)
-            selected = _output_path(output_dir, eye_repair_result["outputs"]["22"]["images"][0])
-            repaired_report = self.inspector.inspect_image(
-                selected, expected_size=(1152, 1728), stage="eye_repair",
+            self._pending_stage_inspection = lambda rep_gen: self.inspector.inspect_image(
+                _output_path(output_dir, rep_gen["outputs"]["22"]["images"][0]),
+                expected_size=(1152, 1728), stage="eye_repair",
                 solo_prompt=True, strict_seed_lock=False,
                 framing=req_framing, require_full_body_pose=require_pose,
             )
+            eye_repair_result = await self.render_stage_isolated(repair_graph, "eye_repair", run_dir, port)
+            self._pending_stage_inspection = None
+            selected = _output_path(output_dir, eye_repair_result["outputs"]["22"]["images"][0])
+            if self._completed_stage_inspection is not None:
+                repaired_report = self._completed_stage_inspection
+                self._completed_stage_inspection = None
+            else:
+                repaired_report = self.inspector.inspect_image(
+                    selected, expected_size=(1152, 1728), stage="eye_repair",
+                    solo_prompt=True, strict_seed_lock=False,
+                    framing=req_framing, require_full_body_pose=require_pose,
+                )
             if not repaired_report.passed:
                 reject("Repaired native image did not pass the quality gate.")
         elif not strict_seed_lock and not native_report.passed:
@@ -582,13 +690,24 @@ class EmiliaRenderEngine:
             )
         else:
             finish_graph = self.builder.build_highres_finish(image_path=str(selected), seed=current_seed, pag=pag)
-        finishing = await self.render_stage_isolated(finish_graph, "finish", run_dir, port)
-        final = _output_path(output_dir, finishing["outputs"]["16"]["images"][0])
-        final_report = self.inspector.inspect_image(
-            final, expected_size=(2304, 3456), stage="final",
+        self._pending_stage_inspection = lambda fin_gen: self.inspector.inspect_image(
+            _output_path(output_dir, fin_gen["outputs"]["16"]["images"][0]),
+            expected_size=(2304, 3456), stage="final",
             solo_prompt=True, strict_seed_lock=strict_seed_lock,
             framing=req_framing, require_full_body_pose=require_pose,
         )
+        finishing = await self.render_stage_isolated(finish_graph, "finish", run_dir, port)
+        self._pending_stage_inspection = None
+        final = _output_path(output_dir, finishing["outputs"]["16"]["images"][0])
+        if self._completed_stage_inspection is not None:
+            final_report = self._completed_stage_inspection
+            self._completed_stage_inspection = None
+        else:
+            final_report = self.inspector.inspect_image(
+                final, expected_size=(2304, 3456), stage="final",
+                solo_prompt=True, strict_seed_lock=strict_seed_lock,
+                framing=req_framing, require_full_body_pose=require_pose,
+            )
         if not final_report.dimensions_match:
             reject("Finished output dimensions differ from the quality workflow contract.")
         if not strict_seed_lock and not final_report.passed:
@@ -649,7 +768,8 @@ class EmiliaRenderEngine:
 
         batch_items: list[dict[str, Any]] = []
 
-        # Wave 1: Persistent Stage 1 Native Server for all seeds
+        # Wave 1: Persistent Stage 1 Native Server for all seeds (warm CPU YOLO during pass 1)
+        self._pending_inspector_warmup = (req_framing == "full_body",)
         async with self._stage_server_session("batch_native", run_dir, port) as (session, base, home):
             for idx, req_seed in enumerate(seeds):
                 current_seed = int(req_seed)

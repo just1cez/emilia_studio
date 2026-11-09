@@ -27,6 +27,7 @@ def _resolve_default_app_dir() -> Path:
 
 
 _YOLO_MODEL_CACHE: dict[str, Any] = {}
+_WARMED_MODEL_KEYS: set[str] = set()
 _YOLO_LOCK = threading.Lock()
 _EXTERNAL_WORKERS: dict[str, subprocess.Popen[str]] = {}
 _EXTERNAL_WORKER_LOCK = threading.Lock()
@@ -195,33 +196,92 @@ class QualityInspector:
         for path in (self.face_model_path, self.hand_model_path):
             if not path.is_file():
                 raise InspectionRuntimeError(f"Required YOLO model is missing: {path}")
-        try:
-            if getattr(sys, "frozen", False):
-                raise ImportError("Frozen Emilia uses an external CPU inference environment")
-            from ultralytics import YOLO
+        with _YOLO_LOCK:
+            if self._yolo_load_attempted:
+                return self._face_model is not None and self._hand_model is not None
+            try:
+                if getattr(sys, "frozen", False):
+                    raise ImportError("Frozen Emilia uses an external CPU inference environment")
+                from ultralytics import YOLO
 
-            for path in (self.face_model_path, self.hand_model_path):
-                key = str(path.resolve())
-                if key not in _YOLO_MODEL_CACHE:
-                    _YOLO_MODEL_CACHE[key] = YOLO(key)
-            self._face_model = _YOLO_MODEL_CACHE[str(self.face_model_path.resolve())]
-            self._hand_model = _YOLO_MODEL_CACHE[str(self.hand_model_path.resolve())]
-            if self.pose_model_path.is_file():
-                p_key = str(self.pose_model_path.resolve())
-                if p_key not in _YOLO_MODEL_CACHE:
-                    _YOLO_MODEL_CACHE[p_key] = YOLO(p_key)
-                self._pose_model = _YOLO_MODEL_CACHE[p_key]
-        except Exception as exc:
-            self._face_model = None
-            self._hand_model = None
-            self._pose_model = None
-            if self.python_executable is None:
-                raise InspectionRuntimeError(
-                    "CPU YOLO is unavailable; configure conda_python with torch and ultralytics installed."
-                ) from exc
-        self._yolo_load_attempted = True
-        return self._face_model is not None and self._hand_model is not None
+                for path in (self.face_model_path, self.hand_model_path):
+                    key = str(path.resolve())
+                    if key not in _YOLO_MODEL_CACHE:
+                        _YOLO_MODEL_CACHE[key] = YOLO(key)
+                self._face_model = _YOLO_MODEL_CACHE[str(self.face_model_path.resolve())]
+                self._hand_model = _YOLO_MODEL_CACHE[str(self.hand_model_path.resolve())]
+                if self.pose_model_path.is_file():
+                    p_key = str(self.pose_model_path.resolve())
+                    if p_key not in _YOLO_MODEL_CACHE:
+                        _YOLO_MODEL_CACHE[p_key] = YOLO(p_key)
+                    self._pose_model = _YOLO_MODEL_CACHE[p_key]
+            except Exception as exc:
+                self._face_model = None
+                self._hand_model = None
+                self._pose_model = None
+                if self.python_executable is None:
+                    raise InspectionRuntimeError(
+                        "CPU YOLO is unavailable; configure conda_python with torch and ultralytics installed."
+                    ) from exc
+            self._yolo_load_attempted = True
+            return self._face_model is not None and self._hand_model is not None
 
+    def warmup(self, *, run_pose: bool = True) -> bool:
+        """Pre-load and fuse CPU YOLO detectors off the critical path."""
+        if not self.use_yolo:
+            return False
+        if not self.face_model_path.is_file() or not self.hand_model_path.is_file():
+            return False
+        if self._ensure_yolo_models():
+            dummy = Image.new("RGB", (64, 64), (0, 0, 0))
+            with _YOLO_LOCK:
+                pairs: list[tuple[Path, Any]] = [
+                    (self.face_model_path, self._face_model),
+                    (self.hand_model_path, self._hand_model),
+                ]
+                if run_pose and self._pose_model is not None:
+                    pairs.append((self.pose_model_path, self._pose_model))
+                for path, model in pairs:
+                    if model is None:
+                        continue
+                    key = str(path.resolve())
+                    if key not in _WARMED_MODEL_KEYS:
+                        model.predict(dummy, imgsz=64, device="cpu", verbose=False)
+                        _WARMED_MODEL_KEYS.add(key)
+            return True
+        if self.python_executable is not None:
+            executable = self.python_executable
+            resolved_executable = shutil.which(executable) or executable
+            worker = Path(__file__).with_name("inspection_worker.py")
+            if not worker.is_file():
+                return False
+            req = {
+                "cmd": "warmup",
+                "face_path": str(self.face_model_path.resolve()),
+                "hand_path": str(self.hand_model_path.resolve()),
+                "pose_path": str(self.pose_model_path.resolve()) if (run_pose and self.pose_model_path.is_file()) else "",
+            }
+            worker_key = f"{Path(resolved_executable).resolve()}::{worker.resolve()}"
+            with _EXTERNAL_WORKER_LOCK:
+                proc = _EXTERNAL_WORKERS.get(worker_key)
+                if proc is None or proc.poll() is not None:
+                    proc = subprocess.Popen(
+                        [executable, "-u", str(worker), "--server"],
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        encoding="utf-8",
+                        bufsize=1,
+                    )
+                    _EXTERNAL_WORKERS[worker_key] = proc
+                if proc.stdin is not None and proc.stdout is not None:
+                    proc.stdin.write(json.dumps(req) + "\n")
+                    proc.stdin.flush()
+                    resp_line = proc.stdout.readline()
+                    if resp_line:
+                        return bool(json.loads(resp_line).get("ok"))
+        return False
     def _detect_anatomy_external(
         self,
         image: Image.Image,
@@ -650,19 +710,19 @@ class QualityInspector:
         h, w, _ = rgb_array.shape
         ch = max(16, int(round(0.06 * h)))
         cw = max(32, int(round(0.22 * w)))
-        luma = (
-            0.299 * rgb_array[..., 0].astype(np.float32)
-            + 0.587 * rgb_array[..., 1].astype(np.float32)
-            + 0.114 * rgb_array[..., 2].astype(np.float32)
-        )
         rois = {
-            "top_left": luma[:ch, :cw],
-            "top_right": luma[:ch, w - cw :],
-            "bottom_left": luma[h - ch :, :cw],
-            "bottom_right": luma[h - ch :, w - cw :],
+            "top_left": rgb_array[:ch, :cw],
+            "top_right": rgb_array[:ch, w - cw :],
+            "bottom_left": rgb_array[h - ch :, :cw],
+            "bottom_right": rgb_array[h - ch :, w - cw :],
         }
         corners: dict[str, float] = {}
-        for name, patch in rois.items():
+        for name, patch_rgb in rois.items():
+            patch = (
+                0.299 * patch_rgb[..., 0].astype(np.float32)
+                + 0.587 * patch_rgb[..., 1].astype(np.float32)
+                + 0.114 * patch_rgb[..., 2].astype(np.float32)
+            )
             gx = np.abs(np.diff(patch, axis=1))
             gy = np.abs(np.diff(patch, axis=0))
             sharp_frac = float((gx > 42.0).mean() + (gy > 42.0).mean()) / 2.0
@@ -727,14 +787,25 @@ class QualityInspector:
                         f"Dimensions {(width, height)} do not match expected {expected_size}"
                     )
 
-                if np.issubdtype(arr.dtype, np.integer):
+                if arr.dtype == np.uint8 and arr.size > 0:
                     non_nan = True
+                    counts = np.asarray(rgb_im.histogram(), dtype=np.float64).reshape(-1, 256).sum(axis=0)
+                    vals = np.arange(256, dtype=np.float64)
+                    n_vals = float(arr.size)
+                    mean_rgb = float(np.dot(counts, vals) / n_vals)
+                    std_rgb = float(np.sqrt(np.dot(counts, (vals - mean_rgb) ** 2) / n_vals))
+                    nz = np.flatnonzero(counts)
+                    min_rgb = int(nz[0])
+                    max_rgb = int(nz[-1])
                 else:
-                    non_nan = bool(np.isfinite(arr).all())
-                mean_rgb = float(arr.mean(dtype=np.float64)) if (non_nan and arr.size > 0) else 0.0
-                std_rgb = float(arr.std(dtype=np.float64)) if (non_nan and arr.size > 0) else 0.0
-                min_rgb = int(arr.min()) if arr.size > 0 else 0
-                max_rgb = int(arr.max()) if arr.size > 0 else 0
+                    if np.issubdtype(arr.dtype, np.integer):
+                        non_nan = True
+                    else:
+                        non_nan = bool(np.isfinite(arr).all())
+                    mean_rgb = float(arr.mean(dtype=np.float64)) if (non_nan and arr.size > 0) else 0.0
+                    std_rgb = float(arr.std(dtype=np.float64)) if (non_nan and arr.size > 0) else 0.0
+                    min_rgb = int(arr.min()) if arr.size > 0 else 0
+                    max_rgb = int(arr.max()) if arr.size > 0 else 0
                 dynamic_range = float(max_rgb - min_rgb)
                 non_blank = bool(non_nan and std_rgb > 1.0 and dynamic_range >= 10.0)
 

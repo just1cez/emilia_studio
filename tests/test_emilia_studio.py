@@ -333,3 +333,120 @@ def test_lanczos_and_sigma_cache_bit_exact() -> None:
     assert abs(sigmas._emilia_sigma_val - 1.2345) < 1e-5
 
 
+def test_fast_port_bind_check_and_stage_whitelist(tmp_path: Path) -> None:
+    import socket
+    import time
+    from emilia_studio.engine import _assert_port_available
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        free_port = probe.getsockname()[1]
+
+    t0 = time.perf_counter()
+    _assert_port_available("127.0.0.1", free_port)
+    assert (time.perf_counter() - t0) < 0.25
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as occupied:
+        occupied.bind(("127.0.0.1", 0))
+        occupied.listen(1)
+        busy_port = occupied.getsockname()[1]
+        with pytest.raises(RuntimeError, match="occupied"):
+            _assert_port_available("127.0.0.1", busy_port)
+
+    app_dir = tmp_path / "app"
+    for node_dir in ("comfyui-ipadapter-plus", "comfyui-impact-pack", "comfyui-impact-subpack", "emilia_runtime_patches"):
+        (app_dir / "custom_nodes" / node_dir).mkdir(parents=True)
+    cfg = StudioConfig(root_dir=ROOT, app_dir=app_dir, output_dir=app_dir / "output", temp_dir=app_dir / "temp")
+    eng = EmiliaRenderEngine(config=cfg, inspector=QualityInspector(use_yolo=False), ledger=ExperimentLedger(tmp_path / "l.db", cfg))
+    assert eng._stage_custom_node_whitelist("native") == ["comfyui-ipadapter-plus", "emilia_runtime_patches"]
+    assert eng._stage_custom_node_whitelist("batch_native") == ["comfyui-ipadapter-plus", "emilia_runtime_patches"]
+    assert eng._stage_custom_node_whitelist("finish") == ["comfyui-impact-pack", "comfyui-impact-subpack", "emilia_runtime_patches"]
+    assert eng._stage_custom_node_whitelist("eye_repair") == ["comfyui-impact-pack", "comfyui-impact-subpack", "emilia_runtime_patches"]
+
+
+def test_inspector_histogram_stats_and_roi_corner_equivalence(tmp_path: Path) -> None:
+    rng = np.random.default_rng(20261027)
+    arr = rng.integers(0, 256, size=(256, 384, 3), dtype=np.uint8)
+    img_path = tmp_path / "synth.png"
+    Image.fromarray(arr, mode="RGB").save(img_path)
+
+    inspector = QualityInspector(use_yolo=False)
+    assert inspector.warmup() is False
+    rep = inspector.inspect_image(img_path, expected_size=(384, 256))
+    assert abs(rep.mean_rgb - float(arr.mean(dtype=np.float64))) < 1e-4
+    assert abs(rep.std_rgb - float(arr.std(dtype=np.float64))) < 1e-4
+    assert rep.min_rgb == int(arr.min())
+    assert rep.max_rgb == int(arr.max())
+
+    h, w, _ = arr.shape
+    ch, cw = max(16, int(round(0.06 * h))), max(32, int(round(0.22 * w)))
+    full_luma = 0.299 * arr[..., 0].astype(np.float32) + 0.587 * arr[..., 1].astype(np.float32) + 0.114 * arr[..., 2].astype(np.float32)
+    br_patch = full_luma[h - ch :, w - cw :]
+    expected_br = round((float((np.abs(np.diff(br_patch, axis=1)) > 42.0).mean()) + float((np.abs(np.diff(br_patch, axis=0)) > 42.0).mean())) / 2.0, 5)
+    assert rep.corner_artifact_analysis["corners"]["bottom_right"] == expected_br
+
+
+def test_l3_blocked_quantization_and_ipadapter_kv_mask_caches() -> None:
+    if not (ROOT / "app" / "comfy").is_dir() or importlib.util.find_spec("torch") is None or importlib.util.find_spec("cv2") is None:
+        pytest.skip("ComfyUI runtime app/, torch, or cv2 not present in standalone CI")
+    import torch
+    from custom_nodes import emilia_runtime_patches
+
+    torch.manual_seed(20261110)
+    sample = torch.rand((600, 128, 3), dtype=torch.float32) * 1.3 - 0.15
+    arr_ref = 255.0 * sample.numpy()
+    u8_ref = np.clip(arr_ref, 0, 255, out=arr_ref).astype(np.uint8)
+    u8_fast = emilia_runtime_patches._fast_tensor_to_u8_numpy(sample)
+    assert np.array_equal(u8_ref, u8_fast)
+
+    readonly_view = u8_fast.view()
+    readonly_view.flags.writeable = False
+    f_fast = emilia_runtime_patches._fast_u8_numpy_to_tensor(readonly_view)
+    f_ref = torch.from_numpy(u8_fast.astype(np.float32) / 255.0)
+    assert torch.equal(f_fast, f_ref)
+
+    cap_mod = emilia_runtime_patches._resolve_cross_attention_patch_module()
+    assert cap_mod is not None
+
+    class _FakeIPAdapter:
+        def __init__(self) -> None:
+            self.calls = 0
+            proj = torch.nn.Linear(32, 64, bias=False)
+            torch.nn.init.orthogonal_(proj.weight)
+
+            def _counted(x: torch.Tensor) -> torch.Tensor:
+                self.calls += 1
+                return proj(x)
+
+            self.ip_layers = type("L", (), {"to_kvs": {"1_to_k_ip": _counted, "1_to_v_ip": _counted}})()
+
+        def get_multigpu_clone(self, _device: Any) -> "_FakeIPAdapter":
+            return self
+
+    fake_ipa = _FakeIPAdapter()
+    q = torch.randn((2, 24, 64), dtype=torch.float32)
+    out_base = torch.zeros_like(q)
+    cond = torch.randn((1, 4, 32), dtype=torch.float32)
+    uncond = torch.randn((1, 4, 32), dtype=torch.float32)
+    mask = torch.rand((1, 48, 32), dtype=torch.float32)
+    extra = {
+        "n_heads": 4,
+        "cond_or_uncond": [0, 1],
+        "block": ("input", 4),
+        "transformer_index": 0,
+        "original_shape": (2, 4, 6, 4),
+    }
+    out_step1 = cap_mod.ipadapter_attention(
+        out_base, q, q, q, extra, module_key="1", ipadapter=fake_ipa,
+        weight=0.45, cond=cond, uncond=uncond, mask=mask, embeds_scaling="V only",
+    )
+    assert fake_ipa.calls == 4
+    assert hasattr(cond, "_emilia_kv_cache")
+    assert hasattr(mask, "_emilia_attn_mask_cache")
+
+    out_step2 = cap_mod.ipadapter_attention(
+        out_base, q, q, q, extra, module_key="1", ipadapter=fake_ipa,
+        weight=0.45, cond=cond, uncond=uncond, mask=mask, embeds_scaling="V only",
+    )
+    assert fake_ipa.calls == 4  # Zero additional linear projections on step 2+!
+    assert torch.equal(out_step1, out_step2)

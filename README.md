@@ -104,9 +104,10 @@ flowchart LR
 3. **零显存（纯 CPU）解剖学、站姿与紫罗兰虹膜自愈门禁（`emilia_studio/inspector.py`）**
    - 强制在 CPU 上运行 `face_yolov8n`、`hand_yolov8n` 与 `yolov8n-pose`：自动拦截单人多脸幻觉、缺脸，以及全身构图（`full_body`）下的跪坐/裁脚缺陷（`reject_seed`）。
    - **HSV 虹膜环形色相分析**：计算双瞳环形均值色相角，精准捕捉“一蓝一粉异色瞳”（色差 $>32^\circ$）或偏离紫罗兰色带（$[250^\circ, 302^\circ]$）的漂移，自动路由至仅需 `22 秒` 的修眼分支（`repair_eyes`）完成自愈。
-4. **8 项 Bit-Exact 像素级零漂移底层内存补丁（`patches/`）**
-   - 涵盖 `VAE` 目标缓冲区直写、`tiled_scale_multidim` 分块羽化掩码复用（单次省去 `676.8 MiB` 分配抖动）、`SaveImage` 原位 `np.clip`（省 `91.1 MiB`）、原位 `lanczos` 缩放（省 `692.75 MiB`）、`ImageUpscaleWithModel` 按分块上 GPU（省 `382.21 MiB` CPU 提交内存）、IPAdapter `sigma` 标量缓存（消除 **2,484 次** GPU$\to$CPU 同步停顿）、`SAM` 特征缓存（推理提速 50%）及 `RAMPressureCache` 字典张量统计修复。
-   - 经 **5 轮 × 10 固定种子（50 张 `2304×3456` 全流程大图）** 验证，解码像素 SHA-256 与基线 **100% 逐字节一致**。
+4. **12 项 Bit-Exact 像素级零漂移底层硬件榨取补丁（`patches/` & `engine.py`）**
+   - **GPU/PCIe 热路径**：IPAdapter 跨步 `(ip_k, ip_v)` 线性投影缓存（消除 **15,000+** 次冗余 CUDA 核启动）、空间注意力掩码 `[B, S, 1]` 广播缓存（消除 `1,960` 次 `F.interpolate` 与 `1280×` `.repeat()` 显存膨胀）、`CLIPVision` 零图像负向特征缓存、每步 `sigma` 标量缓存（消除 **2,484 次** GPU$\to$CPU 同步停顿）、`SAM ViT-B` `meta + mmap + assign` 零初始化加载（提速 **6.0×**，省 `750 MiB` 峰值内存）及特征缓存（提速 50%）。
+   - **CPU/内存/启动热路径**：256 行 L3 缓存分块多线程 `float32 <-> uint8` 量化（提速 **3.3×**，消除 `lanczos` `382.2 MiB` 与 `SaveImage` `91.1 MiB` 临时浮点拷贝）、`VAE` 目标缓冲区直写与 `tiled_scale_multidim` 掩码复用（省 `676.8 MiB`）、`ImageUpscaleWithModel` 按分块上 GPU（省 `382.21 MiB`）、静态 PNG 免 PyAV 直读、分阶段插件白名单与精简 `comfy_extras` 冷启动（省 `17.3s`）、`<1ms` 独占端口检测 + 日志驱动零重试就绪握手、Stage 1 期间后台异步预热 CPU YOLO 与进程回收并行质检（消除 `8.8s` 门禁冷启动等待）。
+   - 经固定种子 `20261027`（`quality` 与 `ultra` 全流程 `2304×3456` 大图）及历史 50 图基准严格验证，解码像素 SHA-256 **100% 逐字节一致**。
 
 ---
 
@@ -207,15 +208,16 @@ emilia clean --older-than-hours 1.0
 │   ├── visual/                    # 10 个同步后的 ComfyUI 网页端可视化工作流 (Emilia_01..10)
 │   ├── reports/                   # 历史架构消融、画质评估与硬件解锁实验报告 JSON
 │   └── WORKFLOW_DECISIONS.txt     # 完整工程决策与像素哈希演进档案
-├── patches/                       # 底层零漂移内存与耗时优化补丁
+├── patches/                       # 底层零漂移内存与硬件极限加速补丁
 │   ├── emilia_runtime_patches/    # 自校验 ComfyUI Custom Node 运行时热补丁 + EmiliaRelativeGarmentSEGS 节点
-│   ├── comfyui_core.patch         # 针对 comfy/sd.py, utils.py, caching.py, execution.py, nodes.py 的补丁
-│   ├── ipadapter_plus.patch       # 针对 CrossAttentionPatch.py 的 sigma 缓存与免拷贝补丁
-│   └── impact_pack.patch          # 针对 SAMWrapper 的图像特征缓存补丁
+│   ├── comfyui_core.patch         # 针对 main.py, comfy/sd.py, utils.py, caching.py, execution.py, nodes.py 的补丁
+│   ├── ipadapter_plus.patch       # 针对 CrossAttentionPatch.py 与 IPAdapterPlus.py 的 KV/掩码/sigma/uncond 缓存补丁
+│   ├── impact_pack.patch          # 针对 SAMLoader (meta+mmap+assign) 与 SAMWrapper 特征缓存的补丁
+│   └── impact_subpack.patch       # 针对 subcore.py 免冗余灰度拷贝与静默推理的补丁
 ├── packaging/                     # PyInstaller 独立 Windows 可执行文件构建脚本与规范 (emilia.spec)
-├── tests/                         # 10 个顶层单测模块 (151 项测试) 及 comfy_core/ 底层算子测试
+├── tests/                         # 10 个顶层单测模块 (154 项测试) 及 comfy_core/ 底层算子测试
 ├── AGENTS.md                      # 硬件红线、进程隔离规则与像素一致性工程规范
-├── PROGRESS.md                    # 14 阶段完整研发里程碑与实测数据台账
+├── PROGRESS.md                    # 15 阶段完整研发里程碑与实测数据台账
 ├── build_support.py               # Wheel 与 PyInstaller 构建期只读资源自动归集器
 ├── config.example.toml            # 可移植 TOML 配置模板
 ├── models_manifest.json           # 13 个必需/可选模型权重、参考图与插件 Commit 清单

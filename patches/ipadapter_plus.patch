@@ -1,5 +1,5 @@
 diff --git a/CrossAttentionPatch.py b/CrossAttentionPatch.py
-index adb2079..336012f 100644
+index adb2079..b935557 100644
 --- a/CrossAttentionPatch.py
 +++ b/CrossAttentionPatch.py
 @@ -23,7 +23,17 @@ class Attn2Replace:
@@ -21,7 +21,7 @@ index adb2079..336012f 100644
  
          device_kwargs = self.get_multigpu_kwargs(q.device)
  
-@@ -171,10 +181,15 @@ def ipadapter_attention(out, q, k, v, extra_options, module_key='', ipadapter=No
+@@ -171,18 +181,48 @@ def ipadapter_attention(out, q, k, v, extra_options, module_key='', ipadapter=No
          elif weight == 0:
              return 0
          
@@ -29,15 +29,143 @@ index adb2079..336012f 100644
 -        k_uncond = ipadapter.ip_layers.to_kvs[k_key](uncond).repeat(batch_prompt, 1, 1)
 -        v_cond = ipadapter.ip_layers.to_kvs[v_key](cond).repeat(batch_prompt, 1, 1)
 -        v_uncond = ipadapter.ip_layers.to_kvs[v_key](uncond).repeat(batch_prompt, 1, 1)
-+        k_cond = ipadapter.ip_layers.to_kvs[k_key](cond)
-+        k_uncond = ipadapter.ip_layers.to_kvs[k_key](uncond)
-+        v_cond = ipadapter.ip_layers.to_kvs[v_key](cond)
-+        v_uncond = ipadapter.ip_layers.to_kvs[v_key](uncond)
-+        if batch_prompt != 1:
-+            k_cond = k_cond.repeat(batch_prompt, 1, 1)
-+            k_uncond = k_uncond.repeat(batch_prompt, 1, 1)
-+            v_cond = v_cond.repeat(batch_prompt, 1, 1)
-+            v_uncond = v_uncond.repeat(batch_prompt, 1, 1)
+-
+-    if len(cond_or_uncond) == 3: # TODO: cosxl, I need to check this
+-        ip_k = torch.cat([(k_cond, k_uncond, k_cond)[i] for i in cond_or_uncond], dim=0)
+-        ip_v = torch.cat([(v_cond, v_uncond, v_cond)[i] for i in cond_or_uncond], dim=0)
+-    else:
+-        ip_k = torch.cat([(k_cond, k_uncond)[i] for i in cond_or_uncond], dim=0)
+-        ip_v = torch.cat([(v_cond, v_uncond)[i] for i in cond_or_uncond], dim=0)
++        kv_cached = None
++        kv_cache_key = None
++        if isinstance(cond, torch.Tensor) and isinstance(uncond, torch.Tensor):
++            kv_cache = getattr(cond, "_emilia_kv_cache", None)
++            if kv_cache is None:
++                try:
++                    kv_cache = {}
++                    cond._emilia_kv_cache = kv_cache
++                except AttributeError:
++                    kv_cache = None
++            if kv_cache is not None:
++                kv_cache_key = (id(ipadapter), k_key, id(uncond), batch_prompt, tuple(cond_or_uncond), cond.device, cond.dtype)
++                kv_cached = kv_cache.get(kv_cache_key)
++
++        if kv_cached is not None:
++            ip_k, ip_v = kv_cached
++        else:
++            k_cond = ipadapter.ip_layers.to_kvs[k_key](cond)
++            k_uncond = ipadapter.ip_layers.to_kvs[k_key](uncond)
++            v_cond = ipadapter.ip_layers.to_kvs[v_key](cond)
++            v_uncond = ipadapter.ip_layers.to_kvs[v_key](uncond)
++            if batch_prompt != 1:
++                k_cond = k_cond.repeat(batch_prompt, 1, 1)
++                k_uncond = k_uncond.repeat(batch_prompt, 1, 1)
++                v_cond = v_cond.repeat(batch_prompt, 1, 1)
++                v_uncond = v_uncond.repeat(batch_prompt, 1, 1)
++            if len(cond_or_uncond) == 3:
++                ip_k = torch.cat([(k_cond, k_uncond, k_cond)[i] for i in cond_or_uncond], dim=0)
++                ip_v = torch.cat([(v_cond, v_uncond, v_cond)[i] for i in cond_or_uncond], dim=0)
++            else:
++                ip_k = torch.cat([(k_cond, k_uncond)[i] for i in cond_or_uncond], dim=0)
++                ip_v = torch.cat([(v_cond, v_uncond)[i] for i in cond_or_uncond], dim=0)
++            if kv_cache_key is not None and kv_cache is not None:
++                kv_cache[kv_cache_key] = (ip_k, ip_v)
  
-     if len(cond_or_uncond) == 3: # TODO: cosxl, I need to check this
-         ip_k = torch.cat([(k_cond, k_uncond, k_cond)[i] for i in cond_or_uncond], dim=0)
++    if unfold_batch:
++        if len(cond_or_uncond) == 3: # TODO: cosxl, I need to check this
++            ip_k = torch.cat([(k_cond, k_uncond, k_cond)[i] for i in cond_or_uncond], dim=0)
++            ip_v = torch.cat([(v_cond, v_uncond, v_cond)[i] for i in cond_or_uncond], dim=0)
++        else:
++            ip_k = torch.cat([(k_cond, k_uncond)[i] for i in cond_or_uncond], dim=0)
++            ip_v = torch.cat([(v_cond, v_uncond)[i] for i in cond_or_uncond], dim=0)
+     if embeds_scaling == 'K+mean(V) w/ C penalty':
+         scaling = float(ip_k.shape[2]) / 1280.0
+         weight = weight * scaling
+@@ -221,23 +261,46 @@ def ipadapter_attention(out, q, k, v, extra_options, module_key='', ipadapter=No
+                 mask = F.interpolate(mask.unsqueeze(1), size=(mask_h, mask_w), mode="bilinear").squeeze(1)
+                 mask = tensor_to_size(mask, ad_params["full_length"])
+                 mask = mask[ad_params["sub_idxs"]]
++            mask = mask.repeat(len(cond_or_uncond), 1, 1)
++            mask = mask.view(mask.shape[0], -1, 1)
++            mask_len = mask_h * mask_w
++            if mask_len < seq_len:
++                pad_len = seq_len - mask_len
++                pad1 = pad_len // 2
++                pad2 = pad_len - pad1
++                mask = F.pad(mask, (0, 0, pad1, pad2), value=0.0)
++            elif mask_len > seq_len:
++                crop_start = (mask_len - seq_len) // 2
++                mask = mask[:, crop_start:crop_start+seq_len, :]
+         else:
+-            mask = F.interpolate(mask.unsqueeze(1), size=(mask_h, mask_w), mode="bilinear").squeeze(1)
+-            mask = tensor_to_size(mask, batch_prompt)
+-
+-        mask = mask.repeat(len(cond_or_uncond), 1, 1)
+-        mask = mask.view(mask.shape[0], -1, 1).repeat(1, 1, out.shape[2])
+-
+-        # covers cases where extreme aspect ratios can cause the mask to have a wrong size
+-        mask_len = mask_h * mask_w
+-        if mask_len < seq_len:
+-            pad_len = seq_len - mask_len
+-            pad1 = pad_len // 2
+-            pad2 = pad_len - pad1
+-            mask = F.pad(mask, (0, 0, pad1, pad2), value=0.0)
+-        elif mask_len > seq_len:
+-            crop_start = (mask_len - seq_len) // 2
+-            mask = mask[:, crop_start:crop_start+seq_len, :]
++            src_mask = mask
++            m_cache = getattr(src_mask, "_emilia_attn_mask_cache", None)
++            if m_cache is None:
++                try:
++                    m_cache = {}
++                    src_mask._emilia_attn_mask_cache = m_cache
++                except AttributeError:
++                    m_cache = None
++            m_key = (mask_h, mask_w, seq_len, batch_prompt, tuple(cond_or_uncond), src_mask.device)
++            cached_m = m_cache.get(m_key) if m_cache is not None else None
++            if cached_m is not None:
++                mask = cached_m
++            else:
++                mask = F.interpolate(src_mask.unsqueeze(1), size=(mask_h, mask_w), mode="bilinear").squeeze(1)
++                mask = tensor_to_size(mask, batch_prompt)
++                mask = mask.repeat(len(cond_or_uncond), 1, 1)
++                mask = mask.view(mask.shape[0], -1, 1).contiguous()
++                mask_len = mask_h * mask_w
++                if mask_len < seq_len:
++                    pad_len = seq_len - mask_len
++                    pad1 = pad_len // 2
++                    pad2 = pad_len - pad1
++                    mask = F.pad(mask, (0, 0, pad1, pad2), value=0.0)
++                elif mask_len > seq_len:
++                    crop_start = (mask_len - seq_len) // 2
++                    mask = mask[:, crop_start:crop_start+seq_len, :]
++                if m_cache is not None:
++                    m_cache[m_key] = mask
+ 
+         out_ip = out_ip * mask
+ 
+diff --git a/IPAdapterPlus.py b/IPAdapterPlus.py
+index 905d187..a1074c1 100644
+--- a/IPAdapterPlus.py
++++ b/IPAdapterPlus.py
+@@ -379,8 +379,18 @@ def ipadapter_execute(model,
+ 
+         if is_plus:
+             img_cond_embeds = img_cond_embeds.penultimate_hidden_states
+-            image_negative = image_negative if image_negative is not None else torch.zeros([1, clipvision_size, clipvision_size, 3])
+-            img_uncond_embeds = encode_image_masked(clipvision, image_negative, batch_size=encode_batch_size, clipvision_size=clipvision_size).penultimate_hidden_states
++            if image_negative is None:
++                zero_cache = getattr(clipvision, "_emilia_zero_uncond_cache", None)
++                if zero_cache is None:
++                    zero_cache = {}
++                    clipvision._emilia_zero_uncond_cache = zero_cache
++                z_key = (clipvision_size, encode_batch_size)
++                img_uncond_embeds = zero_cache.get(z_key)
++                if img_uncond_embeds is None:
++                    img_uncond_embeds = encode_image_masked(clipvision, torch.zeros([1, clipvision_size, clipvision_size, 3]), batch_size=encode_batch_size, clipvision_size=clipvision_size).penultimate_hidden_states
++                    zero_cache[z_key] = img_uncond_embeds
++            else:
++                img_uncond_embeds = encode_image_masked(clipvision, image_negative, batch_size=encode_batch_size, clipvision_size=clipvision_size).penultimate_hidden_states
+             if image_composition is not None:
+                 img_comp_cond_embeds = img_comp_cond_embeds.penultimate_hidden_states
+         else:

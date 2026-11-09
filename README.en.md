@@ -104,9 +104,10 @@ flowchart LR
 3. **Zero-VRAM (CPU-Only) Anatomy, Pose & Violet-Iris Self-Healing Gate (`emilia_studio/inspector.py`)**
    - Enforces CPU-only inference across `face_yolov8n`, `hand_yolov8n`, and `yolov8n-pose` to reject multi-face hallucinations, missing faces, and kneeling/cropped-foot failures on `full_body` prompts (`reject_seed`).
    - **HSV Circular Hue Analysis**: Measures left/right iris circular mean hue to detect blue/pink heterochromia ($>32^\circ$) or non-violet drift outside $[250^\circ, 302^\circ]$, routing affected frames through a `22s` targeted eye-repair pass (`repair_eyes`) before Stage 2 upscaling.
-4. **8 Bit-Exact Hot-Path Memory & Latency Patches (`patches/`)**
-   - Includes direct destination-buffer writes in `VAE`, feather-mask caching in `tiled_scale_multidim` (`-676.8 MiB` allocation churn), in-place `SaveImage` quantization (`-91.1 MiB`), in-place `lanczos` resize (`-692.75 MiB`), per-tile GPU transfer in `ImageUpscaleWithModel` (`-382.21 MiB` host commit), per-step `sigma` scalar caching in `IPAdapter` (eliminating **2,484** GPU$\to$CPU sync stalls per render), `SAM` ViT-B feature caching (`-50%` latency), and `RAMPressureCache` mapping tensor accounting.
-   - Verified **100% bit-exact** (identical decoded PNG SHA-256 hashes) across **5 rounds × 10 fixed seeds (50 full `2304×3456` renders)**.
+4. **12 Bit-Exact Hardware-Ceiling Memory & Latency Optimizations (`patches/` & `engine.py`)**
+   - **GPU & PCIe Hot Paths**: Cross-step `(ip_k, ip_v)` linear projection cache in `IPAdapter` (eliminating **15,000+** redundant CUDA kernel launches), `[B, S, 1]` broadcast spatial attention mask cache (eliminating `1,960` `F.interpolate` calls and `1280×` `.repeat()` VRAM traffic), `CLIPVision` zero-image uncond embedding cache, per-step `sigma` scalar cache (eliminating **2,484** GPU$\to$CPU sync stalls), and `SAM ViT-B` `meta + mmap + assign` loading (**6.0×** faster, `-750 MiB` peak host commit) + ViT-B feature caching (`-50%` latency).
+   - **CPU, Memory & Boot Hot Paths**: 256-row L3-cache-blocked multi-threaded `float32 <-> uint8` quantization (**3.3×** faster, eliminating `382.2 MiB` in `lanczos` and `91.1 MiB` in `SaveImage`), `VAE` destination-buffer writes & `tiled_scale_multidim` feather-mask caching (`-676.8 MiB`), per-tile GPU transfer in `ImageUpscaleWithModel` (`-382.21 MiB`), PyAV-free static PNG `LoadImage` fast path, stage-specific `--whitelist-custom-nodes` + headless `comfy_extras` fast boot (`-17.3s`), `<1ms` exclusive socket bind + log-driven zero-SYN-retry readiness, and background CPU YOLO pre-warming + teardown-overlapped inspection (eliminating the `8.8s` cold gate stall).
+   - Verified **100% bit-exact** (identical decoded PNG SHA-256 hashes) across fixed seed `20261027` (`quality` & `ultra` `2304×3456` pipelines) and the 50-render benchmark corpus.
 
 ---
 
@@ -207,15 +208,16 @@ emilia clean --older-than-hours 1.0
 │   ├── visual/                    # 10 synchronized ComfyUI visual workflows (Emilia_01..10)
 │   ├── reports/                   # Historical ablation, visual review, and hardware benchmark JSON reports
 │   └── WORKFLOW_DECISIONS.txt     # Engineering decision log and pixel-hash audit trail
-├── patches/                       # Bit-exact memory and latency optimizations
+├── patches/                       # Bit-exact memory and hardware-ceiling latency patches
 │   ├── emilia_runtime_patches/    # Self-verifying ComfyUI custom_node plugin + EmiliaRelativeGarmentSEGS node
-│   ├── comfyui_core.patch         # Git diff for comfy/sd.py, utils.py, caching.py, execution.py, nodes.py
-│   ├── ipadapter_plus.patch       # Per-step sigma scalar cache & batch-1 copy elimination patch
-│   └── impact_pack.patch          # SAMWrapper ViT-B image embedding cache patch
+│   ├── comfyui_core.patch         # Git diff for main.py, comfy/sd.py, utils.py, caching.py, execution.py, nodes.py
+│   ├── ipadapter_plus.patch       # KV projection, broadcast mask, sigma scalar & zero-uncond cache patch
+│   ├── impact_pack.patch          # SAMLoader meta+mmap+assign load & SAMWrapper feature cache patch
+│   └── impact_subpack.patch       # Zero-copy bbox mask & quiet inference patch for subcore.py
 ├── packaging/                     # PyInstaller spec and Windows build script (emilia.spec, build_windows.ps1)
-├── tests/                         # 10 standalone test modules (151 tests) + comfy_core/ operator unit tests
+├── tests/                         # 10 standalone test modules (154 tests) + comfy_core/ operator unit tests
 ├── AGENTS.md                      # Hardware constraints, process isolation rules, and engineering guidelines
-├── PROGRESS.md                    # 14-phase engineering ledger and benchmark tables
+├── PROGRESS.md                    # 15-phase engineering ledger and benchmark tables
 ├── build_support.py               # Build-time immutable resource stager for wheel & PyInstaller
 ├── config.example.toml            # Portable TOML configuration template
 ├── models_manifest.json           # 13 required/experimental model weights, references, and pinned node commits

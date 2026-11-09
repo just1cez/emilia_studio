@@ -16,9 +16,9 @@ This repository uses an **Option A** two-tier layout separating our declarative 
   - `workflows/api/`: 27 canonical `.api.json` workflow definitions.
   - `workflows/visual/`: 10 synchronized ComfyUI visual workflows (`Emilia_01..10`).
   - `workflows/reports/` & `workflows/WORKFLOW_DECISIONS.txt`: Historical benchmark reports and decision records.
-  - `patches/`: `emilia_runtime_patches/` plugin plus `comfyui_core.patch`, `ipadapter_plus.patch`, and `impact_pack.patch` git diffs.
+  - `patches/`: `emilia_runtime_patches/` plugin plus `comfyui_core.patch`, `ipadapter_plus.patch`, `impact_pack.patch`, and `impact_subpack.patch` git diffs.
   - `assets/`: `official_face_center_clean.png` and `assets/official_references/*.png` reference crops.
-  - `tests/`: 10 standalone test modules (`151` tests) plus `tests/comfy_core/` unit tests.
+  - `tests/`: 10 standalone test modules (`154` tests) plus `tests/comfy_core/` unit tests.
 - **Root Launchers & Config**:
   - `render-emilia-quality.ps1`: PowerShell wrapper for `render_emilia_quality.py` (`-Seed`, `-Pag`, `-AutoGate`).
   - `start-comfyui.ps1`: Interactive GUI server launcher on port `8188`.
@@ -74,10 +74,10 @@ Target workstation baseline: **8 GiB NVIDIA CMP 40HX (Turing, compute capability
 Before completing any code or workflow change, run the unit test suite using the project Conda environment:
 
 ```powershell
-# 1. Run the 151-test top-level Emilia Studio unit suite
+# 1. Run the 154-test top-level Emilia Studio unit suite
 D:\conda-data\envs\comfyui\python.exe -m pytest tests/
 
-# 2. Run the full 151-test ComfyUI runtime unit suite in app/tests-unit/comfy_test/
+# 2. Run the full 154-test ComfyUI runtime unit suite in app/tests-unit/comfy_test/
 D:\conda-data\envs\comfyui\python.exe -m pytest app/tests-unit/comfy_test/
 
 # 3. Verify CLI health (doctor, workflows, and SQLite ledger)

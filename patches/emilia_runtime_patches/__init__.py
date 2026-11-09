@@ -7,6 +7,7 @@ import importlib.util
 import inspect
 import itertools
 import sys
+import warnings
 from collections import namedtuple
 from pathlib import Path
 from typing import Any
@@ -66,21 +67,43 @@ def _resolve_cross_attention_patch_module() -> Any | None:
     return None
 
 
+def _fast_tensor_to_u8_numpy(image: torch.Tensor) -> np.ndarray:
+    t_cpu = image.detach().cpu()
+    if t_cpu.ndim == 0 or t_cpu.numel() == 0:
+        arr = 255.0 * t_cpu.numpy()
+        return np.clip(arr, 0, 255, out=arr).astype(np.uint8)
+    h = t_cpu.shape[0]
+    out = torch.empty(t_cpu.shape, dtype=torch.uint8)
+    step = 256
+    buf = torch.empty((min(step, h),) + t_cpu.shape[1:], dtype=torch.float32)
+    for y in range(0, h, step):
+        y2 = min(y + step, h)
+        slice_buf = buf[: y2 - y]
+        torch.mul(t_cpu[y:y2], 255.0, out=slice_buf)
+        slice_buf.clamp_(0.0, 255.0)
+        out[y:y2].copy_(slice_buf)
+    return out.numpy()
+
+
+def _fast_u8_numpy_to_tensor(arr: np.ndarray) -> torch.Tensor:
+    if not arr.flags.c_contiguous:
+        arr = np.ascontiguousarray(arr)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="The given NumPy array is not writable")
+        return torch.from_numpy(arr).to(dtype=torch.float32).div_(255.0)
+
+
 def _patched_lanczos(samples: torch.Tensor, width: int, height: int) -> torch.Tensor:
     if samples.ndim == 4:
         samples = samples.squeeze(1) if samples.shape[1] == 1 else samples.movedim(1, -1)
     results = []
     for image in samples:
-        arr = 255.0 * image.cpu().numpy()
-        pil_img = Image.fromarray(np.clip(arr, 0, 255, out=arr).astype(np.uint8))
-        del arr
+        pil_img = Image.fromarray(_fast_tensor_to_u8_numpy(image))
         resized = pil_img.resize((width, height), resample=Image.Resampling.LANCZOS)
-        t = np.array(resized, dtype=np.float32)
-        t /= 255.0
-        results.append(torch.from_numpy(t).movedim(-1, 0) if t.ndim == 3 else torch.from_numpy(t))
+        t = _fast_u8_numpy_to_tensor(np.asarray(resized))
+        results.append(t.movedim(-1, 0) if t.ndim == 3 else t)
     result = results[0].unsqueeze(0) if len(results) == 1 else torch.stack(results)
     return result.to(samples.device, samples.dtype)
-
 
 @torch.inference_mode()
 def _patched_tiled_scale_multidim(
@@ -257,13 +280,17 @@ def apply_all_patches() -> dict[str, bool]:
         comfy.utils.tiled_scale_multidim = _patched_tiled_scale_multidim
     comfy.utils.tiled_scale_multidim._emilia_patched = True
 
+    if not hasattr(comfy.utils, "tensor_to_u8_numpy"):
+        comfy.utils.tensor_to_u8_numpy = _fast_tensor_to_u8_numpy
+    if not hasattr(comfy.utils, "u8_numpy_to_tensor"):
+        comfy.utils.u8_numpy_to_tensor = _fast_u8_numpy_to_tensor
     lz_src = _safe_getsource(comfy.utils.lanczos)
-    if lz_src and "np.clip(arr, 0, 255, out=arr)" not in lz_src:
+    if lz_src and ("tensor_to_u8_numpy" not in lz_src and "_fast_tensor_to_u8_numpy" not in lz_src):
         comfy.utils.lanczos = _patched_lanczos
     comfy.utils.lanczos._emilia_patched = True
     results["utils_mask_caching"] = True
 
-    # 3. SaveImage in-place clip & LoadLatent/LoadImage chunked hash
+    # 3. SaveImage in-place / L3-blocked quantization & LoadLatent/LoadImage chunked hash
     li_src = _safe_getsource(getattr(nodes.LoadImage, "IS_CHANGED", None))
     if li_src and "while chunk :=" not in li_src:
         nodes.LoadImage.IS_CHANGED = _patched_load_image_is_changed
@@ -271,7 +298,7 @@ def apply_all_patches() -> dict[str, bool]:
     if ll_src and "while chunk :=" not in ll_src:
         nodes.LoadLatent.IS_CHANGED = _patched_load_latent_is_changed
     si_src = _safe_getsource(getattr(nodes.SaveImage, "save_images", None))
-    save_patched = (not si_src) or ("np.clip(i, 0, 255, out=i)" in si_src)
+    save_patched = (not si_src) or ("tensor_to_u8_numpy" in si_src) or ("np.clip(i, 0, 255, out=i)" in si_src)
     if save_patched:
         nodes.SaveImage._emilia_patched = True
     nodes.LoadLatent._emilia_patched = True
@@ -338,7 +365,7 @@ def verify_patches() -> dict[str, bool]:
     )
     si_src = _safe_getsource(getattr(nodes.SaveImage, "save_images", None))
     nodes_ok = hasattr(nodes.SaveImage, "_emilia_patched") and (
-        (not si_src) or ("np.clip(i, 0, 255, out=i)" in si_src)
+        (not si_src) or ("tensor_to_u8_numpy" in si_src) or ("np.clip(i, 0, 255, out=i)" in si_src)
     )
 
     return {

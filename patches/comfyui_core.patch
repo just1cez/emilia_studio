@@ -1,8 +1,8 @@
 diff --git a/comfy/sd.py b/comfy/sd.py
-index a73607cb..9819faa8 100644
+index a73607cb..0f3520d1 100644
 --- a/comfy/sd.py
 +++ b/comfy/sd.py
-@@ -1137,12 +1137,11 @@ class VAE:
+@@ -1137,12 +1137,14 @@ class VAE:
          pbar = comfy.utils.ProgressBar(steps)
  
          decode_fn = lambda a: self.first_stage_model.decode(a.to(self.vae_dtype).to(self.device)).to(dtype=self.vae_output_dtype())
@@ -13,14 +13,17 @@ index a73607cb..9819faa8 100644
 -            / 3.0)
 -        return output
 +        output = comfy.utils.tiled_scale(samples, decode_fn, tile_x // 2, tile_y * 2, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar)
-+        output = output + comfy.utils.tiled_scale(samples, decode_fn, tile_x * 2, tile_y // 2, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar)
++        if torch.is_inference_mode_enabled():
++            output += comfy.utils.tiled_scale(samples, decode_fn, tile_x * 2, tile_y // 2, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar)
++        else:
++            output = output + comfy.utils.tiled_scale(samples, decode_fn, tile_x * 2, tile_y // 2, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar)
 +        output += comfy.utils.tiled_scale(samples, decode_fn, tile_x, tile_y, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar)
 +        output /= 3.0
 +        return self.process_output(output)
  
      def decode_tiled_1d(self, samples, tile_x=256, overlap=32):
          if samples.ndim == 3:
-@@ -1243,7 +1242,7 @@ class VAE:
+@@ -1243,7 +1245,7 @@ class VAE:
                      if preallocated:
                          self.first_stage_model.decode(samples, output_buffer=pixel_samples[x:x+batch_number], **vae_options)
                      else:
@@ -29,7 +32,7 @@ index a73607cb..9819faa8 100644
                          if pixel_samples is None:
                              pixel_samples = torch.empty((samples_in.shape[0],) + tuple(out.shape[1:]), device=self.output_device, dtype=self.vae_output_dtype())
                          pixel_samples[x:x+batch_number].copy_(out)
-@@ -1260,6 +1259,8 @@ class VAE:
+@@ -1260,6 +1262,8 @@ class VAE:
  
              if do_tile:
                  pixel_samples = None
@@ -38,7 +41,7 @@ index a73607cb..9819faa8 100644
                  comfy.model_management.soft_empty_cache()
                  dims = samples_in.ndim - 2
                  if dims == 1 or self.extra_1d_channel is not None:
-@@ -1381,10 +1382,10 @@ class VAE:
+@@ -1381,10 +1385,10 @@ class VAE:
                      else:
                          pixels_in = pixels_in.to(self.device)
                          out = self.first_stage_model.encode(pixels_in)
@@ -51,7 +54,7 @@ index a73607cb..9819faa8 100644
  
              except Exception as e:
                  model_management.raise_non_oom(e)
-@@ -1396,6 +1397,9 @@ class VAE:
+@@ -1396,6 +1400,9 @@ class VAE:
                  do_tile = True
  
              if do_tile:
@@ -62,10 +65,38 @@ index a73607cb..9819faa8 100644
                  if self.latent_dim == 3:
                      tile = 256
 diff --git a/comfy/utils.py b/comfy/utils.py
-index b31b70da..b755960c 100644
+index b31b70da..287ed9ea 100644
 --- a/comfy/utils.py
 +++ b/comfy/utils.py
-@@ -1096,10 +1096,16 @@ def lanczos(samples, width, height):
+@@ -1092,14 +1092,41 @@ def bislerp(samples, width, height):
+     result = result.reshape(n, h_new, w_new, c).movedim(-1, 1)
+     return result.to(orig_dtype)
+ 
++def tensor_to_u8_numpy(image: torch.Tensor) -> np.ndarray:
++    t_cpu = image.detach().cpu()
++    if t_cpu.ndim == 0 or t_cpu.numel() == 0:
++        arr = 255. * t_cpu.numpy()
++        return np.clip(arr, 0, 255, out=arr).astype(np.uint8)
++    h = t_cpu.shape[0]
++    out = torch.empty(t_cpu.shape, dtype=torch.uint8)
++    step = 256
++    buf = torch.empty((min(step, h),) + t_cpu.shape[1:], dtype=torch.float32)
++    for y in range(0, h, step):
++        y2 = min(y + step, h)
++        slice_buf = buf[: y2 - y]
++        torch.mul(t_cpu[y:y2], 255.0, out=slice_buf)
++        slice_buf.clamp_(0.0, 255.0)
++        out[y:y2].copy_(slice_buf)
++    return out.numpy()
++
++def u8_numpy_to_tensor(arr: np.ndarray) -> torch.Tensor:
++    if not arr.flags.c_contiguous:
++        arr = np.ascontiguousarray(arr)
++    with warnings.catch_warnings():
++        warnings.filterwarnings("ignore", message="The given NumPy array is not writable")
++        return torch.from_numpy(arr).to(dtype=torch.float32).div_(255.0)
++
+ def lanczos(samples, width, height):
      #the below API is strict and expects grayscale to be squeezed
      if samples.ndim == 4:
          samples = samples.squeeze(1) if samples.shape[1] == 1 else samples.movedim(1, -1)
@@ -75,18 +106,15 @@ index b31b70da..b755960c 100644
 -    result = torch.stack(images)
 +    results = []
 +    for image in samples:
-+        arr = 255. * image.cpu().numpy()
-+        pil_img = Image.fromarray(np.clip(arr, 0, 255, out=arr).astype(np.uint8))
-+        del arr
++        pil_img = Image.fromarray(tensor_to_u8_numpy(image))
 +        resized = pil_img.resize((width, height), resample=Image.Resampling.LANCZOS)
-+        t = np.array(resized, dtype=np.float32)
-+        t /= 255.0
-+        results.append(torch.from_numpy(t).movedim(-1, 0) if t.ndim == 3 else torch.from_numpy(t))
++        t = u8_numpy_to_tensor(np.asarray(resized))
++        results.append(t.movedim(-1, 0) if t.ndim == 3 else t)
 +    result = results[0].unsqueeze(0) if len(results) == 1 else torch.stack(results)
      return result.to(samples.device, samples.dtype)
  
  def common_upscale(samples, width, height, upscale_method, crop):
-@@ -1199,6 +1205,7 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
+@@ -1199,6 +1226,7 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
          return out
  
      output = torch.empty([samples.shape[0], out_channels] + mult_list_upscale(samples.shape[2:]), device=output_device)
@@ -94,7 +122,7 @@ index b31b70da..b755960c 100644
  
      for b in range(samples.shape[0]):
          s = samples[b:b+1]
-@@ -1226,16 +1233,20 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
+@@ -1226,16 +1254,20 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
                  upscaled.append(round(get_pos(d, pos)))
  
              ps = function(s_in).to(output_device)
@@ -125,7 +153,7 @@ index b31b70da..b755960c 100644
  
              o = out
              o_d = out_div
-@@ -1249,7 +1260,8 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
+@@ -1249,7 +1281,8 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
                      ps_view = ps_view.narrow(d + 2, 0, l)
                      mask_view = mask_view.narrow(d + 2, 0, l)
  
@@ -171,7 +199,7 @@ index 6003bc7b..dc0ca65d 100644
                          #old ModelPatchers are the first to go
                          oom_ram_usage = 1e30
 diff --git a/comfy_extras/nodes_upscale_model.py b/comfy_extras/nodes_upscale_model.py
-index d1e0401b..3cae8ec8 100644
+index d1e0401b..1749b701 100644
 --- a/comfy_extras/nodes_upscale_model.py
 +++ b/comfy_extras/nodes_upscale_model.py
 @@ -74,7 +74,7 @@ class ImageUpscaleWithModel(io.ComfyNode):
@@ -192,12 +220,13 @@ index d1e0401b..3cae8ec8 100644
                  oom = False
              except Exception as e:
                  model_management.raise_non_oom(e)
-@@ -94,7 +94,7 @@ class ImageUpscaleWithModel(io.ComfyNode):
+@@ -94,7 +94,8 @@ class ImageUpscaleWithModel(io.ComfyNode):
                  if tile < 128:
                      raise e
  
 -        s = torch.clamp(s.movedim(-3,-1), min=0, max=1.0).to(comfy.model_management.intermediate_dtype())
-+        s = s.clamp_(min=0, max=1.0).movedim(-3,-1).to(comfy.model_management.intermediate_dtype())
++        with torch.inference_mode():
++            s = s.clamp_(min=0, max=1.0).movedim(-3,-1).to(comfy.model_management.intermediate_dtype())
          return io.NodeOutput(s)
  
      upscale = execute  # TODO: remove
@@ -213,8 +242,32 @@ index 62f3d7c5..0794e689 100644
  
                  comfy.model_management.cleanup_models_gc()
                  self.add_message("execution_cached",
+diff --git a/main.py b/main.py
+index 50222cc5..e09532ea 100644
+--- a/main.py
++++ b/main.py
+@@ -34,7 +34,7 @@ import sys
+ from comfy_execution.progress import get_progress_state
+ from comfy_execution.utils import get_executing_context
+ from comfy_api import feature_flags
+-from app.database.db import init_db, dependencies_available
++# Database imports deferred to setup_database() so headless stage workers avoid SQLAlchemy/Alembic import overhead
+ 
+ if __name__ == "__main__":
+     #NOTE: These do not do anything on core ComfyUI, they are for custom nodes.
+@@ -492,7 +492,10 @@ def cleanup_temp():
+ 
+ 
+ def setup_database():
++    if os.environ.get("EMILIA_HEADLESS_FAST_BOOT") == "1" and not args.enable_assets:
++        return
+     try:
++        from app.database.db import init_db, dependencies_available
+         if dependencies_available():
+             init_db()
+             if args.enable_assets:
 diff --git a/nodes.py b/nodes.py
-index e2072144..b36bb24d 100644
+index e2072144..22017890 100644
 --- a/nodes.py
 +++ b/nodes.py
 @@ -585,7 +585,8 @@ class LoadLatent:
@@ -227,16 +280,35 @@ index e2072144..b36bb24d 100644
          return m.digest().hex()
  
      @classmethod
-@@ -1695,7 +1696,7 @@ class SaveImage:
+@@ -1694,8 +1695,7 @@ class SaveImage:
+         full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0])
          results = list()
          for (batch_number, image) in enumerate(images):
-             i = 255. * image.cpu().numpy()
+-            i = 255. * image.cpu().numpy()
 -            img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
-+            img = Image.fromarray(np.clip(i, 0, 255, out=i).astype(np.uint8))
++            img = Image.fromarray(comfy.utils.tensor_to_u8_numpy(image))
              metadata = None
              if not args.disable_metadata:
                  metadata = PngInfo()
-@@ -1800,7 +1801,8 @@ class LoadImage:
+@@ -1757,6 +1757,17 @@ class LoadImage:
+         dtype = comfy.model_management.intermediate_dtype()
+         device = comfy.model_management.intermediate_device()
+ 
++        if image_path.lower().endswith((".png", ".jpg", ".jpeg")):
++            try:
++                with Image.open(image_path) as fast_im:
++                    if not getattr(fast_im, "is_animated", False) and fast_im.mode == "RGB" and fast_im.getexif().get(274, 1) == 1:
++                        fast_im.load()
++                        fast_tensor = comfy.utils.u8_numpy_to_tensor(np.asarray(fast_im)).unsqueeze(0)
++                        fast_mask = torch.zeros((1, 64, 64), dtype=dtype, device=device)
++                        return (fast_tensor.to(device=device, dtype=dtype), fast_mask)
++            except Exception:
++                pass
++
+         components = InputImpl.VideoFromFile(image_path).get_components()
+         if components.images.shape[0] > 0:
+             return (components.images.to(device=device, dtype=dtype), (1.0 - components.alpha[..., -1]).to(device=device, dtype=dtype) if components.alpha is not None else torch.zeros((components.images.shape[0], 64, 64), dtype=dtype, device=device))
+@@ -1800,7 +1811,8 @@ class LoadImage:
          image_path = folder_paths.get_annotated_filepath(image)
          m = hashlib.sha256()
          with open(image_path, 'rb') as f:
@@ -246,3 +318,18 @@ index e2072144..b36bb24d 100644
          return m.digest().hex()
  
      @classmethod
+@@ -2532,6 +2544,14 @@ async def init_builtin_extra_nodes():
+         "nodes_text.py",
+         "nodes_sam3d_body.py",
+     ]
++    if os.environ.get("EMILIA_HEADLESS_FAST_BOOT") == "1":
++        _essential = {
++            "nodes_latent.py", "nodes_upscale_model.py", "nodes_post_processing.py",
++            "nodes_mask.py", "nodes_compositing.py", "nodes_clip_sdxl.py",
++            "nodes_custom_sampler.py", "nodes_model_advanced.py", "nodes_model_downscale.py",
++            "nodes_images.py", "nodes_differential_diffusion.py", "nodes_pag.py", "nodes_cfg.py",
++        }
++        extras_files = [f for f in extras_files if f in _essential]
+ 
+     import_failed = []
+     for node_file in extras_files:

@@ -16,6 +16,7 @@ from pathlib import Path
 
 
 _MODEL_CACHE: dict[str, object] = {}
+_WARMED_MODELS: set[str] = set()
 
 
 def _get_model(model_path: str):
@@ -25,6 +26,20 @@ def _get_model(model_path: str):
     if key not in _MODEL_CACHE:
         _MODEL_CACHE[key] = YOLO(key)
     return _MODEL_CACHE[key]
+
+
+def _warmup_models(face_path: str, hand_path: str, pose_path: str = "") -> None:
+    from PIL import Image
+
+    dummy = Image.new("RGB", (64, 64), (0, 0, 0))
+    for model_path in (face_path, hand_path, pose_path):
+        if not model_path or not Path(model_path).is_file():
+            continue
+        key = str(Path(model_path).resolve())
+        model = _get_model(key)
+        if key not in _WARMED_MODELS:
+            model.predict(dummy, imgsz=64, device="cpu", verbose=False)
+            _WARMED_MODELS.add(key)
 
 
 def _run_detection(
@@ -83,6 +98,16 @@ def _serve_forever() -> None:
             req = json.loads(line)
             if req.get("cmd") == "quit":
                 break
+            if req.get("cmd") == "warmup":
+                with contextlib.redirect_stdout(sys.stderr):
+                    _warmup_models(
+                        str(req.get("face_path") or ""),
+                        str(req.get("hand_path") or ""),
+                        str(req.get("pose_path") or ""),
+                    )
+                sys.stdout.write(json.dumps({"ok": True, "warmed": True}) + "\n")
+                sys.stdout.flush()
+                continue
             with contextlib.redirect_stdout(sys.stderr):
                 if req.get("image_path"):
                     with Image.open(req["image_path"]) as src:

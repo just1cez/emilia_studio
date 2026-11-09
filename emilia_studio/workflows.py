@@ -18,7 +18,15 @@ class WorkflowSpec:
     visual_template: Optional[Path] = None
 
 _RAW_WORKFLOW_CACHE: dict[str, str] = {}
+_PARSED_WORKFLOW_CACHE: dict[str, Dict[str, Any]] = {}
 
+
+def _fast_clone_json(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        return {k: _fast_clone_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_fast_clone_json(v) for v in obj]
+    return obj
 
 def _choice(name: str, value: str, choices: tuple[str, ...]) -> None:
     if value not in choices:
@@ -49,11 +57,15 @@ class EmiliaWorkflowBuilder:
     def _load_api(self, name: str) -> Dict[str, Any]:
         path = self.config.workflows_dir / name
         key = str(path.resolve())
-        raw = _RAW_WORKFLOW_CACHE.get(key)
-        if raw is None:
-            raw = path.read_text(encoding="utf-8")
-            _RAW_WORKFLOW_CACHE[key] = raw
-        return json.loads(raw)
+        parsed = _PARSED_WORKFLOW_CACHE.get(key)
+        if parsed is None:
+            raw = _RAW_WORKFLOW_CACHE.get(key)
+            if raw is None:
+                raw = path.read_text(encoding="utf-8")
+                _RAW_WORKFLOW_CACHE[key] = raw
+            parsed = json.loads(raw)
+            _PARSED_WORKFLOW_CACHE[key] = parsed
+        return _fast_clone_json(parsed)
     def build_highres_native(
         self,
         seed: int = 20261027,
