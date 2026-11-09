@@ -198,3 +198,21 @@ Conducted a direct pixel-by-pixel audit against official Re:Zero TV anime charac
 - **Live `2304×3456` Verification (`app/output/emilia/ultra/03_finished_2x_00015_.png`, `seed 20261027`, `preset=rose-garden`)**:
   - Stage 1 `165.7s`, Stage 2 `86.5s`, decoded final SHA256 `71f1e7deaea0c2f5e475e3e79886e8979d85ba7c8ef31405f6a2247787412e62`.
   - Visually verified against `03_finished_2x_00013_.png`: (1) lower skirt coattails are clean white/lavender with **zero** duplicated gold hawk emblems (only the two sleeve cuffs bear the gold hawk emblem); (2) bottom-right `©ENTLELS...` watermark is **100% eliminated**; (3) violet irises display a luminous cyan-blue inner pupil ring (`left_eye_hue_deg=263.88°, right_eye_hue_deg=266.54°, heterochromia_score=2.66°`); and (4) full-body standing pose from crown braid to white ankle boots passed CPU pose gate (`fh/H=0.0993, max_ankle_confidence=0.6576, hip_y=0.5059, ankle_y=0.8080`).
+
+### Phase 14: Complete Resolution of All 17 Remaining Audit Findings (2026-11-09; local only)
+
+- **CLI, TUI, Bridge & Config Completeness (`commands.py`, `cli.py`, `tui.py`, `config.py`, `ollama_comfyui_bridge.py`, `start-comfyui.ps1`)**:
+  - Added `experimental_models` (`illustrious-xl-1.1`, `animesharp`) support to `emilia pull` and `emilia doctor`.
+  - Updated `emilia compare` to reuse cached `.run.json` YOLO iris telemetry or live CPU YOLO when models are present.
+  - Exposed `--reference-mode`, `--hires-bridge`, `--checkpoint`, `--garment-region`, `--upscaler`, `--secondary-upscaler`, `--upscale-blend`, and `--max-retries` across `render`, `batch`, and `idea`, and resolved `--preset` `default_seed` when `--seed` is omitted.
+  - Added `workflows_dir`, `visual_workflows_dir`, and `resources_dir` to `PATH_KEYS` in `config set`; supported `help <subcommand>` in `emilia shell`.
+  - Hardened `render_table` and `ProgressBar` against multiline cells, ANSI escape widths, and East Asian wide characters.
+  - Added `-Listen` and `-Port` parameters to `start-comfyui.ps1` and forwarded configured host/port from `ollama_comfyui_bridge.py`.
+  - Fixed `"gentle gentle smile"` typo in `DEFAULT_LORA_PRODUCTION_POSITIVE_PROMPT`, added `.expanduser()` to all path fields in `StudioConfig.__post_init__`, and validated port bounds (`1..65535`).
+- **Prompt Compiler & Workflow Builder Hardening (`compiler.py`, `workflows.py`)**:
+  - Hardened `clean_generated_prompt` to strip unclosed `<think>` or stray `</think>` reasoning chains; routed outfit-specific `ipadapter_weight` in `infer_composition_hints`; filtered Emilia-specific eye/cloak bans from non-Emilia negative prompts; replaced fragile substring `.replace()` with tag-set filtering in `build_emilia_ultra_negative`.
+  - Added 64-bit integer `seed` validation in `build_ultra_native` and `build_ultra_finish`; deduplicated individual angle tags; stripped lower-body tags on direct `build_ultra_native(framing="portrait")` calls; and reused `LoraLoader` node `10` when `lora_strength_hires == lora_strength_base`.
+- **Persistent External YOLO Worker, Corner Watermark Diagnostics, Benchmark Scripts & ComfyUI Cache Accounting (`inspection_worker.py`, `inspector.py`, `app/`)**:
+  - Added `--server` persistent JSON-lines loop with `_MODEL_CACHE` and direct `image_path` loading to `inspection_worker.py` + `QualityInspector._detect_anatomy_external`, plus advisory `analyze_corner_artifacts` 4-corner stroke density diagnostics on `InspectionReport`.
+  - Replaced `time.sleep(2)` with `child.wait(timeout=2.0)` and reused receipt `pixel_sha256` in `benchmark_architecture_iterations.py`; cleaned dead helpers and bare `assert`s in `render_emilia_quality.py` and `evaluate_architecture_iteration.py`.
+  - Released `del cache_results` in `app/execution.py` and added `Mapping` (`dict`) recursion + `untyped_storage()` deduplication in `app/comfy_execution/caching.py` (captured in `patches/comfyui_core.patch`).

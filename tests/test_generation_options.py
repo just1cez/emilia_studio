@@ -93,7 +93,7 @@ def test_inspector_zero_face_does_not_run_duplicate_detect_anatomy(tmp_path, mon
     inspector = QualityInspector(use_yolo=False)
     call_count = {'n': 0}
 
-    def fake_detect(image, *, run_pose=True):
+    def fake_detect(image, *, run_pose=True, image_path=None):
         call_count['n'] += 1
         return [], [], [], [], 'yolo_cpu'
 
@@ -102,3 +102,25 @@ def test_inspector_zero_face_does_not_run_duplicate_detect_anatomy(tmp_path, mon
     assert rep.face_count == 0
     assert rep.recommended_action == 'reject_seed'
     assert call_count['n'] == 1
+
+
+def test_unclosed_think_tag_and_lora_hires_node_reuse_and_seed_validation():
+    from emilia_studio.compiler import clean_generated_prompt
+
+    cleaned = clean_generated_prompt('standing in snow, warm light <think>unclosed reasoning chain...')
+    assert '<think>' not in cleaned
+    assert cleaned == 'standing in snow, warm light'
+
+    builder = EmiliaWorkflowBuilder(load_config())
+    with pytest.raises(ValueError, match='seed'):
+        builder.build_ultra_native(seed=-1)
+    with pytest.raises(ValueError, match='seed'):
+        builder.build_ultra_native(seed=True)
+
+    g_same_lora = builder.build_ultra_native(lora_strength_base=0.25, lora_strength_hires=0.25)
+    assert g_same_lora['61']['inputs']['clip'] == ['10', 1]
+    assert g_same_lora['55']['inputs']['model'] == ['10', 0]
+
+    g_portrait = builder.build_ultra_native(framing='portrait')
+    assert 'boots' not in g_portrait['6']['inputs']['text']
+    assert 'cropped feet' not in g_portrait['7']['inputs']['text']

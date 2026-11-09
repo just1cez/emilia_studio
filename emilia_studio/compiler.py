@@ -91,8 +91,19 @@ def clean_generated_prompt(content: str) -> str:
     lowered = prompt.lower()
     while "<think>" in lowered and "</think>" in lowered:
         start = lowered.index("<think>")
-        end = lowered.index("</think>", start) + len("</think>")
+        end_idx = lowered.find("</think>", start)
+        if end_idx == -1:
+            break
+        end = end_idx + len("</think>")
         prompt = (prompt[:start] + prompt[end:]).strip()
+        lowered = prompt.lower()
+    if "</think>" in lowered:
+        end = lowered.rindex("</think>") + len("</think>")
+        prompt = prompt[end:].strip()
+        lowered = prompt.lower()
+    if "<think>" in lowered:
+        start = lowered.index("<think>")
+        prompt = prompt[:start].strip()
         lowered = prompt.lower()
     if prompt.startswith("```"):
         prompt = prompt.strip("`").strip()
@@ -195,15 +206,16 @@ class OllamaPromptCompiler:
         return tags
 
     def infer_composition_hints(
-        self, idea: str, tags: str, *, ultra_mode: bool = False
+        self, idea: str, tags: str, *, ultra_mode: bool = False, outfit: str = "royal"
     ) -> tuple[str, float]:
         """Infer framing (portrait/upper_body/full_body) and optimal IPAdapter face weight."""
         combined = f"{idea} {tags}".casefold()
+        outfit_ipa = float(EMILIA_OUTFIT_MODES.get(outfit, {}).get("ipadapter_weight", 0.18))
         if any(k in combined for k in ("特写", "头像", "面部", "close-up", "portrait", "face focus")):
-            return "portrait", (0.20 if ultra_mode else 0.50)
+            return "portrait", (max(0.20, outfit_ipa) if ultra_mode else 0.50)
         if any(k in combined for k in ("半身", "腰部以上", "upper body", "cowboy shot", "medium shot")):
-            return "upper_body", (0.18 if ultra_mode else 0.45)
-        return "full_body", (0.18 if ultra_mode else 0.40)
+            return "upper_body", (outfit_ipa if ultra_mode else 0.45)
+        return "full_body", (outfit_ipa if ultra_mode else 0.40)
 
     def build_emilia_ultra_prompt(
         self, scene_and_pose_tags: str, framing: str = "full_body", *,
@@ -217,7 +229,7 @@ class OllamaPromptCompiler:
                 raise ValueError(f"Unknown creative option: {value}")
         identity = self.config.ultra_outfit_canonical if outfit == 'royal' else EMILIA_OUTFIT_MODES[outfit]['positive']
         if framing == 'portrait':
-            identity = ', '.join(tag.strip() for tag in identity.split(',') if not any(word in tag for word in ('skirt', 'stockings', 'boots', 'thighs', 'zettai', 'coattails')))
+            identity = ', '.join(tag.strip() for tag in identity.split(',') if not any(word in tag for word in ('skirt', 'stockings', 'boots', 'thighs', 'zettai', 'coattails', 'legs')))
         framing_lead = ULTRA_FRAMING_LEADS[framing]
         if outfit == "nightgown" and framing == "full_body":
             framing_lead = "full body, entire figure visible, generous headroom, natural proportions"
@@ -237,11 +249,20 @@ class OllamaPromptCompiler:
             raise ValueError('Unknown outfit or framing')
         spec = EMILIA_OUTFIT_MODES[outfit]
         negative = self.config.ultra_negative_prompt
-        for remove in spec['negative_remove']:
-            negative = negative.replace(remove, '')
+        remove_set = {
+            t.strip().casefold()
+            for chunk in spec['negative_remove']
+            for t in chunk.split(',')
+            if t.strip()
+        }
         if framing != 'full_body':
-            negative = ', '.join(tag.strip() for tag in negative.split(',') if tag.strip() not in ('cropped feet', 'feet out of frame'))
-        return deduplicate_tags(f"{negative}, {spec['negative_add']}")
+            remove_set.update({'cropped feet', 'feet out of frame'})
+        filtered_neg = ', '.join(
+            tag.strip()
+            for tag in negative.split(',')
+            if tag.strip() and tag.strip().casefold() not in remove_set
+        )
+        return deduplicate_tags(f"{filtered_neg}, {spec['negative_add']}")
 
     def compile_idea(
         self,
@@ -308,7 +329,7 @@ class OllamaPromptCompiler:
         raw_tags = clean_generated_prompt(content)
         emilia_flag = is_emilia_request(idea, self.config.emilia_aliases)
         framing, ipa_weight = self.infer_composition_hints(
-            idea, raw_tags, ultra_mode=(highres_quality_mode and ultra_mode)
+            idea, raw_tags, ultra_mode=(highres_quality_mode and ultra_mode), outfit=outfit
         )
 
         if emilia_flag:
@@ -337,7 +358,19 @@ class OllamaPromptCompiler:
                 neg_prompt = DEFAULT_HIGHRES_NEGATIVE_PROMPT
         else:
             combined = f"{deduplicate_tags(raw_tags)}, {self.config.quality_tags}"
-            neg_prompt = DEFAULT_ULTRA_NEGATIVE_PROMPT if ultra_mode else DEFAULT_HIGHRES_NEGATIVE_PROMPT
+            base_neg = DEFAULT_ULTRA_NEGATIVE_PROMPT if ultra_mode else DEFAULT_HIGHRES_NEGATIVE_PROMPT
+            emilia_specific_bans = {
+                "hood", "hooded cloak", "white cloak", "fur hood", "cape hood",
+                "purple bodysuit", "bodysuit", "solid purple corset", "dark purple apron",
+                "floor-length gown", "wedding dress", "emblem on skirt", "emblem on coattails",
+                "four purple tails", "round gold button", "double brooch",
+                "red eyes", "blue eyes", "solid blue eyes", "pink eyes", "heterochromia",
+            }
+            neg_prompt = ", ".join(
+                t.strip()
+                for t in base_neg.split(",")
+                if t.strip() and t.strip().casefold() not in emilia_specific_bans
+            )
 
         return CompiledPromptSpec(
             user_idea=idea,

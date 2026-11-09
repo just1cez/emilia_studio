@@ -28,6 +28,35 @@ EMILIA_TAGLINE: str = (
 )
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _display_width(text: str) -> int:
+    import unicodedata
+
+    clean = _ANSI_RE.sub("", text)
+    return sum(
+        0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in ("W", "F") else 1
+        for c in clean
+    )
+
+
+def _truncate_display(text: str, max_cols: int) -> str:
+    import unicodedata
+
+    if max_cols <= 0:
+        return ""
+    out: list[str] = []
+    width = 0
+    for ch in text:
+        w = 0 if unicodedata.combining(ch) else 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        if width + w > max_cols:
+            break
+        out.append(ch)
+        width += w
+    return "".join(out)
+
+
 def supports_ansi(stream: Any = None) -> bool:
     """Use color only on a real terminal, respecting NO_COLOR even when empty."""
     target = stream if stream is not None else sys.stdout
@@ -151,33 +180,36 @@ def render_table(
 ) -> str:
     """Render an aligned ASCII/Unicode table for CLI output."""
     use_color = supports_ansi() if color is None else color
-    import unicodedata
+    def sanitize_cell(val: Any) -> str:
+        return " ".join(str(val).splitlines())
 
     def cell_width(text: str) -> int:
-        return sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1 for c in text)
+        return _display_width(text)
 
     def pad(text: str, width: int) -> str:
-        return text + ' ' * max(0, width - cell_width(text))
+        return text + " " * max(0, width - cell_width(text))
 
-    col_count = len(headers)
-    widths = [cell_width(h) for h in headers]
-    for row in rows:
+    clean_headers = [sanitize_cell(h) for h in headers]
+    clean_rows = [[sanitize_cell(cell) for cell in row] for row in rows]
+    col_count = len(clean_headers)
+    widths = [cell_width(h) for h in clean_headers]
+    for row in clean_rows:
         for i in range(min(col_count, len(row))):
-            widths[i] = max(widths[i], cell_width(str(row[i])))
+            widths[i] = max(widths[i], cell_width(row[i]))
 
     sep = "+-" + "-+-".join("-" * w for w in widths) + "-+"
     out_lines: list[str] = []
     if title:
-        out_lines.append(style(f"=== {title} ===", Palette.BOLD, Palette.LAVENDER, enabled=use_color))
+        out_lines.append(style(f"=== {sanitize_cell(title)} ===", Palette.BOLD, Palette.LAVENDER, enabled=use_color))
     out_lines.append(style(sep, Palette.MUTED, enabled=use_color))
     header_cells = [
-        style(pad(headers[i], widths[i]), Palette.BOLD, Palette.ICE_BLUE, enabled=use_color)
+        style(pad(clean_headers[i], widths[i]), Palette.BOLD, Palette.ICE_BLUE, enabled=use_color)
         for i in range(col_count)
     ]
     out_lines.append("| " + " | ".join(header_cells) + " |")
     out_lines.append(style(sep, Palette.MUTED, enabled=use_color))
-    for row in rows:
-        padded = [pad(str(row[i]), widths[i]) if i < len(row) else " " * widths[i] for i in range(col_count)]
+    for row in clean_rows:
+        padded = [pad(row[i], widths[i]) if i < len(row) else " " * widths[i] for i in range(col_count)]
         out_lines.append("| " + " | ".join(padded) + " |")
     out_lines.append(style(sep, Palette.MUTED, enabled=use_color))
     return "\n".join(out_lines)
@@ -234,11 +266,15 @@ class ProgressBar:
             fill, empty = ("━", "─") if self.use_unicode else ("#", "-")
             bar = fill * filled + empty * (self.width - filled)
             percentage = f"{frac * 100:5.1f}%" if frac is not None else "   --%"
-            plain = f"  {tag[:18]:<18} [{bar}] {percentage} {detail}"
+            tag_trunc = _truncate_display(" ".join(str(tag).splitlines()), 18)
+            tag_pad = tag_trunc + " " * max(0, 18 - _display_width(tag_trunc))
+            plain = f"  {tag_pad} [{bar}] {percentage} {detail}"
             cols = max(1, shutil.get_terminal_size((100, 24)).columns - 1)
-            # Truncate plain text, never an ANSI sequence. Pad before coloring.
-            plain = plain[:cols].ljust(min(cols, self._last_line_width))
-            self._last_line_width = len(plain)
+            # Truncate plain text by display width, never an ANSI sequence. Pad before coloring.
+            plain = _truncate_display(plain, cols)
+            pad_spaces = max(0, min(cols, self._last_line_width) - _display_width(plain))
+            plain = plain + " " * pad_spaces
+            self._last_line_width = _display_width(plain)
             self.stream.write("\r" + style(plain, Palette.LAVENDER, enabled=self.use_color))
             self.stream.flush()
         else:

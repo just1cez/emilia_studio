@@ -135,6 +135,41 @@ index b31b70da..b755960c 100644
              o_d.add_(mask_view)
  
              if pbar is not None:
+diff --git a/comfy_execution/caching.py b/comfy_execution/caching.py
+index 6003bc7b..dc0ca65d 100644
+--- a/comfy_execution/caching.py
++++ b/comfy_execution/caching.py
+@@ -564,6 +564,7 @@ class RAMPressureCache(LRUCache):
+ 
+             ram_usage = RAM_CACHE_DEFAULT_RAM_USAGE
+             oom_ram_usage = ram_usage
++            seen_storages = set()
+             def scan_list_for_ram_usage(outputs):
+                 nonlocal ram_usage, oom_ram_usage
+                 if outputs is None:
+@@ -571,9 +572,20 @@ class RAMPressureCache(LRUCache):
+                 for output in outputs:
+                     if isinstance(output, (list, tuple)):
+                         scan_list_for_ram_usage(output)
++                    elif isinstance(output, Mapping):
++                        scan_list_for_ram_usage(output.values())
+                     elif isinstance(output, torch.Tensor) and output.device.type == 'cpu':
+-                        ram_usage += output.numel() * output.element_size()
+-                        oom_ram_usage += output.numel() * output.element_size()
++                        storage = output.untyped_storage()
++                        ptr = storage.data_ptr()
++                        if ptr and ptr not in seen_storages:
++                            seen_storages.add(ptr)
++                            nbytes = storage.nbytes()
++                            ram_usage += nbytes
++                            oom_ram_usage += nbytes
++                        elif not ptr:
++                            nbytes = output.numel() * output.element_size()
++                            ram_usage += nbytes
++                            oom_ram_usage += nbytes
+                     elif is_model_patcher_output(output) and self.used_generation[key] != self.generation:
+                         #old ModelPatchers are the first to go
+                         oom_ram_usage = 1e30
 diff --git a/comfy_extras/nodes_upscale_model.py b/comfy_extras/nodes_upscale_model.py
 index d1e0401b..3cae8ec8 100644
 --- a/comfy_extras/nodes_upscale_model.py
@@ -166,6 +201,18 @@ index d1e0401b..3cae8ec8 100644
          return io.NodeOutput(s)
  
      upscale = execute  # TODO: remove
+diff --git a/execution.py b/execution.py
+index 62f3d7c5..0794e689 100644
+--- a/execution.py
++++ b/execution.py
+@@ -765,6 +765,7 @@ class PromptExecutor:
+                     node_id for node_id, result in zip(node_ids, cache_results)
+                     if result is not None
+                 ]
++                del cache_results
+ 
+                 comfy.model_management.cleanup_models_gc()
+                 self.add_message("execution_cached",
 diff --git a/nodes.py b/nodes.py
 index e2072144..b36bb24d 100644
 --- a/nodes.py

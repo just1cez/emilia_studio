@@ -164,3 +164,28 @@ def test_non_canonical_outfit_decouples_base_and_finish_lora_and_batch_command_r
     assert captured_batch['native_options']['lora_strength_base'] == 0.0
     assert captured_batch['finish_options']['lora_strength'] == 0.28
     assert 'Emilia Batch Render Summary' in capsys.readouterr().out
+
+
+def test_experimental_models_pull_list_and_preset_default_seed_and_tuning_flags(monkeypatch, capsys):
+    assert main(['pull', '--list']) == 0
+    out = capsys.readouterr().out
+    assert 'animesharp' in out
+    assert 'illustrious-xl-1.1' in out
+
+    captured = {}
+
+    async def fake_render(self, **kwargs):
+        captured.update(kwargs)
+        return {}
+
+    monkeypatch.setattr('emilia_studio.engine.EmiliaRenderEngine.render_quality_pipeline', fake_render)
+    assert main([
+        'render', '--profile', 'ultra', '--preset', 'moonlit-balcony',
+        '--garment-region', 'brooch_and_collar', '--hires-bridge', 'anime',
+        '--secondary-upscaler', '4x-AnimeSharp.safetensors', '--upscale-blend', '0.35',
+    ]) == 0
+    assert captured['seed'] == 20261104
+    assert captured['native_options']['hires_bridge'] == 'anime'
+    assert captured['finish_options']['garment_region'] == 'brooch_and_collar'
+    assert captured['finish_options']['secondary_upscaler_name'] == '4x-AnimeSharp.safetensors'
+    assert captured['finish_options']['upscale_blend_strength'] == 0.35

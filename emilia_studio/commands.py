@@ -24,7 +24,11 @@ from .config import (
 )
 from .tui import download_file_with_progress, format_bytes, print_banner, render_table
 
-PATH_KEYS = ('root_dir', 'app_dir', 'output_dir', 'temp_dir', 'conda_python', 'ollama_exe')
+PATH_KEYS = (
+    'root_dir', 'app_dir', 'output_dir', 'temp_dir',
+    'workflows_dir', 'visual_workflows_dir', 'resources_dir',
+    'conda_python', 'ollama_exe',
+)
 VALUE_KEYS = ('comfy_host', 'comfy_port', 'quality_port', 'ollama_base', 'ollama_model')
 
 
@@ -94,6 +98,8 @@ def handle(args, config, main, parser):
                     continue
                 words = shlex.split(line, posix=False)
                 words = [w[1:-1] if len(w) >= 2 and w[0] == w[-1] and w[0] in '\"\'' else w for w in words]
+                if words[0] == 'help' and len(words) > 1:
+                    words = words[1:] + ['--help']
                 if words[0] == 'shell':
                     print('Already in the interactive shell.')
                     continue
@@ -212,33 +218,50 @@ def handle(args, config, main, parser):
 
         img_a, rec_a = _resolve_target(args.image_a)
         img_b, rec_b = _resolve_target(args.image_b)
-        inspector = QualityInspector(app_dir=config.app_dir, python_executable=config.conda_python, use_yolo=False)
+        yolo_ready = bool(
+            config.app_dir
+            and (config.app_dir / 'models' / 'ultralytics' / 'bbox' / 'face_yolov8n.pt').is_file()
+            and (config.app_dir / 'models' / 'ultralytics' / 'bbox' / 'hand_yolov8n.pt').is_file()
+            and (not getattr(sys, 'frozen', False) or config.conda_python)
+        )
+        inspector = QualityInspector(app_dir=config.app_dir, python_executable=config.conda_python, use_yolo=yolo_ready)
         rep_a = inspector.inspect_image(img_a)
         rep_b = inspector.inspect_image(img_b)
+
+        def _extract_metrics(img_path: Path, rep: object, rec: dict | None) -> dict:
+            qi = (rec or {}).get('quality_inspection') or {}
+            cached = qi.get('final') if (rec and rec.get('final') and Path(rec['final']).resolve() == img_path.resolve()) else qi.get('native')
+            if isinstance(cached, dict) and cached.get('pixel_sha256') == rep.pixel_sha256:
+                iris = cached.get('iris_analysis') or {}
+                return {
+                    'path': str(img_path),
+                    'dimensions': [cached.get('width', rep.width), cached.get('height', rep.height)],
+                    'pixel_sha256': rep.pixel_sha256,
+                    'left_eye_hue_deg': iris.get('left_eye_hue_deg', cached.get('left_eye_hue_deg')),
+                    'right_eye_hue_deg': iris.get('right_eye_hue_deg', cached.get('right_eye_hue_deg')),
+                    'heterochromia_score': iris.get('heterochromia_score', cached.get('heterochromia_score')),
+                    'passed': bool(cached.get('passed', rep.passed)),
+                    'seed': rec.get('seed') if rec else None,
+                    'profile': rec.get('profile') if rec else None,
+                }
+            return {
+                'path': str(img_path),
+                'dimensions': [rep.width, rep.height],
+                'pixel_sha256': rep.pixel_sha256,
+                'left_eye_hue_deg': rep.iris_analysis.get('left_eye_hue_deg'),
+                'right_eye_hue_deg': rep.iris_analysis.get('right_eye_hue_deg'),
+                'heterochromia_score': rep.iris_analysis.get('heterochromia_score'),
+                'passed': rep.passed,
+                'seed': rec.get('seed') if rec else None,
+                'profile': rec.get('profile') if rec else None,
+            }
+
+        metrics_a = _extract_metrics(img_a, rep_a, rec_a)
+        metrics_b = _extract_metrics(img_b, rep_b, rec_b)
         comparison = {
             'pixel_identical': rep_a.pixel_sha256 == rep_b.pixel_sha256,
-            'image_a': {
-                'path': str(img_a),
-                'dimensions': [rep_a.width, rep_a.height],
-                'pixel_sha256': rep_a.pixel_sha256,
-                'left_eye_hue_deg': rep_a.iris_analysis.get('left_eye_hue_deg'),
-                'right_eye_hue_deg': rep_a.iris_analysis.get('right_eye_hue_deg'),
-                'heterochromia_score': rep_a.iris_analysis.get('heterochromia_score'),
-                'passed': rep_a.passed,
-                'seed': rec_a.get('seed') if rec_a else None,
-                'profile': rec_a.get('profile') if rec_a else None,
-            },
-            'image_b': {
-                'path': str(img_b),
-                'dimensions': [rep_b.width, rep_b.height],
-                'pixel_sha256': rep_b.pixel_sha256,
-                'left_eye_hue_deg': rep_b.iris_analysis.get('left_eye_hue_deg'),
-                'right_eye_hue_deg': rep_b.iris_analysis.get('right_eye_hue_deg'),
-                'heterochromia_score': rep_b.iris_analysis.get('heterochromia_score'),
-                'passed': rep_b.passed,
-                'seed': rec_b.get('seed') if rec_b else None,
-                'profile': rec_b.get('profile') if rec_b else None,
-            },
+            'image_a': metrics_a,
+            'image_b': metrics_b,
         }
         if args.json:
             print(json.dumps(comparison, indent=2, ensure_ascii=False))
@@ -251,7 +274,7 @@ def handle(args, config, main, parser):
                 ['Seed', str(comparison['image_a']['seed'] or '-'), str(comparison['image_b']['seed'] or '-')],
                 ['Iris Hue (L/R)', f"{comparison['image_a']['left_eye_hue_deg']}° / {comparison['image_a']['right_eye_hue_deg']}°", f"{comparison['image_b']['left_eye_hue_deg']}° / {comparison['image_b']['right_eye_hue_deg']}°"],
                 ['Heterochromia', f"{comparison['image_a']['heterochromia_score']}°", f"{comparison['image_b']['heterochromia_score']}°"],
-                ['Gate Passed', 'PASS' if rep_a.passed else 'FAIL', 'PASS' if rep_b.passed else 'FAIL'],
+                ['Gate Passed', 'PASS' if metrics_a['passed'] else 'FAIL', 'PASS' if metrics_b['passed'] else 'FAIL'],
             ]
             print(render_table(['Metric', 'Image A', 'Image B'], rows, title='Emilia Render Comparison'))
         return 0
@@ -370,17 +393,28 @@ def handle(args, config, main, parser):
     if cmd in ('doctor', 'pull'):
         manifest = json.loads(config.manifest_path.read_text(encoding='utf-8'))
         models = manifest['models']
+        experimental = manifest.get('experimental_models', [])
+        all_pullable = models + experimental
         if cmd == 'pull':
             if args.list or not args.models:
-                print(render_table(['Key', 'Download'], [[m['key'], 'available' if m.get('download_url') else 'manual'] for m in models]))
+                rows_list = [
+                    [m['key'], 'required', 'available' if m.get('download_url') else 'manual']
+                    for m in models
+                ] + [
+                    [m['key'], 'experimental', 'available' if m.get('download_url') else 'manual']
+                    for m in experimental
+                ]
+                print(render_table(['Key', 'Tier', 'Download'], rows_list))
                 return 0
-            keys = {m['key'] for m in models}
+            keys = {m['key'] for m in all_pullable}
             if set(args.models) - keys - {'all'}:
                 raise ValueError('Unknown model key; see pull --list')
             failed = False
-            for item in models:
-                if 'all' not in args.models and item['key'] not in args.models:
-                    continue
+            target_models = models if 'all' in args.models else [m for m in all_pullable if m['key'] in args.models]
+            if 'all' in args.models:
+                extra_explicit = [m for m in experimental if m['key'] in args.models]
+                target_models = models + extra_explicit
+            for item in target_models:
                 dest = config.app_dir / item['relative_path']
                 if dest.is_file() and dest.stat().st_size == item.get('size_bytes'):
                     if item.get('sha256'):
@@ -401,19 +435,28 @@ def handle(args, config, main, parser):
             return 2 if failed else 0
         rows = []
         ok = True
-        for name, path in [('ComfyUI', config.app_dir / 'main.py'), ('Inference Python', config.conda_python)]:
+        comfy_main = (config.app_dir / 'main.py') if config.app_dir is not None else None
+        for name, path in [('ComfyUI', comfy_main), ('Inference Python', config.conda_python)]:
             valid = path is not None and path.is_file()
             rows.append([name, 'OK' if valid else 'MISSING', str(path)])
             ok &= valid
         if config.conda_python and config.conda_python.is_file():
-            probe = subprocess.run([str(config.conda_python), '-c', 'import torch, ultralytics, aiohttp; print("CUDA=" + str(torch.cuda.is_available()))'], capture_output=True, text=True, timeout=60)
-            rows.append(['Runtime dependencies', 'OK' if probe.returncode == 0 else 'MISSING', (probe.stdout or probe.stderr).strip()[-300:]])
-            ok &= probe.returncode == 0
+            try:
+                probe = subprocess.run([str(config.conda_python), '-c', 'import torch, ultralytics, aiohttp; print("CUDA=" + str(torch.cuda.is_available()))'], capture_output=True, text=True, timeout=60)
+                rows.append(['Runtime dependencies', 'OK' if probe.returncode == 0 else 'MISSING', (probe.stdout or probe.stderr).strip()[-300:]])
+                ok &= probe.returncode == 0
+            except (OSError, subprocess.SubprocessError) as exc:
+                rows.append(['Runtime dependencies', 'MISSING', str(exc)[:300]])
+                ok = False
         for item in models + manifest.get('reference_assets', []):
             path = config.app_dir / item['relative_path']
             valid = path.is_file() and (not item.get('size_bytes') or path.stat().st_size == item['size_bytes'])
             rows.append([item['name'], 'OK' if valid else 'MISSING', str(path)])
             ok &= valid
+        for item in experimental:
+            path = config.app_dir / item['relative_path']
+            valid = path.is_file() and (not item.get('size_bytes') or path.stat().st_size == item['size_bytes'])
+            rows.append([item['name'], 'OK' if valid else 'OPTIONAL', str(path)])
         for item in manifest.get('custom_nodes', []):
             valid = (config.app_dir / item['directory']).is_dir()
             rows.append([item['name'], 'OK' if valid else 'MISSING', item['directory']])

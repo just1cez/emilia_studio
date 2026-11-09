@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import atexit
+import base64
 import io
 import json
 import shutil
@@ -26,7 +28,22 @@ def _resolve_default_app_dir() -> Path:
 
 _YOLO_MODEL_CACHE: dict[str, Any] = {}
 _YOLO_LOCK = threading.Lock()
+_EXTERNAL_WORKERS: dict[str, subprocess.Popen[str]] = {}
+_EXTERNAL_WORKER_LOCK = threading.Lock()
 
+
+def _cleanup_external_workers() -> None:
+    with _EXTERNAL_WORKER_LOCK:
+        for proc in _EXTERNAL_WORKERS.values():
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+            except Exception:
+                pass
+        _EXTERNAL_WORKERS.clear()
+
+
+atexit.register(_cleanup_external_workers)
 
 class InspectionRuntimeError(RuntimeError):
     """Required CPU detection could not run in the configured environment."""
@@ -101,6 +118,10 @@ class InspectionReport:
         "available": False, "framing": "full_body", "full_body_complete": True,
         "standing_pose": True, "face_height_ratio": 0.0, "max_ankle_confidence": 0.0,
         "hip_y_ratio": 0.0, "ankle_y_ratio": 0.0, "leg_span_ratio": 0.0, "reasons": [],
+    })
+    corner_artifact_analysis: dict[str, Any] = field(default_factory=lambda: {
+        "advisory_only": True, "max_corner_edge_density": 0.0,
+        "suspected_corner_watermark": False, "corners": {},
     })
     recommended_action: str = "accept"
     strict_seed_lock: bool = False
@@ -202,12 +223,16 @@ class QualityInspector:
         return self._face_model is not None and self._hand_model is not None
 
     def _detect_anatomy_external(
-        self, image: Image.Image, *, run_pose: bool = True
+        self,
+        image: Image.Image,
+        *,
+        run_pose: bool = True,
+        image_path: Path | None = None,
     ) -> tuple[
         list[tuple[float, float, float, float]], list[float],
         list[tuple[float, float, float, float]], list[float], str,
     ]:
-        """Run the bundled standalone worker without requiring an installed Emilia package."""
+        """Run the bundled standalone worker via a persistent JSON-lines server process."""
         executable = self.python_executable
         if executable is None:
             raise InspectionRuntimeError("Configure conda_python for CPU YOLO inspection.")
@@ -217,31 +242,62 @@ class QualityInspector:
         worker = Path(__file__).with_name("inspection_worker.py")
         if not worker.is_file():
             raise InspectionRuntimeError(f"Bundled inspection worker is missing: {worker}")
-        with io.BytesIO() as encoded:
-            image.save(encoded, format="PNG")
+        pose_arg = (
+            str(self.pose_model_path.resolve())
+            if (run_pose and self.pose_model_path.is_file())
+            else ""
+        )
+        req: dict[str, Any] = {
+            "face_path": str(self.face_model_path.resolve()),
+            "hand_path": str(self.hand_model_path.resolve()),
+            "face_threshold": float(self.face_conf_threshold),
+            "hand_threshold": float(self.hand_conf_threshold),
+            "pose_path": pose_arg,
+        }
+        if image_path is not None and image_path.is_file():
+            req["image_path"] = str(image_path.resolve())
+        else:
+            with io.BytesIO() as encoded:
+                image.save(encoded, format="PNG")
+                req["image_b64"] = base64.b64encode(encoded.getvalue()).decode("ascii")
+
+        worker_key = f"{Path(resolved_executable).resolve()}::{worker.resolve()}"
+        with _EXTERNAL_WORKER_LOCK:
+            proc = _EXTERNAL_WORKERS.get(worker_key)
+            if proc is None or proc.poll() is not None:
+                try:
+                    proc = subprocess.Popen(
+                        [executable, "-u", str(worker), "--server"],
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        encoding="utf-8",
+                        bufsize=1,
+                    )
+                    _EXTERNAL_WORKERS[worker_key] = proc
+                except OSError as exc:
+                    raise InspectionRuntimeError(f"Cannot launch CPU YOLO interpreter {executable}: {exc}") from exc
+            assert proc.stdin is not None and proc.stdout is not None
             try:
-                pose_arg = (
-                    str(self.pose_model_path.resolve())
-                    if (run_pose and self.pose_model_path.is_file())
-                    else ""
-                )
-                result = subprocess.run(
-                    [
-                        executable, "-u", str(worker),
-                        str(self.face_model_path.resolve()), str(self.hand_model_path.resolve()),
-                        str(self.face_conf_threshold), str(self.hand_conf_threshold),
-                        pose_arg,
-                    ],
-                    input=encoded.getvalue(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    check=False,
-                )
+                proc.stdin.write(json.dumps(req) + "\n")
+                proc.stdin.flush()
+                resp_line = proc.stdout.readline()
             except OSError as exc:
-                raise InspectionRuntimeError(f"Cannot launch CPU YOLO interpreter {executable}: {exc}") from exc
-        if result.returncode != 0:
-            detail = result.stderr.decode("utf-8", errors="replace").strip()
-            raise InspectionRuntimeError(f"CPU YOLO inspection failed using {executable}: {detail}")
+                _EXTERNAL_WORKERS.pop(worker_key, None)
+                raise InspectionRuntimeError(f"CPU YOLO worker communication failed: {exc}") from exc
+            if not resp_line:
+                err_out = proc.stderr.read() if proc.stderr is not None else ""
+                _EXTERNAL_WORKERS.pop(worker_key, None)
+                raise InspectionRuntimeError(f"CPU YOLO inspection failed using {executable}: {err_out.strip()}")
         try:
-            data = json.loads(result.stdout)
+            resp = json.loads(resp_line)
+        except ValueError as exc:
+            raise InspectionRuntimeError("CPU YOLO worker returned invalid JSON.") from exc
+        if not resp.get("ok"):
+            raise InspectionRuntimeError(f"CPU YOLO inspection failed using {executable}: {resp.get('error')}")
+        try:
+            data = resp["data"]
             self._last_pose_detections = (
                 [[float(v) for v in b] for b in data.get("pose_boxes", [])],
                 [float(v) for v in data.get("pose_confidences", [])],
@@ -258,7 +314,11 @@ class QualityInspector:
             raise InspectionRuntimeError("CPU YOLO worker returned an invalid detection response.") from exc
 
     def detect_anatomy(
-        self, image: Image.Image, *, run_pose: bool = True
+        self,
+        image: Image.Image,
+        *,
+        run_pose: bool = True,
+        image_path: Path | None = None,
     ) -> tuple[
         list[tuple[float, float, float, float]],
         list[float],
@@ -315,7 +375,7 @@ class QualityInspector:
             return face_boxes, face_confs, hand_boxes, hand_confs, "yolo_cpu"
 
         if self.use_yolo:
-            return self._detect_anatomy_external(rgb, run_pose=run_pose)
+            return self._detect_anatomy_external(rgb, run_pose=run_pose, image_path=image_path)
 
         # Explicitly disabled detection retains the existing heuristic inspection mode.
         w, h = rgb.size
@@ -578,6 +638,43 @@ class QualityInspector:
                 ]
         return result
 
+    def analyze_corner_artifacts(self, rgb_array: np.ndarray) -> dict[str, Any]:
+        """Measure high-frequency bimodal stroke density in the 4 outer corners (advisory watermark check)."""
+        if rgb_array.ndim != 3 or rgb_array.shape[0] < 64 or rgb_array.shape[1] < 64:
+            return {
+                "advisory_only": True,
+                "max_corner_edge_density": 0.0,
+                "suspected_corner_watermark": False,
+                "corners": {},
+            }
+        h, w, _ = rgb_array.shape
+        ch = max(16, int(round(0.06 * h)))
+        cw = max(32, int(round(0.22 * w)))
+        luma = (
+            0.299 * rgb_array[..., 0].astype(np.float32)
+            + 0.587 * rgb_array[..., 1].astype(np.float32)
+            + 0.114 * rgb_array[..., 2].astype(np.float32)
+        )
+        rois = {
+            "top_left": luma[:ch, :cw],
+            "top_right": luma[:ch, w - cw :],
+            "bottom_left": luma[h - ch :, :cw],
+            "bottom_right": luma[h - ch :, w - cw :],
+        }
+        corners: dict[str, float] = {}
+        for name, patch in rois.items():
+            gx = np.abs(np.diff(patch, axis=1))
+            gy = np.abs(np.diff(patch, axis=0))
+            sharp_frac = float((gx > 42.0).mean() + (gy > 42.0).mean()) / 2.0
+            corners[name] = round(sharp_frac, 5)
+        max_density = max(corners.values()) if corners else 0.0
+        return {
+            "advisory_only": True,
+            "max_corner_edge_density": round(max_density, 5),
+            "suspected_corner_watermark": bool(max_density > 0.12),
+            "corners": corners,
+        }
+
     def inspect_image(
         self,
         image_path: str | Path,
@@ -649,7 +746,9 @@ class QualityInspector:
                     )
 
                 face_boxes, face_confs, hand_boxes, hand_confs, detector_source = (
-                    self.detect_anatomy(rgb_im, run_pose=(framing == "full_body"))
+                    self.detect_anatomy(
+                        rgb_im, run_pose=(framing == "full_body"), image_path=path
+                    )
                 )
                 face_count = len(face_boxes)
                 hand_count = len(hand_boxes)
@@ -675,6 +774,7 @@ class QualityInspector:
                 pose_info = self.analyze_pose_completeness(
                     rgb_im, face_boxes, framing=framing, detector_source=detector_source
                 )
+                corner_info = self.analyze_corner_artifacts(arr)
         except InspectionRuntimeError:
             raise
         except Exception as exc:
@@ -741,6 +841,7 @@ class QualityInspector:
             iris_analysis=iris,
             garment_analysis=garment,
             pose_analysis=pose_info,
+            corner_artifact_analysis=corner_info,
             recommended_action=recommended_action,
             strict_seed_lock=strict_seed_lock,
             effective_action=effective_action,

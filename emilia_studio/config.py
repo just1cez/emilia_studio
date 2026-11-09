@@ -421,7 +421,7 @@ DEFAULT_LORA_PRODUCTION_POSITIVE_PROMPT: str = (
     "crown braid, same violet eye color, violet eyes, matching violet irises, pointed elf ears, "
     "white flower hair ornament, four-petal x-shaped hair clip, purple ribbon, "
     "white and lavender dress, white cape, detached sleeves, purple trim, green gemstone brooch, "
-    "gentle gentle smile, looking at viewer, full body, medium-long shot, subject fills the frame, "
+    "gentle smile, looking at viewer, full body, medium-long shot, subject fills the frame, "
     "standing, both arms visible, one hand gently raised holding a snowflake, "
     "other hand resting near chest, visible hands, relaxed simple pose, balanced proportions, "
     "centered composition, snowy flower garden, stone balustrade, soft winter daylight, "
@@ -717,39 +717,39 @@ class StudioConfig:
 
         if self.app_dir is None:
             env_app = os.environ.get("EMILIA_APP_DIR")
-            self.app_dir = Path(env_app) if env_app else self.root_dir / "app"
+            self.app_dir = Path(env_app).expanduser() if env_app else self.root_dir / "app"
         else:
-            self.app_dir = Path(self.app_dir)
+            self.app_dir = Path(self.app_dir).expanduser()
 
         if self.output_dir is None:
             env_out = os.environ.get("EMILIA_OUTPUT_DIR")
-            self.output_dir = Path(env_out) if env_out else self.app_dir / "output"
+            self.output_dir = Path(env_out).expanduser() if env_out else self.app_dir / "output"
         else:
-            self.output_dir = Path(self.output_dir)
+            self.output_dir = Path(self.output_dir).expanduser()
 
         if self.temp_dir is None:
             env_temp = os.environ.get("EMILIA_TEMP_DIR")
-            self.temp_dir = Path(env_temp) if env_temp else self.root_dir / "temp"
+            self.temp_dir = Path(env_temp).expanduser() if env_temp else self.root_dir / "temp"
         else:
-            self.temp_dir = Path(self.temp_dir)
+            self.temp_dir = Path(self.temp_dir).expanduser()
 
         if self.workflows_dir is None:
             env_wf = os.environ.get("EMILIA_WORKFLOWS_DIR")
             if env_wf:
-                self.workflows_dir = Path(env_wf)
+                self.workflows_dir = Path(env_wf).expanduser()
             else:
                 self.workflows_dir = self.resources_dir / "workflows" / "api"
         else:
-            self.workflows_dir = Path(self.workflows_dir)
+            self.workflows_dir = Path(self.workflows_dir).expanduser()
 
         if self.visual_workflows_dir is None:
             env_vwf = os.environ.get("EMILIA_VISUAL_WORKFLOWS_DIR")
             if env_vwf:
-                self.visual_workflows_dir = Path(env_vwf)
+                self.visual_workflows_dir = Path(env_vwf).expanduser()
             else:
                 self.visual_workflows_dir = self.resources_dir / "workflows" / "visual"
         else:
-            self.visual_workflows_dir = Path(self.visual_workflows_dir)
+            self.visual_workflows_dir = Path(self.visual_workflows_dir).expanduser()
         if self.conda_python is None:
             self.conda_python = _resolve_conda_python(self.root_dir)
         else:
@@ -758,11 +758,16 @@ class StudioConfig:
         if self.ollama_exe is None:
             self.ollama_exe = _resolve_ollama_exe()
         else:
-            self.ollama_exe = Path(self.ollama_exe)
+            self.ollama_exe = Path(self.ollama_exe).expanduser()
 
-        self.comfy_port = int(self.comfy_port)
-        self.quality_port = int(self.quality_port)
-
+        for port_attr in ("comfy_port", "quality_port"):
+            raw_port = getattr(self, port_attr)
+            if isinstance(raw_port, bool):
+                raise ValueError(f"{port_attr} must be an integer between 1 and 65535")
+            port_val = int(raw_port)
+            if not 1 <= port_val <= 65535:
+                raise ValueError(f"{port_attr} must be an integer between 1 and 65535")
+            setattr(self, port_attr, port_val)
     @property
     def comfy_base(self) -> str:
         """Base HTTP URL for standard ComfyUI service."""

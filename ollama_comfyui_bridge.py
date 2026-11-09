@@ -59,7 +59,7 @@ def probe_comfy() -> dict[str, Any] | None:
             return None
         raise
     if not isinstance(stats, dict) or "system" not in stats:
-        raise BridgeError("8188 端口已有服务，但它不是可识别的 ComfyUI")
+        raise BridgeError(f"{CONFIG.comfy_port} 端口已有服务，但它不是可识别的 ComfyUI")
     return stats
 
 
@@ -111,6 +111,10 @@ def ensure_comfy() -> dict[str, Any]:
                 "Bypass",
                 "-File",
                 str(ROOT / "start-comfyui.ps1"),
+                "-Listen",
+                CONFIG.comfy_host,
+                "-Port",
+                str(CONFIG.comfy_port),
             ],
             APP,
             TEMP / "comfyui_bridge_server.log",
@@ -164,7 +168,7 @@ def queue_image(
     seed: int | None = None,
 ) -> str:
     if seed is None:
-        seed = secrets.randbelow(2**53)
+        seed = secrets.randbelow(2**31 - 1)
     builder = EmiliaWorkflowBuilder(CONFIG)
     graph = builder.build_lora_native(
         positive_prompt=positive_prompt,
@@ -279,13 +283,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 def main(argv: list[str] | None = None) -> int:
-    assert APP is not None
     args = parse_args(argv)
     idea = " ".join(args.idea).strip()
     if not idea:
         raise BridgeError("请输入中文生图想法")
-    if not PYTHON.is_file() or not (APP / "main.py").is_file():
-        raise BridgeError("D:\\comfyui 的 ComfyUI 安装不完整")
+    if APP is None or not PYTHON.is_file() or not (APP / "main.py").is_file():
+        raise BridgeError(f"ComfyUI 安装不完整：{PYTHON} / {APP}")
 
     print("检查 Ollama 本地服务……", flush=True)
     compiler = OllamaPromptCompiler(CONFIG)

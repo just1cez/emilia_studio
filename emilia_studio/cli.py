@@ -25,6 +25,54 @@ from .ledger import ExperimentLedger
 from .workflows import EmiliaWorkflowBuilder
 
 
+def _add_ultra_tuning_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--reference-mode", choices=("single", "paired"), default=None, help="Face reference mode (ultra profile)")
+    parser.add_argument("--hires-bridge", choices=("lanczos", "anime"), default=None, help="Pass 1->2 hires bridge (ultra profile)")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint filename override (ultra profile)")
+    parser.add_argument(
+        "--garment-region",
+        choices=("brooch_and_collar", "bodice_and_peplum", "full_garment"),
+        default=None,
+        help="Optional Stage 2 face-relative garment refinement region (ultra profile)",
+    )
+    parser.add_argument("--upscaler", type=str, default=None, help="Primary Stage 2 upscaler filename (ultra profile)")
+    parser.add_argument("--secondary-upscaler", type=str, default=None, help="Secondary Stage 2 upscaler filename for blending (ultra profile)")
+    parser.add_argument("--upscale-blend", type=float, default=None, help="Secondary upscaler blend strength 0..1 (ultra profile)")
+
+
+def _apply_ultra_tuning_overrides(
+    args: argparse.Namespace,
+    native_opts: dict[str, object] | None,
+    finish_opts: dict[str, object] | None,
+) -> tuple[dict[str, object] | None, dict[str, object] | None]:
+    has_tuning = any(
+        getattr(args, attr, None) is not None
+        for attr in (
+            "reference_mode", "hires_bridge", "checkpoint",
+            "garment_region", "upscaler", "secondary_upscaler", "upscale_blend",
+        )
+    )
+    if not has_tuning:
+        return native_opts, finish_opts
+    native_opts = dict(native_opts or {})
+    finish_opts = dict(finish_opts or {})
+    if getattr(args, "reference_mode", None) is not None:
+        native_opts["reference_mode"] = args.reference_mode
+    if getattr(args, "hires_bridge", None) is not None:
+        native_opts["hires_bridge"] = args.hires_bridge
+    if getattr(args, "checkpoint", None) is not None:
+        native_opts["checkpoint_name"] = args.checkpoint
+        finish_opts["checkpoint_name"] = args.checkpoint
+    if getattr(args, "garment_region", None) is not None:
+        finish_opts["garment_region"] = args.garment_region
+    if getattr(args, "upscaler", None) is not None:
+        finish_opts["upscaler_name"] = args.upscaler
+    if getattr(args, "secondary_upscaler", None) is not None:
+        finish_opts["secondary_upscaler_name"] = args.secondary_upscaler
+    if getattr(args, "upscale_blend", None) is not None:
+        finish_opts["upscale_blend_strength"] = float(args.upscale_blend)
+    return native_opts, finish_opts
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="emilia-studio",
@@ -40,7 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
         "render",
         help="Run the 2-stage HighRes Quality (1152x1728 -> 2304x3456) render pipeline.",
     )
-    p_render.add_argument("--seed", type=int, default=20261027, help="Base generation seed")
+    p_render.add_argument("--seed", type=int, default=None, help="Base generation seed (defaults to preset seed or 20261027)")
     p_render.add_argument("--port", type=int, default=None, help="Override configured rendering port")
     p_render.add_argument("--pag", action="store_true", help="Enable PerturbedAttentionGuidance (scale 1.0)")
     p_render.add_argument(
@@ -57,12 +105,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_render.add_argument('--magic', choices=tuple(EMILIA_MAGIC_TAGS), default=None, help='Ice magic effect (ultra profile)')
     p_render.add_argument("--auto-gate", action="store_true", help="Enable automatic seed retry and eye-repair gate")
     p_render.add_argument("--max-retries", type=int, default=2, help="Max seed retries when auto-gate rejects anatomy")
+    _add_ultra_tuning_args(p_render)
     p_batch = sub.add_parser(
         "batch",
         help="Render multiple seeds using same-stage process reuse while keeping Stage 1 and Stage 2 isolated.",
     )
     p_batch.add_argument("--seeds", type=int, nargs="*", default=None, help="Explicit list of seeds")
-    p_batch.add_argument("--seed", type=int, default=20261027, help="Starting seed when --count is used")
+    p_batch.add_argument("--seed", type=int, default=None, help="Starting seed when --count is used (defaults to preset seed or 20261027)")
     p_batch.add_argument("--count", type=int, default=2, help="Number of seeds to generate when --seeds is omitted")
     p_batch.add_argument("--port", type=int, default=None, help="Override configured rendering port")
     p_batch.add_argument("--pag", action="store_true", help="Enable PerturbedAttentionGuidance (scale 1.0)")
@@ -75,6 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument("--magic", choices=tuple(EMILIA_MAGIC_TAGS), default=None, help="Ice magic effect (ultra profile)")
     p_batch.add_argument("--auto-gate", action="store_true", help="Enable automatic seed retry, full-body pose gate, and eye-repair gate")
     p_batch.add_argument("--max-retries", type=int, default=2, help="Max seed retries when auto-gate rejects anatomy")
+    _add_ultra_tuning_args(p_batch)
     p_idea = sub.add_parser(
         "idea",
         help="Compile a Chinese idea with Ollama and render via HighRes Quality or Fast LoRA.",
@@ -95,6 +145,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_idea.add_argument('--magic', choices=tuple(EMILIA_MAGIC_TAGS), default='none', help='Ice magic effect')
     p_idea.add_argument("--pag", action="store_true", help="Enable PAG guidance")
     p_idea.add_argument("--auto-gate", action="store_true", help="Enable automatic eye-repair and anatomy gate")
+    p_idea.add_argument("--max-retries", type=int, default=2, help="Max seed retries when auto-gate rejects anatomy")
+    _add_ultra_tuning_args(p_idea)
     p_inspect = sub.add_parser(
         "inspect",
         help="Inspect an existing PNG for violet iris consistency, heterochromia, full-body pose, and face/hand counts.",
@@ -155,9 +207,16 @@ def main(argv: list[str] | None = None) -> int:
                 args.angle is not None,
                 args.puck,
                 args.magic is not None,
+                args.reference_mode is not None,
+                args.hires_bridge is not None,
+                args.checkpoint is not None,
+                args.garment_region is not None,
+                args.upscaler is not None,
+                args.secondary_upscaler is not None,
+                args.upscale_blend is not None,
             ])
             if has_creative_flags and args.profile != "ultra":
-                raise ValueError("Creative flags (--outfit, --angle, --puck, --magic) require --profile ultra")
+                raise ValueError("Creative and ultra tuning flags (--outfit, --angle, --puck, --magic, --garment-region, etc.) require --profile ultra")
             outfit = args.outfit or "royal"
             angle = args.angle or "auto"
             companion = "puck" if args.puck else "none"
@@ -218,10 +277,16 @@ def main(argv: list[str] | None = None) -> int:
                     "skirt_ipadapter_weight": 0.45 if spec_outfit["use_skirt_ipa"] else 0.0,
                 }
                 finish_opts = {"lora_strength": spec_outfit.get("lora_strength_finish", spec_outfit["lora_strength"])}
+            native_opts, finish_opts = _apply_ultra_tuning_overrides(args, native_opts, finish_opts)
+            resolved_seed = (
+                args.seed
+                if args.seed is not None
+                else (BUILTIN_SCENE_PRESETS[args.preset]["default_seed"] if args.preset else 20261027)
+            )
             engine = EmiliaRenderEngine(config=config)
             asyncio.run(
                 engine.render_quality_pipeline(
-                    seed=args.seed,
+                    seed=resolved_seed,
                     port=args.port if args.port is not None else config.quality_port,
                     pag=args.pag,
                     profile=args.profile,
@@ -237,20 +302,32 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         if args.command == "batch":
+            base_seed = (
+                args.seed
+                if args.seed is not None
+                else (BUILTIN_SCENE_PRESETS[args.preset]["default_seed"] if args.preset else 20261027)
+            )
             if args.seeds:
                 seeds = [int(s) for s in args.seeds]
             else:
                 if args.count < 1:
                     raise ValueError("--count must be positive")
-                seeds = [int(args.seed) + i for i in range(args.count)]
+                seeds = [int(base_seed) + i for i in range(args.count)]
             has_creative_flags = any([
                 args.outfit is not None,
                 args.angle is not None,
                 args.puck,
                 args.magic is not None,
+                args.reference_mode is not None,
+                args.hires_bridge is not None,
+                args.checkpoint is not None,
+                args.garment_region is not None,
+                args.upscaler is not None,
+                args.secondary_upscaler is not None,
+                args.upscale_blend is not None,
             ])
             if has_creative_flags and args.profile != "ultra":
-                raise ValueError("Creative flags (--outfit, --angle, --puck, --magic) require --profile ultra")
+                raise ValueError("Creative and ultra tuning flags (--outfit, --angle, --puck, --magic, --garment-region, etc.) require --profile ultra")
             outfit = args.outfit or "royal"
             angle = args.angle or "auto"
             companion = "puck" if args.puck else "none"
@@ -311,6 +388,7 @@ def main(argv: list[str] | None = None) -> int:
                     "skirt_ipadapter_weight": 0.45 if spec_outfit["use_skirt_ipa"] else 0.0,
                 }
                 finish_opts = {"lora_strength": spec_outfit.get("lora_strength_finish", spec_outfit["lora_strength"])}
+            native_opts, finish_opts = _apply_ultra_tuning_overrides(args, native_opts, finish_opts)
             engine = EmiliaRenderEngine(config=config)
             receipts = asyncio.run(
                 engine.render_batch_pipeline(
@@ -382,6 +460,8 @@ def main(argv: list[str] | None = None) -> int:
                 else None
             )
             finish_opts = {"lora_strength": spec_outfit.get("lora_strength_finish", spec_outfit["lora_strength"])} if is_ultra else None
+            if is_ultra:
+                native_opts, finish_opts = _apply_ultra_tuning_overrides(args, native_opts, finish_opts)
             engine = EmiliaRenderEngine(config=config)
             asyncio.run(
                 engine.render_quality_pipeline(
@@ -395,7 +475,7 @@ def main(argv: list[str] | None = None) -> int:
                     user_idea=idea_text,
                     strict_seed_lock=not args.auto_gate,
                     auto_eye_repair=args.auto_gate,
-                    max_seed_retries=2 if args.auto_gate else 0,
+                    max_seed_retries=args.max_retries if args.auto_gate else 0,
                     native_options=native_opts,
                     finish_options=finish_opts,
                 )

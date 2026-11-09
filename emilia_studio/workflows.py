@@ -199,6 +199,8 @@ class EmiliaWorkflowBuilder:
         Portrait omits outfit IPA; upper-body moves its soft mask to the torso.
         ``downscale_factor`` enables Kohya Deep Shrink on the base pass only.
         """
+        if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 0xFFFFFFFFFFFFFFFF:
+            raise ValueError("seed must be a non-negative 64-bit integer")
         _choice("framing", framing, ("full_body", "upper_body", "portrait"))
         _choice("camera_angle", camera_angle, ("auto", "front", "three-quarter", "side", "high-angle", "low-angle"))
         _choice("reference_mode", reference_mode, ("single", "paired"))
@@ -229,8 +231,21 @@ class EmiliaWorkflowBuilder:
         for name, value in (("lora_strength_base", lora_strength_base), ("lora_strength_hires", lora_strength_hires)):
             _range(name, value, -100.0, 100.0)
         pos = positive_prompt or self.config.ultra_positive_prompt
+        neg = negative_prompt or self.config.ultra_negative_prompt
         if not positive_prompt and framing != "full_body":
             pos = pos.replace(ULTRA_FRAMING_LEADS["full_body"], ULTRA_FRAMING_LEADS[framing])
+            if framing == "portrait":
+                pos = ", ".join(
+                    t.strip()
+                    for t in pos.split(",")
+                    if not any(w in t for w in ("skirt", "stockings", "boots", "thighs", "zettai", "coattails", "legs"))
+                )
+        if not negative_prompt and framing != "full_body":
+            neg = ", ".join(
+                t.strip()
+                for t in neg.split(",")
+                if t.strip() not in ("cropped feet", "feet out of frame")
+            )
         if camera_angle == "auto":
             lowered = pos.casefold()
             for resolved, cues in (("high-angle", ("from above", "high-angle")), ("low-angle", ("from below", "low-angle")), ("side", ("from side", "side profile", "looking back")), ("three-quarter", ("three-quarter", "three quarter", "3/4"))):
@@ -238,9 +253,15 @@ class EmiliaWorkflowBuilder:
                     camera_angle = resolved
                     break
         angle_spec = EMILIA_ANGLE_SPECS[camera_angle]
-        if camera_angle != "auto" and angle_spec["tags"] not in pos:
-            pos = f"{pos}, {angle_spec['tags']}"
-        neg = negative_prompt or self.config.ultra_negative_prompt
+        if camera_angle != "auto" and angle_spec["tags"]:
+            existing_tags = {t.strip().casefold() for t in pos.split(",") if t.strip()}
+            missing_angle_tags = [
+                t.strip()
+                for t in angle_spec["tags"].split(",")
+                if t.strip() and t.strip().casefold() not in existing_tags
+            ]
+            if missing_angle_tags:
+                pos = f"{pos}, {', '.join(missing_angle_tags)}"
         verified_faces = ("official_face_center_clean.png", "emilia_official_face_3q.png")
         primary_ref = angle_spec["primary_ref"]
         if primary_ref not in verified_faces:
@@ -309,7 +330,7 @@ class EmiliaWorkflowBuilder:
                 "class_type": "CLIPTextEncode",
                 "inputs": {
                     "text": pos,
-                    "clip": ["4", 1] if lora_strength_hires == 0 else ["11", 1],
+                    "clip": ["4", 1] if lora_strength_hires == 0 else (["10", 1] if lora_strength_hires == lora_strength_base else ["11", 1]),
                 },
                 "_meta": {"title": "Pass 2: Painterly Illustrious lighting & detail conditioning"},
             },
@@ -532,7 +553,11 @@ class EmiliaWorkflowBuilder:
             },
             "_meta": {"title": "FP32 Tiled Encode 1152x1728"},
         }
-        hires_model_ref: list[Any] = ["4", 0] if lora_strength_hires == 0 else ["11", 0]
+        hires_model_ref: list[Any] = (
+            ["4", 0]
+            if lora_strength_hires == 0
+            else (["10", 0] if lora_strength_hires == lora_strength_base else ["11", 0])
+        )
         if rescale_cfg_multiplier > 0:
             graph["55"] = {
                 "class_type": "RescaleCFG",
@@ -613,6 +638,8 @@ class EmiliaWorkflowBuilder:
         size, independent of the selected models' native scale factors.
         Explicit model selections are passed through without fallback.
         """
+        if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 0xFFFFFFFFFFFFFFFF:
+            raise ValueError("seed must be a non-negative 64-bit integer")
         _model_name("checkpoint_name", checkpoint_name)
         _model_name("upscaler_name", upscaler_name)
         if secondary_upscaler_name is not None:
