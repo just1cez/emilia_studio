@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "emilia-studio"
 version = "2.1.0"
 description = "Declarative High-Res SDXL + IPAdapter + Detailer + Upscale Pipeline, Quality Inspector, Ollama Compiler, Interactive TUI, and SQLite Ledger for Emilia (Re:Zero)"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "aiohttp",

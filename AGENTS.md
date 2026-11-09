@@ -6,19 +6,19 @@ This repository uses an **Option A** two-tier layout separating our declarative 
 
 - **`emilia_studio/`** (Top-level Python package — Primary Ownership):
   - `config.py`: Path resolution, environment variable overrides (`EMILIA_*`), `config.toml` loader, and canonical Emilia character/prompt constants.
-  - `workflows.py`: Declarative `EmiliaWorkflowBuilder` generating both API execution graphs (`highres_native`, `highres_finish`, `eye_repair`, `lora_native`) and synchronized GUI visual workflows (`sync_visual_workflow`).
-  - `inspector.py`: Zero-VRAM (CPU-enforced) `QualityInspector` using YOLOv8n (`face_yolov8n.pt`, `hand_yolov8n.pt`) and HSV circular hue analysis to detect multi-subject hallucinations and blue/pink heterochromia eye drift.
-  - `compiler.py`: `OllamaPromptCompiler` translating Chinese natural-language ideas into Danbooru-style SDXL tags with dynamic composition framing (`portrait` / `upper_body` / `full_body`) and IPAdapter weight routing.
-  - `engine.py`: Two-stage isolated rendering engine (`EmiliaRenderEngine`) managing process lifecycle, WebSocket execution, quality gate routing, and `.run.json` receipt generation.
+  - `workflows.py`: Declarative `EmiliaWorkflowBuilder` generating both API execution graphs (`ultra_native`, `ultra_finish`, `highres_native`, `highres_finish`, `eye_repair`, `lora_native`) and synchronized GUI visual workflows (`sync_visual_workflow`).
+  - `inspector.py` & `inspection_worker.py`: Zero-VRAM (CPU-enforced) `QualityInspector` and persistent JSON-lines YOLO worker using YOLOv8n (`face_yolov8n.pt`, `hand_yolov8n.pt`, `yolov8n-pose.pt`), HSV circular hue analysis, full-body pose completeness gates, and corner watermark diagnostics.
+  - `compiler.py`: `OllamaPromptCompiler` translating Chinese natural-language ideas into Danbooru-style SDXL tags with dynamic composition framing (`portrait` / `upper_body` / `full_body`), outfit LoRA decoupling, and IPAdapter weight routing.
+  - `engine.py`: Two-stage isolated rendering engine (`EmiliaRenderEngine`) managing process lifecycle, same-stage batch wave pooling, WebSocket execution, quality gate routing, and `.run.json` receipt generation.
   - `ledger.py`: SQLite experiment and render ledger (`ExperimentLedger`) indexing all historical receipts and 10-seed architecture benchmark rounds.
-  - `cli.py`: Unified CLI entrypoint (`python -m emilia_studio.cli` / `emilia-studio`).
+  - `cli.py`, `commands.py` & `tui.py`: Unified CLI/TUI entrypoint (`emilia` / `emilia-studio` / `python -m emilia_studio.cli`).
 - **Top-Level Tracked Assets (`workflows/`, `patches/`, `assets/`, `tests/`)**:
   - `workflows/api/`: 27 canonical `.api.json` workflow definitions.
   - `workflows/visual/`: 10 synchronized ComfyUI visual workflows (`Emilia_01..10`).
   - `workflows/reports/` & `workflows/WORKFLOW_DECISIONS.txt`: Historical benchmark reports and decision records.
-  - `patches/`: `emilia_runtime_patches/` plugin plus `comfyui_core.patch` and `ipadapter_plus.patch` git diffs.
-  - `assets/official_face_center_clean.png`: Canonical IPAdapter face reference image.
-  - `tests/`: `test_emilia_studio.py` and `tests/comfy_core/` unit tests.
+  - `patches/`: `emilia_runtime_patches/` plugin plus `comfyui_core.patch`, `ipadapter_plus.patch`, and `impact_pack.patch` git diffs.
+  - `assets/`: `official_face_center_clean.png` and `assets/official_references/*.png` reference crops.
+  - `tests/`: 10 standalone test modules (`151` tests) plus `tests/comfy_core/` unit tests.
 - **Root Launchers & Config**:
   - `render-emilia-quality.ps1`: PowerShell wrapper for `render_emilia_quality.py` (`-Seed`, `-Pag`, `-AutoGate`).
   - `start-comfyui.ps1`: Interactive GUI server launcher on port `8188`.
@@ -74,13 +74,14 @@ Target workstation baseline: **8 GiB NVIDIA CMP 40HX (Turing, compute capability
 Before completing any code or workflow change, run the unit test suite using the project Conda environment:
 
 ```powershell
-# 1. Run focused Emilia Studio + runtime optimization unit tests (~20s)
-D:\conda-data\envs\comfyui\python.exe -m pytest app/tests-unit/comfy_test/test_emilia_studio.py app/tests-unit/comfy_test/test_input_content_hash.py app/tests-unit/comfy_test/test_save_image_quantization.py app/tests-unit/comfy_test/test_tiled_scale_blending.py app/tests-unit/comfy_test/test_vae_output_ownership.py
+# 1. Run the 151-test top-level Emilia Studio unit suite
+D:\conda-data\envs\comfyui\python.exe -m pytest tests/
 
-# 2. Run the full 147-test unit suite in app/tests-unit/comfy_test/
+# 2. Run the full 151-test ComfyUI runtime unit suite in app/tests-unit/comfy_test/
 D:\conda-data\envs\comfyui\python.exe -m pytest app/tests-unit/comfy_test/
 
-# 3. Verify CLI health (workflows, inspector, and SQLite ledger)
+# 3. Verify CLI health (doctor, workflows, and SQLite ledger)
+D:\conda-data\envs\comfyui\python.exe -m emilia_studio.cli doctor
 D:\conda-data\envs\comfyui\python.exe -m emilia_studio.cli workflows
 D:\conda-data\envs\comfyui\python.exe -m emilia_studio.cli ledger stats
 ```
