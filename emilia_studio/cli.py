@@ -10,7 +10,14 @@ import shutil
 import sys
 from pathlib import Path
 from .compiler import BridgeError, OllamaPromptCompiler
-from .config import BUILTIN_SCENE_PRESETS, load_config
+from .config import (
+    BUILTIN_SCENE_PRESETS,
+    EMILIA_ANGLE_SPECS,
+    EMILIA_COMPANION_TAGS,
+    EMILIA_MAGIC_TAGS,
+    EMILIA_OUTFIT_MODES,
+    load_config,
+)
 from .commands import add_commands, handle
 from .engine import EmiliaRenderEngine
 from .inspector import QualityInspector
@@ -44,9 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_render.add_argument("--prompt", type=str, default=None, help="Custom positive English prompt")
     p_render.add_argument('--preset', choices=tuple(BUILTIN_SCENE_PRESETS))
+    p_render.add_argument('--outfit', choices=tuple(EMILIA_OUTFIT_MODES), default=None, help='Emilia outfit mode (ultra profile)')
+    p_render.add_argument('--angle', choices=tuple(EMILIA_ANGLE_SPECS), default=None, help='Camera angle & pose reference routing (ultra profile)')
+    p_render.add_argument('--puck', action='store_true', help='Include Puck fairy cat companion (ultra profile)')
+    p_render.add_argument('--magic', choices=tuple(EMILIA_MAGIC_TAGS), default=None, help='Ice magic effect (ultra profile)')
     p_render.add_argument("--auto-gate", action="store_true", help="Enable automatic seed retry and eye-repair gate")
     p_render.add_argument("--max-retries", type=int, default=2, help="Max seed retries when auto-gate rejects anatomy")
-    # 2. idea: Chinese natural language -> Ollama -> HighRes Quality or Fast LoRA
     p_idea = sub.add_parser(
         "idea",
         help="Compile a Chinese idea with Ollama and render via HighRes Quality or Fast LoRA.",
@@ -61,9 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="ultra",
         help="ultra (default): multi-scale 832->1152->2304 with canonical outfit lock; quality: legacy 1152 direct",
     )
+    p_idea.add_argument('--outfit', choices=tuple(EMILIA_OUTFIT_MODES), default='royal', help='Emilia outfit mode')
+    p_idea.add_argument('--angle', choices=tuple(EMILIA_ANGLE_SPECS), default='auto', help='Camera angle & pose reference routing')
+    p_idea.add_argument('--puck', action='store_true', help='Include Puck fairy cat companion')
+    p_idea.add_argument('--magic', choices=tuple(EMILIA_MAGIC_TAGS), default='none', help='Ice magic effect')
     p_idea.add_argument("--pag", action="store_true", help="Enable PAG guidance")
     p_idea.add_argument("--auto-gate", action="store_true", help="Enable automatic eye-repair and anatomy gate")
-    # 3. inspect: run CPU-only quality and violet-iris inspection on any PNG
     p_inspect = sub.add_parser(
         "inspect",
         help="Inspect an existing PNG for violet iris consistency, heterochromia, and face/hand counts.",
@@ -116,12 +129,72 @@ def main(argv: list[str] | None = None) -> int:
         result = handle(args, config, main, parser)
         if result is not None:
             return result
-        if args.command == 'render' and args.preset:
-            if args.prompt:
-                raise ValueError('Use --preset or --prompt, not both')
-            preset = BUILTIN_SCENE_PRESETS[args.preset]
-            args.prompt = OllamaPromptCompiler(config).build_emilia_ultra_prompt(preset['tags'], preset['framing'])
         if args.command == "render":
+            has_creative_flags = any([
+                args.outfit is not None,
+                args.angle is not None,
+                args.puck,
+                args.magic is not None,
+            ])
+            if has_creative_flags and args.profile != "ultra":
+                raise ValueError("Creative flags (--outfit, --angle, --puck, --magic) require --profile ultra")
+            outfit = args.outfit or "royal"
+            angle = args.angle or "auto"
+            companion = "puck" if args.puck else "none"
+            magic = args.magic or "none"
+            framing = "full_body"
+            neg_prompt: str | None = None
+            native_opts: dict | None = None
+            finish_opts: dict | None = None
+            if args.preset:
+                if args.prompt:
+                    raise ValueError("Use --preset or --prompt, not both")
+                preset = BUILTIN_SCENE_PRESETS[args.preset]
+                framing = preset["framing"]
+                compiler = OllamaPromptCompiler(config)
+                args.prompt = compiler.build_emilia_ultra_prompt(
+                    preset["tags"],
+                    framing,
+                    outfit=outfit,
+                    companion=companion,
+                    magic=magic,
+                    angle=angle,
+                )
+                if args.profile == "ultra":
+                    neg_prompt = compiler.build_emilia_ultra_negative(outfit=outfit, framing=framing)
+            elif has_creative_flags and args.prompt is None:
+                preset = BUILTIN_SCENE_PRESETS["rose-garden"]
+                framing = preset["framing"]
+                compiler = OllamaPromptCompiler(config)
+                args.prompt = compiler.build_emilia_ultra_prompt(
+                    preset["tags"],
+                    framing,
+                    outfit=outfit,
+                    companion=companion,
+                    magic=magic,
+                    angle=angle,
+                )
+                neg_prompt = compiler.build_emilia_ultra_negative(outfit=outfit, framing=framing)
+            elif has_creative_flags and args.prompt is not None:
+                compiler = OllamaPromptCompiler(config)
+                args.prompt = compiler.build_emilia_ultra_prompt(
+                    args.prompt,
+                    framing,
+                    outfit=outfit,
+                    companion=companion,
+                    magic=magic,
+                    angle=angle,
+                )
+                neg_prompt = compiler.build_emilia_ultra_negative(outfit=outfit, framing=framing)
+            if args.profile == "ultra" and (has_creative_flags or args.preset):
+                spec_outfit = EMILIA_OUTFIT_MODES[outfit]
+                native_opts = {
+                    "framing": framing,
+                    "camera_angle": angle,
+                    "lora_strength_base": spec_outfit["lora_strength"],
+                    "skirt_ipadapter_weight": 0.45 if spec_outfit["use_skirt_ipa"] else 0.0,
+                }
+                finish_opts = {"lora_strength": spec_outfit["lora_strength"]}
             engine = EmiliaRenderEngine(config=config)
             asyncio.run(
                 engine.render_quality_pipeline(
@@ -130,9 +203,12 @@ def main(argv: list[str] | None = None) -> int:
                     pag=args.pag,
                     profile=args.profile,
                     positive_prompt=args.prompt,
+                    negative_prompt=neg_prompt,
                     strict_seed_lock=not args.auto_gate,
                     auto_eye_repair=args.auto_gate,
                     max_seed_retries=args.max_retries if args.auto_gate else 0,
+                    native_options=native_opts,
+                    finish_options=finish_opts,
                 )
             )
             return 0
@@ -142,17 +218,34 @@ def main(argv: list[str] | None = None) -> int:
             compiler = OllamaPromptCompiler(config=config)
             compiler.ensure_ollama()
             is_ultra = args.profile == "ultra"
+            companion = "puck" if args.puck else "none"
             spec = compiler.compile_idea(
                 idea_text,
                 style=args.style,
                 highres_quality_mode=True,
                 ultra_mode=is_ultra,
+                outfit=args.outfit,
+                companion=companion,
+                magic=args.magic,
+                angle=args.angle,
             )
             print(
-                f"编译完成 [{args.profile}/{spec.framing}, IPAdapter={spec.recommended_ipadapter_weight}]:\n{spec.positive_prompt}",
+                f"编译完成 [{args.profile}/{spec.framing}, outfit={args.outfit}, angle={args.angle}, IPAdapter={spec.recommended_ipadapter_weight}]:\n{spec.positive_prompt}",
                 flush=True,
             )
             seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1)
+            spec_outfit = EMILIA_OUTFIT_MODES[args.outfit]
+            native_opts = (
+                {
+                    "framing": spec.framing,
+                    "camera_angle": args.angle,
+                    "lora_strength_base": spec_outfit["lora_strength"],
+                    "skirt_ipadapter_weight": 0.45 if spec_outfit["use_skirt_ipa"] else 0.0,
+                }
+                if is_ultra
+                else None
+            )
+            finish_opts = {"lora_strength": spec_outfit["lora_strength"]} if is_ultra else None
             engine = EmiliaRenderEngine(config=config)
             asyncio.run(
                 engine.render_quality_pipeline(
@@ -167,6 +260,8 @@ def main(argv: list[str] | None = None) -> int:
                     strict_seed_lock=not args.auto_gate,
                     auto_eye_repair=args.auto_gate,
                     max_seed_retries=2 if args.auto_gate else 0,
+                    native_options=native_opts,
+                    finish_options=finish_opts,
                 )
             )
             return 0
@@ -241,6 +336,23 @@ def main(argv: list[str] | None = None) -> int:
                     for vf in sorted(vis_src_dir.glob("*.json")):
                         shutil.copy2(vf, vis_dst_dir / vf.name)
                         synced_files.append(f"user/default/workflows/{vf.name}")
+                # 4. Sync API workflows and WORKFLOW_DECISIONS.txt into app/emilia
+                api_dst_dir = config.app_dir / "emilia"
+                if config.workflows_dir.is_dir():
+                    api_dst_dir.mkdir(parents=True, exist_ok=True)
+                    for af in sorted(config.workflows_dir.glob("*.api.json")):
+                        shutil.copy2(af, api_dst_dir / af.name)
+                        synced_files.append(f"emilia/{af.name}")
+                decisions_src = config.resources_dir / "workflows" / "WORKFLOW_DECISIONS.txt"
+                if decisions_src.is_file():
+                    api_dst_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(decisions_src, api_dst_dir / "WORKFLOW_DECISIONS.txt")
+                    synced_files.append("emilia/WORKFLOW_DECISIONS.txt")
+                test_src = config.root_dir / "tests" / "test_emilia_studio.py"
+                test_dst = config.app_dir / "tests-unit" / "comfy_test" / "test_emilia_studio.py"
+                if test_src.is_file() and test_dst.parent.is_dir():
+                    shutil.copy2(test_src, test_dst)
+                    synced_files.append("tests-unit/comfy_test/test_emilia_studio.py")
             missing: list[str] = []
             verified_models: list[dict[str, object]] = []
             for item in manifest.get("models", []) + manifest.get("reference_assets", []):

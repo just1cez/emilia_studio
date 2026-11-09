@@ -24,7 +24,10 @@ from emilia_studio.compiler import (
 )
 from emilia_studio.config import (
     EMILIA_ALIASES,
+    EMILIA_ANGLE_SPECS,
     EMILIA_CANONICAL,
+    EMILIA_MAGIC_TAGS,
+    EMILIA_OUTFIT_MODES,
     EMILIA_REFERENCE,
     QUALITY_TAGS,
     STYLE_HINTS,
@@ -269,8 +272,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="anime",
         help="生成风格提示，默认为日系动画原画风格",
     )
+    parser.add_argument("--outfit", choices=tuple(EMILIA_OUTFIT_MODES), default="royal", help="爱蜜莉雅服装模式")
+    parser.add_argument("--angle", choices=tuple(EMILIA_ANGLE_SPECS), default="auto", help="镜头视角与姿态参考路由")
+    parser.add_argument("--puck", action="store_true", help="加入帕克猫精灵同行")
+    parser.add_argument("--magic", choices=tuple(EMILIA_MAGIC_TAGS), default="none", help="冰魔法粒子光效")
     return parser.parse_args(argv)
-
 
 def main(argv: list[str] | None = None) -> int:
     assert APP is not None
@@ -288,17 +294,34 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode in ("ultra", "quality"):
         is_ultra = args.mode == "ultra"
         print(f"正在让 Ollama 编译高画质结构化提示词 [{args.mode}]……", flush=True)
+        companion = "puck" if args.puck else "none"
         spec = compiler.compile_idea(
             idea,
             style=args.style,
             highres_quality_mode=True,
             ultra_mode=is_ultra,
+            outfit=args.outfit,
+            companion=companion,
+            magic=args.magic,
+            angle=args.angle,
         )
         print(
-            f"英文提示词 [{args.mode}/{spec.framing}, IPAdapter={spec.recommended_ipadapter_weight}]：{spec.positive_prompt}",
+            f"英文提示词 [{args.mode}/{spec.framing}, outfit={args.outfit}, angle={args.angle}, IPAdapter={spec.recommended_ipadapter_weight}]：{spec.positive_prompt}",
             flush=True,
         )
         seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1)
+        spec_outfit = EMILIA_OUTFIT_MODES[args.outfit]
+        native_opts = (
+            {
+                "framing": spec.framing,
+                "camera_angle": args.angle,
+                "lora_strength_base": spec_outfit["lora_strength"],
+                "skirt_ipadapter_weight": 0.45 if spec_outfit["use_skirt_ipa"] else 0.0,
+            }
+            if is_ultra
+            else None
+        )
+        finish_opts = {"lora_strength": spec_outfit["lora_strength"]} if is_ultra else None
         engine = EmiliaRenderEngine(CONFIG)
         receipt = asyncio.run(
             engine.render_quality_pipeline(
@@ -313,6 +336,8 @@ def main(argv: list[str] | None = None) -> int:
                 strict_seed_lock=not args.auto_gate,
                 auto_eye_repair=args.auto_gate,
                 max_seed_retries=2 if args.auto_gate else 0,
+                native_options=native_opts,
+                finish_options=finish_opts,
             )
         )
         print(f"母版图片：{receipt['native']}", flush=True)

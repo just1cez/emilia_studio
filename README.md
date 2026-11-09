@@ -30,9 +30,14 @@ emilia
 | `doctor` | 检查 ComfyUI、推理 Python、依赖、模型大小、参考图和节点目录；缺失时返回非零 |
 | `pull --list` / `pull yolo-face` / `pull all` | 列出或下载模型，显示字节、速度和 ETA；支持断点续传和可用 SHA256 校验 |
 | `presets` / `presets rose-garden` | 列出场景或打印完整提示词，无需调用 Ollama |
-| `render --profile ultra --preset rose-garden` | 用预设执行真实两阶段渲染，显示采样进度 |
-| `idea "爱蜜莉雅在月光下的花园"` | CPU Ollama 编译提示词后渲染 |
+| `outfits` / `outfits cloak --framing portrait` | 列出 5 套爱蜜莉雅服装模式（`royal` / `cloak` / `frozen-bond` / `sanctuary` / `nightgown`）或输出指定服装 JSON |
+| `render --profile ultra --preset rose-garden [--outfit royal] [--angle three-quarter] [--puck] [--magic ice]` | 用预设及专属服装/视角/帕克/冰魔法参数执行真实两阶段渲染，显示采样进度 |
+| `idea "爱蜜莉雅在月光下的花园" [--outfit cloak] [--angle side] [--puck] [--magic blizzard]` | CPU Ollama 编译提示词并融合角色创作参数后渲染 |
 | `gallery --limit 10` / `gallery --open 1` | 浏览最近 PNG，按显示序号打开图片 |
+| `compare <img_a> <img_b> [--json]` | 对比两张成品 PNG 或 `.run.json` 回执的分辨率、SHA256、紫瞳色相与异色瞳评分 |
+| `export <dest_dir> [--image <path>]` | 将最新或指定成品图、母版图、回执及工作流 JSON 打包导出至目标目录 |
+| `benchmark [--limit 10] [--run]` | 汇总 SQLite 账本历史耗时与门禁统计，或运行单种子实测基准 |
+| `clean [--older-than-hours 1.0] [--dry-run]` | 清理 `temp/` 下已完成的隔离阶段临时目录并统计释放空间 |
 | `banner` / `shell` / `--version` | 欢迎图案、交互命令行、版本 |
 
 配置优先级：字段环境变量 > `--config` / `EMILIA_CONFIG_TOML` 指定文件 > 用户配置 > 源码目录配置。用户配置位于 Windows `%APPDATA%/EmiliaStudio/config.toml`，其他平台使用 XDG 配置目录。`EMILIA_CONFIG_DIR` 可覆盖用户配置目录。相对 TOML 路径以文件所在目录为基准。安装包资源与可写工作目录分离；不会把任意当前目录的 `config.toml` 当作配置。

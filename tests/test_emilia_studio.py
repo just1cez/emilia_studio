@@ -87,6 +87,23 @@ def test_workflow_dsl_exact_parity_with_production_jsons() -> None:
     )
     assert built_eye == expected_eye
 
+    # 5. Ultra Multi-Scale Native & Finish parity
+    expected_ultra_native = json.loads(
+        (cfg.workflows_dir / "emilia_ultra_multiscale_native.api.json").read_text(encoding="utf-8")
+    )
+    built_ultra_native = builder.build_ultra_native(seed=20261027, pag=False)
+    assert built_ultra_native == expected_ultra_native
+
+    expected_ultra_finish = json.loads(
+        (cfg.workflows_dir / "emilia_ultra_multiscale_finish.api.json").read_text(encoding="utf-8")
+    )
+    built_ultra_finish = builder.build_ultra_finish(
+        image_path="emilia_ultra_selected_base.png",
+        seed=20261027,
+        pag=False,
+    )
+    assert built_ultra_finish == expected_ultra_finish
+
 
 def test_visual_workflow_sync_zero_drift() -> None:
     cfg = load_config()
@@ -284,40 +301,3 @@ def test_lanczos_and_sigma_cache_bit_exact() -> None:
     assert abs(sigmas._emilia_sigma_val - 1.2345) < 1e-5
 
 
-def test_ultra_multiscale_workflow_and_outfit_lock() -> None:
-    cfg = load_config()
-    builder = EmiliaWorkflowBuilder(cfg)
-    g_nat = builder.build_ultra_native(seed=20261104)
-    # Pass 1 renders at native SDXL 832x1216 bucket with V-only ease in-out IPAdapter + RescaleCFG
-    assert g_nat["5"]["inputs"]["width"] == 832
-    assert g_nat["5"]["inputs"]["height"] == 1216
-    assert g_nat["42"]["inputs"]["weight_type"] == "ease in-out"
-    assert g_nat["42"]["inputs"]["embeds_scaling"] == "V only"
-    assert g_nat["10"]["inputs"]["strength_model"] == 0.25
-    assert g_nat["46"]["class_type"] == "RescaleCFG"
-    assert g_nat["46"]["inputs"]["multiplier"] == 0.75
-    # Pass 2 upscales to 1152x1728 and refines with pure Illustrious + RescaleCFG
-    assert g_nat["51"]["inputs"]["width"] == 1152
-    assert g_nat["51"]["inputs"]["height"] == 1728
-    assert g_nat["53"]["inputs"]["model"] == ["55", 0]
-    assert g_nat["53"]["inputs"]["denoise"] == 0.40
-
-    g_fin = builder.build_ultra_finish("emilia_ultra_selected_native.png", seed=20261104)
-    assert g_fin["10"]["inputs"]["strength_model"] == 0.25
-    assert g_fin["21"]["inputs"]["guide_size"] == 768
-    assert g_fin["21"]["inputs"]["denoise"] == 0.28
-    assert g_fin["21"]["inputs"]["noise_mask_feather"] == 0
-    assert g_fin["28"]["inputs"]["guide_size"] == 640
-    assert g_fin["28"]["inputs"]["denoise"] == 0.30
-    assert g_fin["28"]["inputs"]["noise_mask_feather"] == 0
-
-    compiler = OllamaPromptCompiler(cfg)
-    f_port, w_port = compiler.infer_composition_hints("爱蜜莉雅特写头像", "portrait", ultra_mode=True)
-    assert f_port == "portrait"
-    assert w_port == 0.20
-    ultra_prompt = compiler.build_emilia_ultra_prompt("standing in flower garden", framing="full_body")
-    assert "three-tiered white petal-scalloped peplum overskirt with lavender edges" in ultra_prompt
-    assert "white box-pleated miniskirt with thin purple stripe near hem" in ultra_prompt
-    assert "long split white dress coattails on both sides" in ultra_prompt
-    assert "cinematic volumetric lighting" in ultra_prompt
-    assert "white capelet" not in ultra_prompt

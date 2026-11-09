@@ -17,6 +17,10 @@ from .config import (
     DEFAULT_ULTRA_NEGATIVE_PROMPT,
     EMILIA_ALIASES,
     EMILIA_CANONICAL,
+    EMILIA_OUTFIT_MODES,
+    EMILIA_COMPANION_TAGS,
+    EMILIA_MAGIC_TAGS,
+    EMILIA_ANGLE_SPECS,
     QUALITY_TAGS,
     STYLE_HINTS,
     ULTRA_EMILIA_OUTFIT_CANONICAL,
@@ -202,23 +206,52 @@ class OllamaPromptCompiler:
         return "full_body", (0.18 if ultra_mode else 0.40)
 
     def build_emilia_ultra_prompt(
-        self, scene_and_pose_tags: str, framing: str = "full_body"
+        self, scene_and_pose_tags: str, framing: str = "full_body", *,
+        outfit: str = "royal", companion: str = "none", magic: str = "none", angle: str = "auto",
     ) -> str:
-        """Assemble framing-first canonical Emilia Ultra prompt with exact official skirt & painterly lighting."""
-        framing_lead = ULTRA_FRAMING_LEADS.get(framing, ULTRA_FRAMING_LEADS["full_body"])
+        """Compose Emilia identity and explicit creative controls without contradictory framing."""
+        if framing not in ULTRA_FRAMING_LEADS:
+            raise ValueError(f"Unknown framing: {framing}")
+        for value, registry in ((outfit, EMILIA_OUTFIT_MODES), (companion, EMILIA_COMPANION_TAGS), (magic, EMILIA_MAGIC_TAGS), (angle, EMILIA_ANGLE_SPECS)):
+            if value not in registry:
+                raise ValueError(f"Unknown creative option: {value}")
+        identity = self.config.ultra_outfit_canonical if outfit == 'royal' else EMILIA_OUTFIT_MODES[outfit]['positive']
+        if framing == 'portrait':
+            identity = ', '.join(tag.strip() for tag in identity.split(',') if not any(word in tag for word in ('skirt', 'stockings', 'boots', 'thighs', 'zettai', 'coattails')))
+        framing_lead = ULTRA_FRAMING_LEADS[framing]
+        if outfit == 'nightgown' and framing == 'full_body':
+            framing_lead = 'full body, entire figure visible, generous headroom, natural proportions'
+        subject = '1girl, solo' if companion == 'none' else '1girl, one human girl with one small cat spirit companion'
         return deduplicate_tags(
-            f"masterpiece, best quality, absurdres, 1girl, solo, {framing_lead}, "
-            f"{self.config.ultra_outfit_canonical}, {scene_and_pose_tags}, "
-            "cinematic volumetric lighting, luminous rim light, subsurface scattering on skin and silver hair, "
-            "soft ambient occlusion in skirt pleats, rich color depth, balanced body proportions, "
-            "coherent anatomy, delicate clean lineart, layered anime cel shading"
+            f"masterpiece, best quality, absurdres, {subject}, {framing_lead}, "
+            f"{identity}, {scene_and_pose_tags}, {EMILIA_ANGLE_SPECS[angle]['tags']}, "
+            f"{EMILIA_COMPANION_TAGS[companion]}, {EMILIA_MAGIC_TAGS[magic]}, "
+            "balanced body proportions, coherent anatomy, delicate clean lineart, layered anime cel shading, "
+            "balanced exposure, coherent light direction, natural shadow gradients"
         )
+
+    def build_emilia_ultra_negative(self, *, outfit: str = 'royal', framing: str = 'full_body') -> str:
+        if outfit not in EMILIA_OUTFIT_MODES or framing not in ULTRA_FRAMING_LEADS:
+            raise ValueError('Unknown outfit or framing')
+        spec = EMILIA_OUTFIT_MODES[outfit]
+        negative = self.config.ultra_negative_prompt
+        for remove in spec['negative_remove']:
+            negative = negative.replace(remove, '')
+        if framing != 'full_body':
+            negative = ', '.join(tag.strip() for tag in negative.split(',') if tag.strip() not in ('cropped feet', 'feet out of frame'))
+        return deduplicate_tags(f"{negative}, {spec['negative_add']}")
+
     def compile_idea(
         self,
         idea: str,
         style: str = "anime",
         highres_quality_mode: bool = True,
         ultra_mode: bool = True,
+        *,
+        outfit: str = "royal",
+        companion: str = "none",
+        magic: str = "none",
+        angle: str = "auto",
     ) -> CompiledPromptSpec:
         """Translate a Chinese idea into a full CompiledPromptSpec and unload Ollama from VRAM."""
         style_hint = self.config.style_hints.get(style, STYLE_HINTS["anime"])
@@ -278,8 +311,15 @@ class OllamaPromptCompiler:
 
         if emilia_flag:
             if highres_quality_mode and ultra_mode:
-                combined = self.build_emilia_ultra_prompt(raw_tags, framing=framing)
-                neg_prompt = self.config.ultra_negative_prompt
+                combined = self.build_emilia_ultra_prompt(
+                    raw_tags,
+                    framing=framing,
+                    outfit=outfit,
+                    companion=companion,
+                    magic=magic,
+                    angle=angle,
+                )
+                neg_prompt = self.build_emilia_ultra_negative(outfit=outfit, framing=framing)
             elif highres_quality_mode:
                 highres_identity = (
                     r"masterpiece, best quality, anime illustration, emilia \(re:zero\), 1girl, solo, "

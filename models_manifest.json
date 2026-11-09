@@ -109,6 +109,28 @@
       "purpose": "Hand bounding box detection for ImpactSimpleDetectorSEGS and CPU QualityInspector"
     }
   ],
+  "experimental_models": [
+    {
+      "key": "illustrious-xl-1.1",
+      "name": "Illustrious XL v1.1 (optional comparison)",
+      "relative_path": "models/checkpoints/Illustrious-XL-v1.1.safetensors",
+      "size_bytes": 6938040728,
+      "sha256": "536863e9f0c13b0ce834e2f8a19ada425ee4f722c0ad3d0051ec7e6adaa8156c",
+      "download_url": "https://huggingface.co/OnomaAIResearch/Illustrious-XL-v1.1/resolve/main/Illustrious-XL-v1.1.safetensors",
+      "source_url": "https://huggingface.co/OnomaAIResearch/Illustrious-XL-v1.1",
+      "license": "SDXL license; see upstream model card"
+    },
+    {
+      "key": "animesharp",
+      "name": "4x AnimeSharp (optional, non-commercial)",
+      "relative_path": "models/upscale_models/4x-AnimeSharp.safetensors",
+      "size_bytes": 33467822,
+      "sha256": "7fc60054d291579acac4fb537efd91c80611cbd281ef8b90f434048cc1313b39",
+      "download_url": "https://huggingface.co/Kim2091/AnimeSharp/resolve/main/4x-AnimeSharp.safetensors",
+      "source_url": "https://huggingface.co/Kim2091/AnimeSharp",
+      "license": "CC-BY-NC-SA-4.0"
+    }
+  ],
   "reference_assets": [
     {
       "name": "Official Clean Center Face Reference",

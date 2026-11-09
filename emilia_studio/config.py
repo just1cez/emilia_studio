@@ -153,6 +153,160 @@ DEFAULT_ULTRA_HAND_NEGATIVE_PROMPT: str = (
     "duplicated hand, extra arm, blurry, realistic, photo, text, watermark"
 )
 
+DEFAULT_ULTRA_BROOCH_POSITIVE_PROMPT: str = (
+    r"masterpiece, best quality, emilia_rezero, rezero emilia, emilia \(re:zero\), "
+    "detached white high collar with scalloped purple trim and small gold throat clasp, "
+    "faceted glowing green emerald diamond crystal pendant suspended at center of chest, "
+    "bare shoulders, white sweetheart bustier cups with purple frilled trim, "
+    "white corset waist panel with six vertical purple dash markings, "
+    "crisp symmetrical jewelry facets, clean delicate anime lineart, luminous cel shading"
+)
+
+DEFAULT_ULTRA_BROOCH_NEGATIVE_PROMPT: str = (
+    "worst quality, low quality, blurry brooch, asymmetrical crystal, red gem, blue gem, purple gem, "
+    "round gold button, double brooch, missing pendant, deformed collar, smudged lineart, realistic, photo, text, watermark"
+)
+
+# Canonical Emilia Outfit Registry (--outfit)
+EMILIA_OUTFIT_MODES: dict[str, dict[str, Any]] = {
+    "royal": {
+        "title": "王选标准白紫礼服 (Canonical Royal Selection Dress)",
+        "positive": ULTRA_EMILIA_OUTFIT_CANONICAL,
+        "negative_remove": (),
+        "negative_add": (
+            "hood, hooded cloak, white cloak, fur hood, cape hood, purple bodysuit, bodysuit, "
+            "solid purple corset, dark purple apron, floor-length gown, wedding dress"
+        ),
+        "use_skirt_ipa": True,
+        "use_brooch_detailer": True,
+        "lora_strength": 0.25,
+    },
+    "cloak": {
+        "title": "第一季认识阻碍白兜帽斗篷 (S1 White Hooded Cloak)",
+        "positive": (
+            r"emilia_rezero, rezero emilia, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, "
+            "official character design, anime key visual, silver-white hair, very long hair, straight bangs, "
+            "crown braid, symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, "
+            "white rose hair ornament, x hair ornament, purple hair ribbon, "
+            "wearing ornate white hooded cloak with purple trim and gold clasp at neck, "
+            "flowing white cape over white and purple dress, green diamond crystal pendant at throat, "
+            "white box-pleated miniskirt, white thighhigh stockings, white high-heel ankle boots with purple V-cuffs"
+        ),
+        "negative_remove": ("hood, hooded cloak, white cloak, fur hood, cape hood, ",),
+        "negative_add": "modern jacket, hoodie, zipper, dark black cloak",
+        "use_skirt_ipa": False,
+        "use_brooch_detailer": False,
+        "lora_strength": 0.20,
+    },
+    "frozen-bond": {
+        "title": "冰结森林主题创作服装（非官设复刻） / Frozen-forest interpretation",
+        "positive": (
+            r"emilia_rezero, rezero emilia, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, "
+            "official character design, anime key visual, silver-white hair, very long hair, straight bangs, "
+            "crown braid, symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, "
+            "white rose hair ornament, x hair ornament, "
+            "pure white ethereal forest dress with lavender ribbon trim, translucent white shawl collar, "
+            "green emerald crystal pendant at chest, flowing layered white chiffon skirt, "
+            "delicate white lace stockings, white ankle boots"
+        ),
+        "negative_remove": (),
+        "negative_add": "heavy armor, dark purple bodysuit, modern clothes",
+        "use_skirt_ipa": False,
+        "use_brooch_detailer": False,
+        "lora_strength": 0.18,
+    },
+    "sanctuary": {
+        "title": "圣域冬日主题创作服装（非官设复刻） / Winter interpretation",
+        "positive": (
+            f"{ULTRA_EMILIA_OUTFIT_CANONICAL}, "
+            "translucent frost-trimmed white winter mantle draped over elbows, "
+            "glowing emerald spirit crystal, subtle frost filigree on dress hem"
+        ),
+        "negative_remove": (),
+        "negative_add": "hood, fur hood, heavy coat covering dress",
+        "use_skirt_ipa": True,
+        "use_brooch_detailer": True,
+        "lora_strength": 0.25,
+    },
+    "nightgown": {
+        "title": "宅邸晨衣主题创作服装（非官设复刻） / Morning dress interpretation",
+        "positive": (
+            r"emilia_rezero, rezero emilia, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, "
+            "official character design, anime key visual, silver-white hair, very long loose hair, straight bangs, "
+            "symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, "
+            "white rose hair ornament, "
+            "opaque white and soft lavender ankle-length nightgown dress with ruffled collar and ribbon bow, "
+            "opaque white morning robe over shoulders, green crystal pendant at throat, "
+            "bare lower legs, soft bedroom morning light"
+        ),
+        "negative_remove": ("stocking feet, shoeless, barefoot, ",),
+        "negative_add": "heavy boots, armor, hooded cloak",
+        "use_skirt_ipa": False,
+        "use_brooch_detailer": False,
+        "lora_strength": 0.15,
+    },
+}
+
+EMILIA_COMPANION_TAGS: dict[str, str] = {
+    "none": "",
+    "puck": (
+        "tiny cute grey-furred fairy cat spirit Puck floating beside her shoulder, "
+        "small grey kitten spirit with long fluffy tail and golden earring on left ear, "
+        "warm glowing green spirit aura around the tiny cat"
+    ),
+}
+
+EMILIA_MAGIC_TAGS: dict[str, str] = {
+    "none": "",
+    "ice": (
+        "summoning translucent glowing cyan-blue ice crystals and hexagonal frost snowflakes in midair, "
+        "crystalline mana particles, magical ice refraction, ethereal blue-violet rim light on fingers and dress"
+    ),
+    "blizzard": (
+        "surrounded by floating diamond-dust ice shards and blooming translucent ice flowers, "
+        "swirling frost magic aura, dramatic cold blue magical illumination"
+    ),
+}
+
+EMILIA_ANGLE_SPECS: dict[str, dict[str, Any]] = {
+    "auto": {
+        "title": "智能视角匹配 (Auto Pose-Aware Multi-Ref)",
+        "tags": "",
+        "primary_ref": "official_face_center_clean.png",
+        "secondary_ref": "emilia_official_face_3q.png",
+    },
+    "front": {
+        "title": "正面标准视角 (Front Center)",
+        "tags": "straight-on front view, symmetrical posture, looking directly at viewer",
+        "primary_ref": "official_face_center_clean.png",
+        "secondary_ref": "emilia_official_face_3q.png",
+    },
+    "three-quarter": {
+        "title": "3/4 经典斜侧视角 (Three-Quarter View)",
+        "tags": "three-quarter view, angled body posture, dynamic depth, looking at viewer",
+        "primary_ref": "emilia_official_face_3q.png",
+        "secondary_ref": "official_face_center_clean.png",
+    },
+    "side": {
+        "title": "唯美侧颜回眸 (Side Profile / Looking Back)",
+        "tags": "from side, graceful side profile turning head to look back at viewer, flowing silver hair over shoulder",
+        "primary_ref": "emilia_official_face_3q.png",
+        "secondary_ref": "official_face_center_clean.png",
+    },
+    "high-angle": {
+        "title": "微俯视圣洁视角 (High-Angle Perspective)",
+        "tags": "from slightly above, high-angle shot looking up at viewer with gentle expression",
+        "primary_ref": "emilia_official_face_3q.png",
+        "secondary_ref": "official_face_center_clean.png",
+    },
+    "low-angle": {
+        "title": "微仰视史诗视角 (Heroic Low-Angle)",
+        "tags": "from slightly below, low-angle heroic perspective, flowing dress coattails",
+        "primary_ref": "emilia_official_face_3q.png",
+        "secondary_ref": "official_face_center_clean.png",
+    },
+}
+
 # Eye repair fallback prompts
 DEFAULT_EYE_REPAIR_BASE_POSITIVE_PROMPT: str = (
     r"1girl, solo, rezero emilia, emilia \(re:zero\), silver-white hair, straight bangs, "
@@ -516,6 +670,8 @@ class StudioConfig:
     ultra_face_negative_prompt: str = DEFAULT_ULTRA_FACE_NEGATIVE_PROMPT
     ultra_hand_positive_prompt: str = DEFAULT_ULTRA_HAND_POSITIVE_PROMPT
     ultra_hand_negative_prompt: str = DEFAULT_ULTRA_HAND_NEGATIVE_PROMPT
+    ultra_brooch_positive_prompt: str = DEFAULT_ULTRA_BROOCH_POSITIVE_PROMPT
+    ultra_brooch_negative_prompt: str = DEFAULT_ULTRA_BROOCH_NEGATIVE_PROMPT
 
     def __post_init__(self) -> None:
         self.root_dir = Path(self.root_dir).expanduser().resolve()

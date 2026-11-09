@@ -7,10 +7,12 @@ import importlib.util
 import inspect
 import itertools
 import sys
+from collections import namedtuple
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import cv2
 import torch
 from PIL import Image
 
@@ -19,6 +21,13 @@ import comfy.sd
 import comfy.utils
 import folder_paths
 import nodes
+
+# Impact Pack's seven-field SEG contract; geometry has no detector confidence.
+SEG = namedtuple(
+    "SEG",
+    ["cropped_image", "cropped_mask", "confidence", "crop_region", "bbox", "label", "control_net_wrapper"],
+    defaults=[None],
+)
 
 
 def _resolve_cross_attention_patch_module() -> Any | None:
@@ -299,8 +308,112 @@ def verify_patches() -> dict[str, bool]:
     }
 
 
-NODE_CLASS_MAPPINGS: dict[str, Any] = {}
-NODE_DISPLAY_NAME_MAPPINGS: dict[str, str] = {}
+class EmiliaRelativeGarmentSEGS:
+    """Face-relative geometry prior, not garment or brooch segmentation.
 
+    Only an unambiguous single connected face mask is supported. The rectangular
+    prior can include background, hair or skin; no detection confidence is known.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "face_mask": ("MASK",),
+                "region": (["brooch_and_collar", "bodice_and_peplum", "full_garment"], {"default": "brooch_and_collar"}),
+                "crop_factor": ("FLOAT", {"default": 1.6, "min": 1.0, "max": 4.0, "step": 0.1}),
+                "feather_px": ("INT", {"default": 16, "min": 0, "max": 64, "step": 1}),
+            }
+        }
+
+    RETURN_TYPES = ("SEGS", "MASK")
+    RETURN_NAMES = ("segs", "garment_mask")
+    FUNCTION = "compute_segs"
+    CATEGORY = "EmiliaStudio/Detailer"
+
+    def compute_segs(self, image: torch.Tensor, face_mask: torch.Tensor, region: str = "brooch_and_collar", crop_factor: float = 1.6, feather_px: int = 16):
+        if image.ndim != 4 or image.shape[0] != 1:
+            raise ValueError("Garment geometry prior requires one image")
+        h, w = int(image.shape[1]), int(image.shape[2])
+        out_mask = torch.zeros((1, h, w), dtype=torch.float32, device="cpu")
+        empty = (((h, w), []), out_mask)
+        if face_mask.ndim == 3:
+            if face_mask.shape[0] != 1:
+                return empty
+            face_mask = face_mask[0]
+        if face_mask.ndim != 2 or face_mask.numel() == 0:
+            return empty
+        if not np.isfinite(crop_factor) or crop_factor < 1 or feather_px < 0:
+            raise ValueError("crop_factor must be finite and >= 1; feather_px must be >= 0")
+        ratios = {
+            "brooch_and_collar": (0.65, -0.06, 0.82),
+            "bodice_and_peplum": (0.95, -0.04, 2.35),
+            "full_garment": (1.15, -0.05, 3.10),
+        }
+        if region not in ratios:
+            raise ValueError(f"Unknown garment geometry region: {region}")
+        mask = face_mask.detach().to(device="cpu", dtype=torch.float32)
+        if not bool(torch.isfinite(mask).all()):
+            return empty
+        # Count before resizing as well: downsampling must not merge faces.
+        binary = (mask.numpy() > 0.1).astype(np.uint8)
+        count, _, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+        if count != 2:
+            return empty
+        if tuple(mask.shape) != (h, w):
+            binary = cv2.resize(binary, (w, h), interpolation=cv2.INTER_NEAREST)
+            count, _, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+            if count != 2:
+                return empty
+        fx1, fy1, fw, fh = (int(v) for v in stats[1, :4])
+        fy2 = fy1 + fh
+        fcx = fx1 + fw / 2
+        if fw < 16 or fh < 16 or fy2 >= h * 0.86:
+            return empty
+        half_width, top, bottom = ratios[region]
+        gx1 = max(0, round(fcx - half_width * fw))
+        gx2 = min(w, round(fcx + half_width * fw))
+        gy1 = max(0, round(fy2 + top * fh))
+        gy2 = min(h, round(fy2 + bottom * fh))
+        gw, gh = gx2 - gx1, gy2 - gy1
+        if gw < 32 or gh < 32:
+            return empty
+        pad_w = round(gw * (crop_factor - 1) / 2)
+        pad_h = round(gh * (crop_factor - 1) / 2)
+        cx1, cy1 = max(0, gx1 - pad_w), max(0, gy1 - pad_h)
+        cx2, cy2 = min(w, gx2 + pad_w), min(h, gy2 + pad_h)
+        # Never round down the crop: it must contain the entire bounded prior.
+        cropped_mask = np.zeros((cy2 - cy1, cx2 - cx1), dtype=np.float32)
+        bx1, by1 = gx1 - cx1, gy1 - cy1
+        bx2, by2 = gx2 - cx1, gy2 - cy1
+        f = min(int(feather_px), (gw - 1) // 2, (gh - 1) // 2)
+        if f:
+            x = np.arange(gw, dtype=np.float32)
+            y = np.arange(gh, dtype=np.float32)
+            distance = np.minimum(np.minimum(y, gh - 1 - y)[:, None], np.minimum(x, gw - 1 - x)[None, :])
+            # Inner cosine feather: zero on the edge, one f pixels inward.
+            cropped_mask[by1:by2, bx1:bx2] = 0.5 - 0.5 * np.cos(np.minimum(distance / f, 1) * np.pi)
+        else:
+            cropped_mask[by1:by2, bx1:bx2] = 1.0
+        out_mask[0, cy1:cy2, cx1:cx2] = torch.from_numpy(cropped_mask)
+        seg = SEG(
+            cropped_image=None,
+            cropped_mask=cropped_mask,
+            confidence=None,
+            crop_region=[cx1, cy1, cx2, cy2],
+            bbox=[gx1, gy1, gx2, gy2],
+            label=f"geometry_prior:{region}",
+            control_net_wrapper=None,
+        )
+        return ((h, w), [seg]), out_mask
+
+
+NODE_CLASS_MAPPINGS: dict[str, Any] = {
+    "EmiliaRelativeGarmentSEGS": EmiliaRelativeGarmentSEGS,
+}
+NODE_DISPLAY_NAME_MAPPINGS: dict[str, str] = {
+    "EmiliaRelativeGarmentSEGS": "Emilia Garment Geometry Prior (not segmentation)",
+}
 # Apply on import
 apply_all_patches()

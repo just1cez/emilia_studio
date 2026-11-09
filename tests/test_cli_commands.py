@@ -42,3 +42,84 @@ def test_noninteractive_entry_does_not_consume_input(monkeypatch):
     monkeypatch.setattr('sys.stdin', stream)
     assert main([]) == 0
     assert stream.tell() == 0
+
+
+def test_outfits_command_lists_and_prints_json(capsys):
+    assert main(['outfits']) == 0
+    table_out = capsys.readouterr().out
+    for key in ('royal', 'cloak', 'frozen-bond', 'sanctuary', 'nightgown'):
+        assert key in table_out
+    assert main(['outfits', 'cloak', '--framing', 'portrait']) == 0
+    spec = json.loads(capsys.readouterr().out)
+    assert spec['outfit'] == 'cloak'
+    assert spec['framing'] == 'portrait'
+    assert spec['use_skirt_ipa'] is False
+    assert 'white hooded cloak' in spec['positive_prompt']
+    assert 'hooded cloak' not in spec['negative_prompt']
+
+
+def test_compare_and_export_commands_work_offline(tmp_path, monkeypatch, capsys):
+    from PIL import Image
+    out_dir = tmp_path / 'output'
+    out_dir.mkdir()
+    monkeypatch.setenv('EMILIA_OUTPUT_DIR', str(out_dir))
+    img_a = out_dir / 'a.png'
+    img_b = out_dir / 'b.png'
+    Image.new('RGB', (128, 192), (180, 140, 210)).save(img_a)
+    Image.new('RGB', (128, 192), (180, 140, 210)).save(img_b)
+    rec_a = img_a.with_suffix('.run.json')
+    rec_a.write_text(json.dumps({'seed': 101, 'profile': 'ultra', 'final': str(img_a)}), encoding='utf-8')
+    assert main(['compare', str(img_a), str(img_b), '--json']) == 0
+    cmp_data = json.loads(capsys.readouterr().out)
+    assert cmp_data['pixel_identical'] is True
+    assert cmp_data['image_a']['seed'] == 101
+    assert main(['compare', str(img_a), str(img_b)]) == 0
+    assert 'YES' in capsys.readouterr().out
+    bundle_dir = tmp_path / 'exported_bundle'
+    assert main(['export', str(bundle_dir), '--image', str(rec_a)]) == 0
+    exp_data = json.loads(capsys.readouterr().out)
+    assert (bundle_dir / 'a.png').is_file()
+    assert (bundle_dir / 'a.run.json').is_file()
+    assert (bundle_dir / 'export_manifest.json').is_file()
+    assert exp_data['destination'] == str(bundle_dir)
+
+
+def test_clean_and_benchmark_commands_work_offline(tmp_path, monkeypatch, capsys):
+    temp_dir = tmp_path / 'temp'
+    stage_dir = temp_dir / 'ultra_deadbeef1234'
+    stage_dir.mkdir(parents=True)
+    (stage_dir / 'server.log').write_text('log bytes', encoding='utf-8')
+    keep_dir = temp_dir / 'other_folder'
+    keep_dir.mkdir(parents=True)
+    monkeypatch.setenv('EMILIA_TEMP_DIR', str(temp_dir))
+    monkeypatch.setenv('EMILIA_ROOT_DIR', str(tmp_path))
+    assert main(['clean', '--older-than-hours', '0', '--dry-run']) == 0
+    dry_res = json.loads(capsys.readouterr().out)
+    assert dry_res['removed_count'] == 1
+    assert stage_dir.is_dir()
+    assert main(['clean', '--older-than-hours', '0']) == 0
+    clean_res = json.loads(capsys.readouterr().out)
+    assert clean_res['removed_count'] == 1
+    assert not stage_dir.exists()
+    assert keep_dir.is_dir()
+    assert main(['benchmark', '--limit', '5']) == 0
+    assert 'Benchmark Summary' in capsys.readouterr().out
+
+
+def test_render_rejects_creative_flags_on_quality_profile_and_routes_ultra(monkeypatch, capsys):
+    assert main(['render', '--profile', 'quality', '--outfit', 'cloak']) == 1
+    assert 'require --profile ultra' in capsys.readouterr().err
+    captured_kwargs = {}
+
+    async def fake_pipeline(self, **kwargs):
+        captured_kwargs.update(kwargs)
+        return {}
+
+    monkeypatch.setattr('emilia_studio.engine.EmiliaRenderEngine.render_quality_pipeline', fake_pipeline)
+    assert main(['render', '--profile', 'ultra', '--preset', 'royal-portrait', '--outfit', 'cloak', '--angle', 'side', '--puck', '--magic', 'ice']) == 0
+    assert captured_kwargs['profile'] == 'ultra'
+    assert captured_kwargs['native_options']['framing'] == 'portrait'
+    assert captured_kwargs['native_options']['camera_angle'] == 'side'
+    assert captured_kwargs['native_options']['skirt_ipadapter_weight'] == 0.0
+    assert 'Puck' in captured_kwargs['positive_prompt']
+    assert 'ice crystals' in captured_kwargs['positive_prompt']

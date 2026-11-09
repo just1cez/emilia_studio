@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-09",
+  "checkpoint_candidate": {
+    "name": "Illustrious-XL-v1.1.safetensors",
+    "source": "https://huggingface.co/OnomaAIResearch/Illustrious-XL-v1.1",
+    "sha256": "536863e9f0c13b0ce834e2f8a19ada425ee4f722c0ad3d0051ec7e6adaa8156c",
+    "size_bytes": 6938040728,
+    "license": "SDXL license linked by upstream model card",
+    "status": "evaluated; retained as opt-in checkpoint_name, rejected as default replacement",
+    "ablations": [
+      {
+        "scene": "garden",
+        "seed": 20261027,
+        "native_seconds": 236.85623839999607,
+        "finish_seconds": 61.86562110000523,
+        "native_sha256": "394be7a47177ce41f06a79e34df6c7c58c20cfdb79e90a816005ad9143635899",
+        "final_sha256": "1cec6ffed53fbfd552f39a72a3501249994d61f042dc561290a68e26d453c0eb"
+      },
+      {
+        "scene": "portrait",
+        "seed": 20261105,
+        "native_seconds": 120.54956399999355,
+        "finish_seconds": 95.36130969999795,
+        "native_sha256": "0064a96eb50e4f9067ee136e98ddcdc860aa4415f9a9355d04c84ff5d2e37eb3",
+        "final_sha256": "d6e889bfdc4abb4ded7abac473c73ae71313ffeef378f05393b0a0dcac835f73"
+      }
+    ],
+    "claim_limit": "Under identical seed and graph inputs, Illustrious-XL-v1.1 yielded flatter lighting and softer hand/finger anatomy than Illustrious-XL-v0.1 with the Emilia LoRAs. Keep v0.1 as default."
+  },
+  "upscaler_candidate": {
+    "name": "4x-AnimeSharp.safetensors",
+    "source": "https://huggingface.co/Kim2091/AnimeSharp",
+    "sha256": "7fc60054d291579acac4fb537efd91c80611cbd281ef8b90f434048cc1313b39",
+    "size_bytes": 33467822,
+    "license": "CC-BY-NC-SA-4.0",
+    "status": "evaluated; retained as opt-in secondary_upscaler_name, rejected as default",
+    "ablations": [
+      {
+        "scene": "garden",
+        "seed": 20261027,
+        "finish_seconds": 255.9971557999961,
+        "final_sha256": "303de0592247a7ee80737fee9f83fee62464391a140f993ee1c4d86fa045d043"
+      },
+      {
+        "scene": "portrait",
+        "seed": 20261105,
+        "finish_seconds": 227.98383339999418,
+        "final_sha256": "f930bc5ad488fbc7f3a084e428b5fc4d5c1926f82f9b2ce73bd35d3340348085"
+      }
+    ],
+    "claim_limit": "Dual 4x model upscaling + blending increases Stage 2 finishing time from ~110-124s to 228-256s (+104% to +131% latency) on the 8 GiB CMP 40HX for only subtle line micro-contrast differences."
+  },
+  "garment_detailer_candidate": {
+    "name": "EmiliaRelativeGarmentSEGS (brooch_and_collar / bodice_and_peplum / full_garment)",
+    "status": "evaluated; retained as opt-in garment_region, rejected as default",
+    "ablations": [
+      {
+        "scene": "garden",
+        "seed": 20261027,
+        "finish_seconds": 114.87112540000089,
+        "final_sha256": "812044d26740ebc101c59f2711cafb974337814d0f5d66e6999ad8f1d753c163"
+      },
+      {
+        "scene": "portrait",
+        "seed": 20261105,
+        "finish_seconds": 144.0290789999999,
+        "final_sha256": "f64c3760bde06d44daaa4c88c8505d401ec8b32d2ccf5d492a3ccb585d00665b"
+      }
+    ],
+    "claim_limit": "Face-relative geometry prior sharpens collar/brooch facets at low denoise (0.22), but is not true semantic garment segmentation."
+  },
+  "excluded_methods": [
+    {
+      "name": "UltimateSDUpscale / TiledDiffusion",
+      "reason": "Repository hardware/runtime policy explicitly prohibits re-enabling globally hooked nodes; use existing isolated detailers instead."
+    },
+    {
+      "name": "NoobAI XL V-Pred 1.0 drop-in replacement",
+      "source": "https://huggingface.co/Laxhar/noobai-XL-Vpred-1.0",
+      "reason": "Not a drop-in replacement: upstream requires v_prediction, rescaled zero-SNR betas and Euler; existing DPM++ pipeline and epsilon-trained adapters are not validated for it. Upstream prohibits commercialization. No claim of automatic HDR/quality improvement."
+    },
+    {
+      "name": "Face-derived garment detector",
+      "reason": "Implemented only as optional geometry prior and advisory color measurements. It cannot prove garment segmentation, exact motif identity, or pleat counts."
+    }
+  ]
+}

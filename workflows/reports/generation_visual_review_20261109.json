@@ -1,0 +1,153 @@
+{
+  "review_policy": "Visual observations are subjective and apply only to named images. Seed-matched ablations are required before promoting changes. No automatic score proves garment fidelity.",
+  "observations": [
+    {
+      "image": "app/output/emilia/experiments_20261109/garden_single_lanczos_final_00001_.png",
+      "variant": "garden seed 20261027 — single reference, Lanczos bridge, corrected soft outfit mask",
+      "native_sha256": "74a33f18c05bfd4a06af4e33bd2be2d7a9bb66e254e1fa934a53ea0ca6a8e6d7",
+      "final_sha256": "a6184ab1f241f2a3b45ec2ca49502056c95c92b9f66762b19e6a5d2ced62c5ec",
+      "observed": [
+        "One visible Emilia-like character, silver hair and violet eyes; green pendant and white/purple corset present.",
+        "Requested standing full body is not followed: figure appears seated/kneeling; feet are cropped.",
+        "Corset vertical markings and peplum tiers are approximate, not exact official geometry.",
+        "Strong warm hair rim and dark face; detailed rose background. This alone does not demonstrate improved balanced lighting.",
+        "Hands remain imperfect; do not claim automatic anatomy correctness."
+      ],
+      "decision": "Control image only; not accepted as proof of full-body quality improvement."
+    },
+    {
+      "image": "app/output/emilia/experiments_20261109/garden_paired_anime_final_00001_.png",
+      "variant": "garden seed 20261027 — paired front+3/4 face references, RealESRGAN Anime6B hires bridge, three-quarter camera angle",
+      "native_sha256": "3b4ebb33d23ec94f3d42ecb3aa35a2dd95066c9ad17fcf371f6673bbafb8433c",
+      "final_sha256": "56781f1b368386603b9ffec628c54656bb0ac46c5cdf670bf44c2fe435e3943b",
+      "observed": [
+        "Brighter facial exposure, clearer six vertical purple corset markings, and sharper tiered peplum folds compared with garden_single_lanczos_final_00001_.png.",
+        "Still seated/kneeling with cropped feet despite full_body standing tags, and exhibits a hallucinated text watermark at the bottom-right margin.",
+        "Keep paired reference and Anime6B hires bridge as opt-in experimental controls rather than promoting to default."
+      ],
+      "decision": "Opt-in experimental option only; rejected as default replacement."
+    },
+    {
+      "image": "app/output/emilia/experiments_20261109/portrait_single_lanczos_final_00001_.png",
+      "variant": "portrait seed 20261105 — single reference, Lanczos bridge, portrait framing",
+      "native_sha256": "9d211cee5e25aa3cc02657c912ebe0f35aad2c8595574a464d516556854c320c",
+      "final_sha256": "e08337472262425b8687f3788c72eb512fa416d5826ba9beedaa8a693a0df29a",
+      "observed": [
+        "Clean close-up framing with full headroom, white rose hair ornament, x-hairpin, scalloped high collar, and faceted green crystal pendant.",
+        "Lower-body tags were cleanly omitted in portrait mode without skirt/boot bleed into upper body.",
+        "Mouth rendering is minimal (two tiny dots) and iris highlights have warm yellow lower glow."
+      ],
+      "decision": "Accepted as portrait framing baseline control."
+    },
+    {
+      "image": "app/output/emilia/experiments_20261109/portrait_paired_anime_final_00001_.png",
+      "variant": "portrait seed 20261105 — paired front+3/4 face references, RealESRGAN Anime6B hires bridge",
+      "native_sha256": "41784d29e08edd94bf74e6194a522167d7c2a315d386130f18445b78c9a58611",
+      "final_sha256": "58c59638480c1b4e026451319ae2d7a63c0cfb1222161e82341fcb7c9e7bb53c",
+      "observed": [
+        "More expressive violet irises, clearer mouth contour, and visible warm lantern object matching the prompt.",
+        "Introduces two pointing hands near the chest with slightly stiff finger geometry.",
+        "Retain as opt-in experimental configuration."
+      ],
+      "decision": "Opt-in experimental option; not promoted to default."
+    },
+    {
+      "image": "app/output/emilia/experiments_20261109/garden_v11_final_00001_.png",
+      "variant": "garden seed 20261027 — Illustrious-XL-v1.1.safetensors checkpoint ablation",
+      "native_sha256": "394be7a47177ce41f06a79e34df6c7c58c20cfdb79e90a816005ad9143635899",
+      "final_sha256": "1cec6ffed53fbfd552f39a72a3501249994d61f042dc561290a68e26d453c0eb",
+      "observed": [
+        "Still seated/kneeling with cropped feet; flatter lighting and less vibrant rose foliage compared with Illustrious-XL-v0.1.",
+        "Does not solve full-body pose adherence on seed 20261027."
+      ],
+      "decision": "Rejected as default checkpoint; kept as opt-in checkpoint_name."
+    },
+    {
+      "image": "app/output/emilia/experiments_20261109/portrait_v11_final_00001_.png",
+      "variant": "portrait seed 20261105 — Illustrious-XL-v1.1.safetensors checkpoint ablation",
+      "native_sha256": "0064a96eb50e4f9067ee136e98ddcdc860aa4415f9a9355d04c84ff5d2e37eb3",
+      "final_sha256": "d6e889bfdc4abb4ded7abac473c73ae71313ffeef378f05393b0a0dcac835f73",
+      "observed": [
+        "Warm hanging lanterns in background and clean six-dash corset panel, but introduces two raised hands with simplified finger joints.",
+        "Flatter cel shading than Illustrious-XL-v0.1."
+      ],
+      "decision": "Rejected as default checkpoint; kept as opt-in checkpoint_name."
+    },
+    {
+      "image": "app/output/emilia/experiments_20261109/garden_animesharp_blend_final_00001_.png",
+      "variant": "garden seed 20261027 — 4x-AnimeSharp.safetensors 0.35 blend with RealESRGAN_x4plus_anime_6B.pth",
+      "final_sha256": "303de0592247a7ee80737fee9f83fee62464391a140f993ee1c4d86fa045d043",
+      "observed": [
+        "Subtle lineart crispness difference vs single RealESRGAN_x4plus_anime_6B, but Stage 2 runtime more than doubled (256.0s vs 110.7s)."
+      ],
+      "decision": "Opt-in secondary_upscaler_name only; rejected as default due to >2x Stage 2 latency cost."
+    },
+    {
+      "image": "app/output/emilia/experiments_20261109/garden_garment_brooch_final_00001_.png",
+      "variant": "garden seed 20261027 — EmiliaRelativeGarmentSEGS brooch_and_collar (denoise=0.22, steps=14)",
+      "final_sha256": "812044d26740ebc101c59f2711cafb974337814d0f5d66e6999ad8f1d753c163",
+      "observed": [
+        "Refines collar and green crystal facet edges with modest Stage 2 overhead (114.9s vs 110.7s) while preserving surrounding bodice.",
+        "Remains a face-relative geometry prior rather than semantic garment segmentation."
+      ],
+      "decision": "Retained as opt-in garment_region in build_ultra_finish."
+    },
+    {
+      "image": "app/output/emilia/experiments_20261109/portrait_animesharp_blend_final_00001_.png",
+      "variant": "portrait seed 20261105 — 4x-AnimeSharp.safetensors 0.35 blend with RealESRGAN_x4plus_anime_6B.pth",
+      "final_sha256": "f930bc5ad488fbc7f3a084e428b5fc4d5c1926f82f9b2ce73bd35d3340348085",
+      "observed": [
+        "Slightly crisper collar/pendant edges, at 228.0s vs 123.6s single-upscaler finish time."
+      ],
+      "decision": "Opt-in secondary_upscaler_name only."
+    },
+    {
+      "image": "app/output/emilia/experiments_20261109/portrait_garment_brooch_final_00001_.png",
+      "variant": "portrait seed 20261105 — EmiliaRelativeGarmentSEGS brooch_and_collar (denoise=0.22, steps=14)",
+      "final_sha256": "f64c3760bde06d44daaa4c88c8505d401ec8b32d2ccf5d492a3ccb585d00665b",
+      "observed": [
+        "Cleanly sharpens the green diamond pendant facets and gold clasp at throat in 144.0s."
+      ],
+      "decision": "Retained as opt-in garment_region in build_ultra_finish."
+    },
+    {
+      "image": "app/output/emilia/ultra/03_finished_2x_00006_.png",
+      "variant": "creative verification seed 20261110 — outfit=cloak, framing=upper_body, angle=side, companion=puck, magic=ice",
+      "final_sha256": "80c4465166870337d1bce3eefdbbbd4f0ec27823265994d649575fa9c247882a",
+      "observed": [
+        "Renders white cloak over pleated skirt, side profile turning head back, small grey/white cat spirit on shoulder, and ice crystal motif on sleeve.",
+        "Decorative gold border and slightly stylized illustration aesthetic; demonstrates functional creative routing without skirt IPAdapter conflict."
+      ],
+      "decision": "Verified creative option."
+    },
+    {
+      "image": "app/output/emilia/ultra/03_finished_2x_00007_.png",
+      "variant": "creative verification seed 20261111 — outfit=frozen-bond, framing=full_body, angle=three-quarter, magic=blizzard",
+      "final_sha256": "0e52afe6728c20bdc9da6c1fa7ffff1319b06d9aac26a709cf1e14ccd05177ca",
+      "observed": [
+        "Full figure visible in forest scene with floating crystal shards; Emilia outfit LoRA still pulls dress toward the canonical six-dash corset and thighhigh stockings even at strength 0.18.",
+        "Left hand has an extra small object/artifact on the ground."
+      ],
+      "decision": "Verified creative interpretation; documented LoRA outfit bias."
+    },
+    {
+      "image": "app/output/emilia/ultra/03_finished_2x_00008_.png",
+      "variant": "creative verification seed 20261112 — outfit=sanctuary, framing=full_body, angle=low-angle, magic=ice",
+      "final_sha256": "f55e4fbb2daafbb8d50e647565112925f19d65e6c7b897e75e3a7ca9c36e33a0",
+      "observed": [
+        "Complete standing full-body from head to boots on icy ground, floating translucent ice crystals, six-dash corset, pleated skirt, long sleeve tails with gold hawk motif, and purple zig-zag stocking cuffs.",
+        "Demonstrates clean full-body standing composition when seed and low-angle perspective align."
+      ],
+      "decision": "Verified full-body creative showcase."
+    },
+    {
+      "image": "app/output/emilia/ultra/03_finished_2x_00009_.png",
+      "variant": "creative verification seed 20261113 — outfit=nightgown, framing=upper_body, angle=front",
+      "final_sha256": "3218c1ee129343c026e9a75028e48a8453c385f2baa911e7c0ae14297d543f3c",
+      "observed": [
+        "Warm bedroom window lighting and bare lower legs; Emilia outfit LoRA at 0.15 still retains the six-dash corset panel on the upper dress."
+      ],
+      "decision": "Verified creative interpretation; documented LoRA outfit retention."
+    }
+  ]
+}

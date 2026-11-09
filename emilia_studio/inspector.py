@@ -91,6 +91,10 @@ class InspectionReport:
     right_eye_in_violet_range: bool = True
     eye_drift_detected: bool = False
     iris_analysis: dict[str, Any] = field(default_factory=dict)
+    garment_analysis: dict[str, Any] = field(default_factory=lambda: {
+        "available": False, "advisory_only": True, "method": "face_relative_geometry_color_prior",
+        "reason": "Image unavailable", "brooch": {"available": False}, "garment": {"available": False},
+    })
     recommended_action: str = "accept"
     strict_seed_lock: bool = False
     effective_action: str = "accept"
@@ -373,6 +377,78 @@ class QualityInspector:
             "drift_reasons": drift_reasons,
         }
 
+    def analyze_garment_color(
+        self,
+        image: Image.Image,
+        face_boxes: list[tuple[float, float, float, float]],
+        rgb_array: np.ndarray | None = None,
+    ) -> dict[str, Any]:
+        """Advisory CPU color samples from a geometry prior, not segmentation.
+
+        Fractions describe pixels in a face-relative rectangle, not identified
+        garments or jewels. They cannot establish outfit identity, construction,
+        pleat counts or missing accessories and never participate in the gate.
+        """
+        result: dict[str, Any] = {
+            "available": False, "advisory_only": True,
+            "method": "face_relative_geometry_color_prior",
+            "reason": "Exactly one detected face is required",
+            "brooch": {"available": False}, "garment": {"available": False},
+        }
+        if len(face_boxes) != 1:
+            return result
+        box = np.asarray(face_boxes[0], dtype=np.float64)
+        if box.shape != (4,) or not np.isfinite(box).all():
+            result["reason"] = "Invalid face geometry"
+            return result
+        x1, y1, x2, y2 = (float(v) for v in box)
+        fw, fh = x2 - x1, y2 - y1
+        w, h = image.size
+        if fw < 16 or fh < 16 or x1 < 0 or y1 < 0 or x2 > w or y2 > h:
+            result["reason"] = "Face geometry is too small or clipped"
+            return result
+        cx = (x1 + x2) / 2
+        bounds = (cx - 0.65 * fw, y2 - 0.06 * fh, cx + 0.65 * fw, y2 + 0.82 * fh)
+        if bounds[0] < 0 or bounds[1] < 0 or bounds[2] > w or bounds[3] > h:
+            result["reason"] = "Garment geometry ROI is clipped"
+            return result
+        rx1, ry1 = int(np.floor(bounds[0])), int(np.floor(bounds[1]))
+        rx2, ry2 = int(np.ceil(bounds[2])), int(np.ceil(bounds[3]))
+        result["roi"] = [rx1, ry1, rx2, ry2]
+        arr = rgb_array if rgb_array is not None else np.asarray(image.convert("RGB"))
+        crop = arr[ry1:ry2, rx1:rx2]
+        if crop.size == 0:
+            result["reason"] = "Empty garment geometry ROI"
+            return result
+        hue, saturation, value = _rgb_to_hsv_deg(crop)
+        green = (hue >= 90) & (hue <= 170) & (saturation >= 0.35) & (value >= 0.20)
+        violet = (hue >= 250) & (hue <= 302) & (saturation >= 0.20) & (value >= 0.20)
+        light = (saturation <= 0.20) & (value >= 0.70)
+        pixels = hue.size
+        minimum = max(16, int(np.ceil(pixels * 0.005)))
+        green_count = int(green.sum())
+        garment_count = int(violet.sum() + light.sum())
+        # Broad green areas are not reliable localized brooch-color evidence.
+        if minimum <= green_count <= pixels * 0.25:
+            result["brooch"] = {
+                "available": True, "green_pixel_fraction": round(green_count / pixels, 5),
+                "interpretation": "Green pixels in collar ROI; brooch identity is not established",
+            }
+        else:
+            result["brooch"]["reason"] = "No reliable localized green-color evidence"
+        if garment_count >= max(32, pixels * 0.05):
+            result["garment"] = {
+                "available": True,
+                "violet_pixel_fraction": round(float(violet.mean()), 5),
+                "light_neutral_pixel_fraction": round(float(light.mean()), 5),
+                "interpretation": "ROI color evidence only; garment identity is not established",
+            }
+        else:
+            result["garment"]["reason"] = "No reliable light-neutral or violet-color evidence"
+        result["available"] = result["brooch"]["available"] or result["garment"]["available"]
+        result["reason"] = "Advisory ROI color evidence" if result["available"] else "No reliable color evidence"
+        return result
+
     def inspect_image(
         self,
         image_path: str | Path,
@@ -451,6 +527,18 @@ class QualityInspector:
                 primary_face = face_boxes[0] if face_boxes else None
                 iris = self.analyze_iris_color(rgb_im, face_bbox=primary_face, rgb_array=arr)
                 iris["anatomy_detector_source"] = detector_source
+                try:
+                    garment = self.analyze_garment_color(
+                        rgb_im, face_boxes if detector_source == "yolo_cpu" else [], rgb_array=arr,
+                    )
+                except Exception as exc:
+                    # Optional color diagnostics must never invalidate decoded output.
+                    garment = {
+                        "available": False, "advisory_only": True,
+                        "method": "face_relative_geometry_color_prior",
+                        "reason": f"Color diagnostics unavailable: {type(exc).__name__}",
+                        "brooch": {"available": False}, "garment": {"available": False},
+                    }
         except InspectionRuntimeError:
             raise
         except Exception as exc:
@@ -512,6 +600,7 @@ class QualityInspector:
             right_eye_in_violet_range=iris["right_eye_in_violet_range"],
             eye_drift_detected=iris["eye_drift_detected"],
             iris_analysis=iris,
+            garment_analysis=garment,
             recommended_action=recommended_action,
             strict_seed_lock=strict_seed_lock,
             effective_action=effective_action,

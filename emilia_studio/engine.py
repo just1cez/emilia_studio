@@ -27,6 +27,32 @@ def _output_path(output_dir: Path, meta: dict[str, Any]) -> Path:
     """Resolve SaveImage metadata against the directory passed to ComfyUI."""
     return output_dir / meta.get("subfolder", "") / meta["filename"]
 
+class QualityGateRejected(RuntimeError):
+    """Generation stopped by the gate; its completed work has a receipt."""
+
+    def __init__(self, reason: str, receipt_path: Path, receipt: dict[str, Any]) -> None:
+        super().__init__(f"{reason} Receipt: {receipt_path}")
+        self.receipt_path = receipt_path
+        self.receipt = receipt
+
+
+# Output sizes, seeds and file paths remain controlled by the pipeline contract.
+_NATIVE_OPTION_KEYS = frozenset({
+    "pag_scale", "base_width", "base_height", "base_steps", "hires_steps",
+    "cfg_base", "cfg_hires", "hires_denoise", "rescale_cfg_multiplier",
+    "lora_name", "lora_strength_base", "lora_strength_hires",
+    "skirt_ipadapter_weight", "ipadapter_start_at", "ipadapter_end_at",
+    "framing", "camera_angle", "reference_mode", "hires_bridge",
+    "checkpoint_name", "downscale_factor",
+})
+_FINISH_OPTION_KEYS = frozenset({
+    "lora_name", "lora_strength", "face_denoise", "hand_denoise",
+    "face_steps", "hand_steps", "face_guide_size", "face_max_size",
+    "hand_guide_size", "hand_max_size", "checkpoint_name", "garment_region",
+    "garment_denoise", "garment_steps", "upscale_blend_strength",
+    "upscaler_name", "secondary_upscaler_name",
+})
+
 
 @dataclass
 class StageResult:
@@ -370,9 +396,36 @@ class EmiliaRenderEngine:
         auto_eye_repair: bool = False,
         max_seed_retries: int = 0,
         isolation_mode: str = "process",
+        native_options: dict[str, Any] | None = None,
+        finish_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Execute full 2-stage Native -> Quality Gate -> Finish 2x pipeline ('quality' or 'ultra' profile) and record to ledger."""
+        """Run isolated native/gate/finish stages and persist even quality rejections.
+
+        Nonempty, explicitly whitelisted tuning dictionaries are ultra-only.
+        Strict seed lock retains the baseline stage sequence and only records
+        advisory quality findings. Auto-gating never finishes a rejected native
+        or an unaccepted eye repair. Ledger failures propagate after receipt save.
+        """
         assert self.config.app_dir is not None
+        if profile not in {"quality", "ultra"}:
+            raise ValueError("profile must be quality or ultra")
+        if isolation_mode != "process":
+            raise ValueError("Only process isolation is supported")
+        if not isinstance(max_seed_retries, int) or max_seed_retries < 0:
+            raise ValueError("max_seed_retries must be a nonnegative integer")
+        for name, options, allowed in (
+            ("native_options", native_options, _NATIVE_OPTION_KEYS),
+            ("finish_options", finish_options, _FINISH_OPTION_KEYS),
+        ):
+            if options is not None and not isinstance(options, dict):
+                raise TypeError(f"{name} must be a dictionary")
+            if options and profile != "ultra":
+                raise ValueError(f"{name} is only supported by the ultra profile")
+            unknown = set(options or {}) - allowed
+            if unknown:
+                raise ValueError(f"Unsupported {name}: {', '.join(sorted(map(str, unknown)))}")
+        native_options = dict(native_options or {})
+        finish_options = dict(finish_options or {})
         is_ultra = profile == "ultra"
         eff_ipa_weight = (0.18 if is_ultra else 0.40) if ipadapter_weight is None else ipadapter_weight
         run_id = uuid.uuid4().hex[:12]
@@ -380,189 +433,149 @@ class EmiliaRenderEngine:
         output_dir = (self.config.output_dir or self.config.app_dir / "output").resolve()
         run_dir = temp_dir.resolve() / (f"{profile}_" + run_id)
         run_dir.mkdir(parents=True, exist_ok=True)
-
         current_seed = seed
-        attempt = 0
+        attempts: list[dict[str, Any]] = []
         generation: dict[str, Any] = {}
+        finishing: dict[str, Any] = {}
+        native: Path | None = None
         selected: Path | None = None
+        final: Path | None = None
         native_report: InspectionReport | None = None
+        repaired_report: InspectionReport | None = None
+        final_report: InspectionReport | None = None
+        eye_repair_result: dict[str, Any] | None = None
+
+        def save_receipt(rejection: str | None = None) -> tuple[dict[str, Any], Path]:
+            assert native_report is not None and native is not None
+            receipt: dict[str, Any] = {
+                "seed": current_seed, "requested_seed": seed, "profile": profile,
+                "status": "quality_rejected" if rejection else "completed",
+                "rejection_reason": rejection,
+                "guidance": (
+                    ("Ultra Multi-Scale + PAG" if pag else "Ultra Multi-Scale (832->1152->2304)")
+                    if is_ultra else ("PAG scale 1.0" if pag else "baseline")
+                ),
+                "python": self._python_executable(),
+                "isolation": "Native process exited before finishing process started; no model overlap across stages.",
+                "temperature_power_software_stop": False,
+                "native": str(native), "selected_native": str(selected),
+                "final": str(final) if final is not None else None,
+                "generation": generation, "finishing": finishing,
+                "attempts": attempts, "logs": str(run_dir),
+                "selected_settings": {
+                    "pag": pag, "ipadapter_weight": eff_ipa_weight,
+                    "strict_seed_lock": strict_seed_lock, "auto_eye_repair": auto_eye_repair,
+                    "max_seed_retries": max_seed_retries, "isolation_mode": isolation_mode,
+                    "native_options": native_options, "finish_options": finish_options,
+                },
+                "quality_inspection": {
+                    "native": native_report.to_dict(),
+                    "final": final_report.to_dict() if final_report is not None else {},
+                    "eye_repair": eye_repair_result,
+                    "repaired": repaired_report.to_dict() if repaired_report is not None else {},
+                },
+            }
+            if user_idea:
+                receipt["user_idea"] = user_idea
+            receipt_path = (
+                final.with_suffix(".run.json")
+                if final is not None and final.parent.is_dir()
+                else run_dir / "rejected.run.json"
+            )
+            receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+            native_seconds = sum(float(a["generation"].get("seconds", 0.0)) for a in attempts)
+            finish_seconds = float(finishing.get("seconds", 0.0))
+            repair_seconds = float((eye_repair_result or {}).get("seconds", 0.0))
+            self.ledger.record_run(
+                seed=current_seed, mode=(f"{profile}_pag" if pag else profile),
+                guidance=receipt["guidance"], prompt_idea=user_idea,
+                positive_prompt=positive_prompt or (self.config.ultra_positive_prompt if is_ultra else self.config.base_positive_prompt),
+                native_path=str(native), final_path=str(final) if final is not None else None,
+                native_sha256=native_report.pixel_sha256,
+                final_sha256=final_report.pixel_sha256 if final_report is not None else None,
+                native_seconds=native_seconds, finish_seconds=finish_seconds,
+                total_seconds=native_seconds + finish_seconds + repair_seconds,
+                face_count=native_report.face_count, hand_count=native_report.hand_count,
+                heterochromia_score=native_report.heterochromia_score,
+                eye_drift_detected=native_report.eye_drift_detected,
+                quality_action="reject_seed" if rejection else (final_report or native_report).recommended_action,
+                receipt_path=str(receipt_path.resolve()),
+            )
+            return receipt, receipt_path
+
+        def reject(reason: str) -> None:
+            receipt, receipt_path = save_receipt(reason)
+            raise QualityGateRejected(reason, receipt_path, receipt)
 
         while True:
-            attempt += 1
+            attempt = len(attempts) + 1
             if is_ultra:
                 native_graph = self.builder.build_ultra_native(
-                    seed=current_seed,
-                    pag=pag,
-                    positive_prompt=positive_prompt,
-                    negative_prompt=negative_prompt,
-                    ipadapter_weight=eff_ipa_weight,
+                    seed=current_seed, pag=pag, positive_prompt=positive_prompt,
+                    negative_prompt=negative_prompt, ipadapter_weight=eff_ipa_weight,
+                    **native_options,
                 )
             else:
                 native_graph = self.builder.build_highres_native(
-                    seed=current_seed,
-                    pag=pag,
-                    positive_prompt=positive_prompt,
-                    negative_prompt=negative_prompt,
-                    ipadapter_weight=eff_ipa_weight,
+                    seed=current_seed, pag=pag, positive_prompt=positive_prompt,
+                    negative_prompt=negative_prompt, ipadapter_weight=eff_ipa_weight,
                 )
             generation = await self.render_stage_isolated(
-                native_graph,
-                "native" if attempt == 1 else f"native_retry_{attempt}",
-                run_dir,
-                port,
+                native_graph, "native" if attempt == 1 else f"native_retry_{attempt}", run_dir, port,
             )
-            selected = _output_path(
-                output_dir,
-                generation["outputs"]["9"]["images"][0],
-            )
+            native = selected = _output_path(output_dir, generation["outputs"]["9"]["images"][0])
             native_report = self.inspector.inspect_image(
-                selected,
-                expected_size=(1152, 1728),
-                stage="native",
-                solo_prompt=True,
-                strict_seed_lock=strict_seed_lock,
+                selected, expected_size=(1152, 1728), stage="native",
+                solo_prompt=True, strict_seed_lock=strict_seed_lock,
             )
+            attempts.append({"seed": current_seed, "generation": generation, "inspection": native_report.to_dict()})
             if not native_report.dimensions_match:
-                raise RuntimeError(
-                    "Native output dimensions differ from the quality workflow contract."
-                )
-            if (
-                not strict_seed_lock
-                and native_report.recommended_action == "reject_seed"
-                and attempt <= max_seed_retries
-            ):
-                print(
-                    f"quality-gate: seed {current_seed} rejected ({native_report.reasons}); retrying with new seed...",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                current_seed += 1000
-                continue
+                reject("Native output dimensions differ from the quality workflow contract.")
+            if not strict_seed_lock and native_report.recommended_action == "reject_seed":
+                if attempt <= max_seed_retries:
+                    print(f"quality-gate: seed {current_seed} rejected ({native_report.reasons}); retrying with new seed...", file=sys.stderr, flush=True)
+                    current_seed += 1000
+                    continue
+                reject("Quality gate rejected all permitted seed attempts.")
             break
 
         assert selected is not None and native_report is not None
-
-        eye_repair_result: dict[str, Any] | None = None
-        needs_eye_repair = (
-            not strict_seed_lock
-            and auto_eye_repair
-            and native_report.recommended_action == "repair_eyes"
-        )
-        if needs_eye_repair and not is_ultra:
-            print(
-                f"quality-gate: eye drift detected ({native_report.reasons}); running targeted eye repair...",
-                file=sys.stderr,
-                flush=True,
+        if not strict_seed_lock and native_report.recommended_action == "repair_eyes":
+            if not auto_eye_repair:
+                reject("Eye repair is required but automatic eye repair is disabled.")
+            repair_graph = self.builder.build_eye_repair(image_path=str(selected), seed=current_seed + 9)
+            if is_ultra:
+                repair_graph['4']['inputs']['ckpt_name'] = native_graph['4']['inputs']['ckpt_name']
+                for key in ('lora_name', 'strength_model', 'strength_clip'):
+                    repair_graph['10']['inputs'][key] = native_graph['10']['inputs'][key]
+            eye_repair_result = await self.render_stage_isolated(repair_graph, "eye_repair", run_dir, port)
+            selected = _output_path(output_dir, eye_repair_result["outputs"]["22"]["images"][0])
+            repaired_report = self.inspector.inspect_image(
+                selected, expected_size=(1152, 1728), stage="eye_repair",
+                solo_prompt=True, strict_seed_lock=False,
             )
-            repair_graph = self.builder.build_eye_repair(
-                image_path=str(selected),
-                seed=current_seed + 9,
-            )
-            eye_repair_result = await self.render_stage_isolated(
-                repair_graph,
-                "eye_repair",
-                run_dir,
-                port,
-            )
-            selected = _output_path(
-                output_dir,
-                eye_repair_result["outputs"]["22"]["images"][0],
-            )
+            if not repaired_report.passed:
+                reject("Repaired native image did not pass the quality gate.")
+        elif not strict_seed_lock and not native_report.passed:
+            reject("Native image did not pass the quality gate.")
 
         if is_ultra:
-            if needs_eye_repair:
-                print(
-                    f"quality-gate: eye hue drift detected ({native_report.reasons}); elevating Stage 2 FaceDetailer denoise to 0.36 for single-pass violet iris correction...",
-                    file=sys.stderr,
-                    flush=True,
-                )
             finish_graph = self.builder.build_ultra_finish(
-                image_path=str(selected),
-                seed=current_seed,
-                pag=pag,
-                face_denoise=0.36 if needs_eye_repair else 0.28,
+                image_path=str(selected), seed=current_seed, pag=pag, **finish_options,
             )
         else:
-            finish_graph = self.builder.build_highres_finish(
-                image_path=str(selected),
-                seed=current_seed,
-                pag=pag,
-            )
-        finishing = await self.render_stage_isolated(
-            finish_graph,
-            "finish",
-            run_dir,
-            port,
-        )
-        final = _output_path(
-            output_dir,
-            finishing["outputs"]["16"]["images"][0],
-        )
+            finish_graph = self.builder.build_highres_finish(image_path=str(selected), seed=current_seed, pag=pag)
+        finishing = await self.render_stage_isolated(finish_graph, "finish", run_dir, port)
+        final = _output_path(output_dir, finishing["outputs"]["16"]["images"][0])
         final_report = self.inspector.inspect_image(
-            final,
-            expected_size=(2304, 3456),
-            stage="final",
-            solo_prompt=True,
-            strict_seed_lock=strict_seed_lock,
+            final, expected_size=(2304, 3456), stage="final",
+            solo_prompt=True, strict_seed_lock=strict_seed_lock,
         )
         if not final_report.dimensions_match:
-            raise RuntimeError(
-                "Finished output dimensions differ from the quality workflow contract."
-            )
-        receipt: dict[str, Any] = {
-            "seed": current_seed,
-            "profile": profile,
-            "guidance": (
-                ("Ultra Multi-Scale + PAG" if pag else "Ultra Multi-Scale (832->1152->2304)")
-                if is_ultra
-                else ("PAG scale 1.0" if pag else "baseline")
-            ),
-            "python": self._python_executable(),
-            "isolation": "Native process exited before finishing process started; no model overlap across stages.",
-            "temperature_power_software_stop": False,
-            "native": str(selected),
-            "final": str(final),
-            "generation": generation,
-            "finishing": finishing,
-            "logs": str(run_dir),
-            "quality_inspection": {
-                "native": native_report.to_dict(),
-                "final": final_report.to_dict(),
-                "eye_repair": eye_repair_result,
-            },
-        }
-        if user_idea:
-            receipt["user_idea"] = user_idea
-
-        receipt_path = final.with_suffix(".run.json")
-        receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
-
-        try:
-            self.ledger.record_run(
-                seed=current_seed,
-                mode=(f"{profile}_pag" if pag else profile),
-                guidance=receipt["guidance"],
-                prompt_idea=user_idea,
-                positive_prompt=positive_prompt
-                or (self.config.ultra_positive_prompt if is_ultra else self.config.base_positive_prompt),
-                native_path=str(selected),
-                final_path=str(final),
-                native_sha256=native_report.pixel_sha256,
-                final_sha256=final_report.pixel_sha256,
-                native_seconds=generation.get("seconds", 0.0),
-                finish_seconds=finishing.get("seconds", 0.0),
-                total_seconds=float(generation.get("seconds", 0.0))
-                + float(finishing.get("seconds", 0.0)),
-                face_count=native_report.face_count,
-                hand_count=native_report.hand_count,
-                heterochromia_score=native_report.heterochromia_score,
-                eye_drift_detected=native_report.eye_drift_detected,
-                quality_action=native_report.recommended_action,
-                receipt_path=str(receipt_path.resolve()),
-            )
-        except Exception:
-            pass
-
+            reject("Finished output dimensions differ from the quality workflow contract.")
+        if not strict_seed_lock and not final_report.passed:
+            reject("Finished image did not pass the quality gate.")
+        receipt, receipt_path = save_receipt()
         print(f"FINISHED: {final}", file=sys.stderr, flush=True)
         print(f"RECEIPT: {receipt_path}", file=sys.stderr, flush=True)
         return receipt

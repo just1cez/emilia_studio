@@ -201,7 +201,7 @@
         0
       ],
       "source": [
-        "201",
+        "203",
         0
       ],
       "x": 175,
@@ -213,7 +213,7 @@
     "class_type": "FeatherMask",
     "inputs": {
       "mask": [
-        "202",
+        "201",
         0
       ],
       "left": 96,
@@ -256,7 +256,7 @@
       "end_at": 0.6,
       "embeds_scaling": "V only",
       "attn_mask": [
-        "203",
+        "202",
         0
       ],
       "clip_vision": [

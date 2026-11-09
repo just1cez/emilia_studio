@@ -8,8 +8,21 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .config import BUILTIN_SCENE_PRESETS, get_user_config_path
-from .tui import download_file_with_progress, print_banner, render_table
+from datetime import datetime, timezone
+import shutil
+import time
+
+from PIL import Image
+
+from .config import (
+    BUILTIN_SCENE_PRESETS,
+    EMILIA_ANGLE_SPECS,
+    EMILIA_COMPANION_TAGS,
+    EMILIA_MAGIC_TAGS,
+    EMILIA_OUTFIT_MODES,
+    get_user_config_path,
+)
+from .tui import download_file_with_progress, format_bytes, print_banner, render_table
 
 PATH_KEYS = ('root_dir', 'app_dir', 'output_dir', 'temp_dir', 'conda_python', 'ollama_exe')
 VALUE_KEYS = ('comfy_host', 'comfy_port', 'quality_port', 'ollama_base', 'ollama_model')
@@ -30,12 +43,34 @@ def add_commands(sub):
     p.add_argument('--list', action='store_true')
     p = sub.add_parser('presets', help='List curated scene presets or print one prompt')
     p.add_argument('name', nargs='?', choices=tuple(BUILTIN_SCENE_PRESETS))
+    p = sub.add_parser('outfits', help='List Emilia outfit modes or print one outfit prompt')
+    p.add_argument('name', nargs='?', choices=tuple(EMILIA_OUTFIT_MODES))
+    p.add_argument(
+        '--framing',
+        choices=('full_body', 'upper_body', 'portrait'),
+        default='full_body',
+        help='Framing when previewing a single outfit prompt',
+    )
     p = sub.add_parser('gallery', help='List generated PNGs, optionally open one')
     p.add_argument('--limit', type=int, default=10)
     p.add_argument('--open', type=int, metavar='INDEX')
+    p = sub.add_parser('compare', help='Compare two rendered PNGs or receipts side-by-side')
+    p.add_argument('image_a', type=Path, help='First PNG or .run.json receipt')
+    p.add_argument('image_b', type=Path, help='Second PNG or .run.json receipt')
+    p.add_argument('--json', action='store_true', help='Emit machine-readable JSON comparison')
+    p = sub.add_parser('export', help='Export latest or specified render and receipt into a bundle directory')
+    p.add_argument('destination', type=Path, help='Destination folder for exported bundle')
+    p.add_argument('--image', type=Path, default=None, help='Specific PNG or .run.json to export (defaults to latest)')
+    p = sub.add_parser('benchmark', help='Summarize historical render performance or run a 1-seed smoke check')
+    p.add_argument('--limit', type=int, default=10, help='Number of recent runs to summarize')
+    p.add_argument('--run', action='store_true', help='Execute a live quality pipeline render before summarizing')
+    p.add_argument('--seed', type=int, default=20261027, help='Seed for live benchmark run')
+    p.add_argument('--profile', choices=('quality', 'ultra'), default='quality')
+    p = sub.add_parser('clean', help='Clean isolated stage temp folders in temp_dir')
+    p.add_argument('--dry-run', action='store_true', help='List candidate temp folders without deleting')
+    p.add_argument('--older-than-hours', type=float, default=1.0, help='Minimum age in hours before removal (0 for all finished stage dirs)')
     sub.add_parser('shell', help='Interactive command prompt (exit to leave)')
     sub.add_parser('banner', help='Display the EMILIA ASCII banner')
-
 
 def handle(args, config, main, parser):
     cmd = args.command
@@ -43,8 +78,8 @@ def handle(args, config, main, parser):
         print_banner()
         if cmd == 'banner':
             return 0
-        print('Commands: config, doctor, pull, presets, render, idea, inspect, gallery, ledger, setup')
-        print('Example: render --profile ultra --preset rose-garden\nUse help or COMMAND --help. Type exit to leave.')
+        print('Commands: config, doctor, pull, presets, outfits, render, idea, inspect, gallery, compare, export, benchmark, clean, ledger, workflows, setup')
+        print('Example: render --profile ultra --preset rose-garden --outfit royal --angle three-quarter\nUse help or COMMAND --help. Type exit to leave.')
         if not sys.stdin.isatty():
             return 0
         while True:
@@ -108,6 +143,36 @@ def handle(args, config, main, parser):
         else:
             print(render_table(['Preset', 'Scene', 'Seed'], [[k, v['title'], str(v['default_seed'])] for k, v in BUILTIN_SCENE_PRESETS.items()]))
         return 0
+    if cmd == 'outfits':
+        if args.name:
+            from .compiler import OllamaPromptCompiler
+            spec = EMILIA_OUTFIT_MODES[args.name]
+            compiler = OllamaPromptCompiler(config)
+            pos = compiler.build_emilia_ultra_prompt('standing gracefully, gentle smile, looking at viewer', args.framing, outfit=args.name)
+            neg = compiler.build_emilia_ultra_negative(outfit=args.name, framing=args.framing)
+            print(json.dumps({
+                'outfit': args.name,
+                'title': spec['title'],
+                'framing': args.framing,
+                'lora_strength': spec['lora_strength'],
+                'use_skirt_ipa': spec['use_skirt_ipa'],
+                'use_brooch_detailer': spec['use_brooch_detailer'],
+                'positive_prompt': pos,
+                'negative_prompt': neg,
+            }, indent=2, ensure_ascii=False))
+        else:
+            rows = [
+                [
+                    k,
+                    v['title'],
+                    f"{v['lora_strength']:.2f}",
+                    'yes' if v['use_skirt_ipa'] else 'no',
+                    'yes' if v['use_brooch_detailer'] else 'no',
+                ]
+                for k, v in EMILIA_OUTFIT_MODES.items()
+            ]
+            print(render_table(['Outfit', 'Description', 'LoRA', 'Skirt IPA', 'Brooch Detailer'], rows, title='Emilia Outfit Modes'))
+        return 0
     if cmd == 'gallery':
         if args.limit < 1:
             raise ValueError('--limit must be positive')
@@ -121,6 +186,183 @@ def handle(args, config, main, parser):
                 os.startfile(path)
             else:
                 subprocess.run(['open' if sys.platform == 'darwin' else 'xdg-open', path], check=True)
+        return 0
+    if cmd == 'compare':
+        from .inspector import QualityInspector
+
+        def _resolve_target(p: Path) -> tuple[Path, dict | None]:
+            resolved = p.expanduser().resolve()
+            if not resolved.is_file():
+                raise ValueError(f'File not found: {resolved}')
+            if resolved.name.endswith('.run.json') or resolved.suffix.lower() == '.json':
+                rec = json.loads(resolved.read_text(encoding='utf-8'))
+                img_str = rec.get('final') or rec.get('selected_native') or rec.get('native')
+                if not img_str:
+                    raise ValueError(f'Receipt does not reference an image: {resolved}')
+                img_path = Path(img_str)
+                if not img_path.is_file():
+                    raise ValueError(f'Referenced image not found: {img_path}')
+                return img_path, rec
+            rec_candidate = resolved.with_suffix('.run.json')
+            rec = json.loads(rec_candidate.read_text(encoding='utf-8')) if rec_candidate.is_file() else None
+            return resolved, rec
+
+        img_a, rec_a = _resolve_target(args.image_a)
+        img_b, rec_b = _resolve_target(args.image_b)
+        inspector = QualityInspector(app_dir=config.app_dir, python_executable=config.conda_python, use_yolo=False)
+        rep_a = inspector.inspect_image(img_a)
+        rep_b = inspector.inspect_image(img_b)
+        comparison = {
+            'pixel_identical': rep_a.pixel_sha256 == rep_b.pixel_sha256,
+            'image_a': {
+                'path': str(img_a),
+                'dimensions': [rep_a.width, rep_a.height],
+                'pixel_sha256': rep_a.pixel_sha256,
+                'left_eye_hue_deg': rep_a.iris_analysis.get('left_eye_hue_deg'),
+                'right_eye_hue_deg': rep_a.iris_analysis.get('right_eye_hue_deg'),
+                'heterochromia_score': rep_a.iris_analysis.get('heterochromia_score'),
+                'passed': rep_a.passed,
+                'seed': rec_a.get('seed') if rec_a else None,
+                'profile': rec_a.get('profile') if rec_a else None,
+            },
+            'image_b': {
+                'path': str(img_b),
+                'dimensions': [rep_b.width, rep_b.height],
+                'pixel_sha256': rep_b.pixel_sha256,
+                'left_eye_hue_deg': rep_b.iris_analysis.get('left_eye_hue_deg'),
+                'right_eye_hue_deg': rep_b.iris_analysis.get('right_eye_hue_deg'),
+                'heterochromia_score': rep_b.iris_analysis.get('heterochromia_score'),
+                'passed': rep_b.passed,
+                'seed': rec_b.get('seed') if rec_b else None,
+                'profile': rec_b.get('profile') if rec_b else None,
+            },
+        }
+        if args.json:
+            print(json.dumps(comparison, indent=2, ensure_ascii=False))
+        else:
+            rows = [
+                ['Path', str(img_a.name), str(img_b.name)],
+                ['Resolution', f'{rep_a.width}x{rep_a.height}', f'{rep_b.width}x{rep_b.height}'],
+                ['Pixel SHA256', rep_a.pixel_sha256[:16] + '...', rep_b.pixel_sha256[:16] + '...'],
+                ['Exact Match', 'YES' if comparison['pixel_identical'] else 'NO', 'YES' if comparison['pixel_identical'] else 'NO'],
+                ['Seed', str(comparison['image_a']['seed'] or '-'), str(comparison['image_b']['seed'] or '-')],
+                ['Iris Hue (L/R)', f"{comparison['image_a']['left_eye_hue_deg']}° / {comparison['image_a']['right_eye_hue_deg']}°", f"{comparison['image_b']['left_eye_hue_deg']}° / {comparison['image_b']['right_eye_hue_deg']}°"],
+                ['Heterochromia', f"{comparison['image_a']['heterochromia_score']}°", f"{comparison['image_b']['heterochromia_score']}°"],
+                ['Gate Passed', 'PASS' if rep_a.passed else 'FAIL', 'PASS' if rep_b.passed else 'FAIL'],
+            ]
+            print(render_table(['Metric', 'Image A', 'Image B'], rows, title='Emilia Render Comparison'))
+        return 0
+    if cmd == 'export':
+        dest = args.destination.expanduser().resolve()
+        if args.image is not None:
+            candidate = args.image.expanduser().resolve()
+            if not candidate.is_file():
+                raise ValueError(f'Export source not found: {candidate}')
+            if candidate.name.endswith('.run.json'):
+                receipt_file = candidate
+                rec_data = json.loads(receipt_file.read_text(encoding='utf-8'))
+                img_file = Path(rec_data.get('final') or rec_data.get('native') or '')
+            else:
+                img_file = candidate
+                receipt_file = candidate.with_suffix('.run.json')
+        else:
+            pngs = sorted(config.output_dir.rglob('*.png'), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not pngs:
+                raise ValueError(f'No rendered PNGs found in {config.output_dir}')
+            img_file = pngs[0]
+            receipt_file = img_file.with_suffix('.run.json')
+        if not img_file.is_file():
+            raise ValueError(f'Image file not found: {img_file}')
+        dest.mkdir(parents=True, exist_ok=True)
+        copied_files = []
+        dst_img = dest / img_file.name
+        shutil.copy2(img_file, dst_img)
+        copied_files.append(str(dst_img))
+        manifest_summary: dict = {'exported_at': datetime.now(timezone.utc).isoformat(), 'final_image': dst_img.name}
+        if receipt_file.is_file():
+            dst_rec = dest / receipt_file.name
+            shutil.copy2(receipt_file, dst_rec)
+            copied_files.append(str(dst_rec))
+            rec_data = json.loads(receipt_file.read_text(encoding='utf-8'))
+            manifest_summary['seed'] = rec_data.get('seed')
+            manifest_summary['profile'] = rec_data.get('profile')
+            native_src = Path(rec_data.get('native') or '')
+            if native_src.is_file() and native_src.resolve() != img_file.resolve():
+                dst_nat = dest / native_src.name
+                shutil.copy2(native_src, dst_nat)
+                copied_files.append(str(dst_nat))
+                manifest_summary['native_image'] = dst_nat.name
+        with Image.open(img_file) as im:
+            manifest_summary['dimensions'] = list(im.size)
+            if 'prompt' in im.info:
+                (dest / 'workflow.api.json').write_text(im.info['prompt'], encoding='utf-8')
+                copied_files.append(str(dest / 'workflow.api.json'))
+        summary_path = dest / 'export_manifest.json'
+        summary_path.write_text(json.dumps(manifest_summary, indent=2, ensure_ascii=False), encoding='utf-8')
+        copied_files.append(str(summary_path))
+        print(json.dumps({'destination': str(dest), 'files': copied_files}, indent=2, ensure_ascii=False))
+        return 0
+    if cmd == 'benchmark':
+        if args.limit < 1:
+            raise ValueError('--limit must be positive')
+        from .ledger import ExperimentLedger
+        if args.run:
+            import asyncio
+            from .engine import EmiliaRenderEngine
+            engine = EmiliaRenderEngine(config=config)
+            asyncio.run(engine.render_quality_pipeline(seed=args.seed, port=config.quality_port, profile=args.profile, strict_seed_lock=True))
+        ledger = ExperimentLedger(config=config)
+        ledger.ingest_existing_artifacts()
+        stats = ledger.get_summary_stats()
+        recent = ledger.list_recent_runs(limit=args.limit)
+        rows = [
+            [
+                str(r.get('seed') or '-'),
+                str(r.get('mode') or '-'),
+                f"{(r.get('native_seconds') or 0.0):.1f}s",
+                f"{(r.get('finish_seconds') or 0.0):.1f}s",
+                f"{(r.get('total_seconds') or 0.0):.1f}s",
+                str(r.get('quality_action') or 'accept'),
+            ]
+            for r in recent
+        ]
+        print(render_table(['Seed', 'Mode', 'Native', 'Finish', 'Total', 'Gate'], rows, title=f"Benchmark Summary (Total Runs: {stats.get('total_runs', 0)})"))
+        return 0
+    if cmd == 'clean':
+        if args.older_than_hours < 0:
+            raise ValueError('--older-than-hours must be non-negative')
+        temp_root = (config.temp_dir or (config.root_dir / 'temp')).resolve()
+        if not temp_root.is_dir():
+            print(json.dumps({'temp_dir': str(temp_root), 'removed_count': 0, 'freed_bytes': 0}, indent=2))
+            return 0
+        cutoff = time.time() - args.older_than_hours * 3600.0
+        prefixes = ('quality_', 'ultra_')
+        candidates: list[tuple[Path, int]] = []
+        for entry in sorted(temp_root.iterdir()):
+            if not entry.is_dir() or not entry.name.startswith(prefixes):
+                continue
+            try:
+                mtime = entry.stat().st_mtime
+            except OSError:
+                continue
+            if mtime > cutoff:
+                continue
+            size = sum(f.stat().st_size for f in entry.rglob('*') if f.is_file())
+            candidates.append((entry, size))
+        freed = sum(sz for _, sz in candidates)
+        removed = []
+        for folder, _ in candidates:
+            removed.append(str(folder))
+            if not args.dry_run:
+                shutil.rmtree(folder, ignore_errors=True)
+        print(json.dumps({
+            'temp_dir': str(temp_root),
+            'dry_run': bool(args.dry_run),
+            'removed_count': len(removed),
+            'freed_bytes': freed,
+            'freed_human': format_bytes(freed),
+            'folders': removed,
+        }, indent=2))
         return 0
     if cmd in ('doctor', 'pull'):
         manifest = json.loads(config.manifest_path.read_text(encoding='utf-8'))
