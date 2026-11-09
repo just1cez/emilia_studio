@@ -13,6 +13,7 @@ RESOURCE_PATTERNS = (
     "assets/**/*.png",
     "workflows/api/*.json",
     "workflows/visual/*.json",
+    "workflows/WORKFLOW_DECISIONS.txt",
     "patches/*.patch",
     "patches/emilia_runtime_patches/**/*.py",
 )

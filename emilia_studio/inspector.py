@@ -8,6 +8,7 @@ import json
 import shutil
 import subprocess
 import sys
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ def _resolve_default_app_dir() -> Path:
 
 
 _YOLO_MODEL_CACHE: dict[str, Any] = {}
+_YOLO_LOCK = threading.Lock()
 
 
 class InspectionRuntimeError(RuntimeError):
@@ -199,7 +201,9 @@ class QualityInspector:
         self._yolo_load_attempted = True
         return self._face_model is not None and self._hand_model is not None
 
-    def _detect_anatomy_external(self, image: Image.Image) -> tuple[
+    def _detect_anatomy_external(
+        self, image: Image.Image, *, run_pose: bool = True
+    ) -> tuple[
         list[tuple[float, float, float, float]], list[float],
         list[tuple[float, float, float, float]], list[float], str,
     ]:
@@ -216,7 +220,11 @@ class QualityInspector:
         with io.BytesIO() as encoded:
             image.save(encoded, format="PNG")
             try:
-                pose_arg = str(self.pose_model_path.resolve()) if self.pose_model_path.is_file() else ""
+                pose_arg = (
+                    str(self.pose_model_path.resolve())
+                    if (run_pose and self.pose_model_path.is_file())
+                    else ""
+                )
                 result = subprocess.run(
                     [
                         executable, "-u", str(worker),
@@ -250,7 +258,7 @@ class QualityInspector:
             raise InspectionRuntimeError("CPU YOLO worker returned an invalid detection response.") from exc
 
     def detect_anatomy(
-        self, image: Image.Image
+        self, image: Image.Image, *, run_pose: bool = True
     ) -> tuple[
         list[tuple[float, float, float, float]],
         list[float],
@@ -266,47 +274,48 @@ class QualityInspector:
             hand_boxes: list[tuple[float, float, float, float]] = []
             hand_confs: list[float] = []
 
-            if self._face_model is not None:
-                f_res = self._face_model.predict(
-                    rgb, device="cpu", verbose=False, conf=self.face_conf_threshold
-                )[0]
-                for box in f_res.boxes:
-                    coords = box.xyxy[0].tolist()
-                    face_boxes.append(
-                        (float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3]))
-                    )
-                    face_confs.append(float(box.conf[0]))
+            with _YOLO_LOCK:
+                if self._face_model is not None:
+                    f_res = self._face_model.predict(
+                        rgb, device="cpu", verbose=False, conf=self.face_conf_threshold
+                    )[0]
+                    for box in f_res.boxes:
+                        coords = box.xyxy[0].tolist()
+                        face_boxes.append(
+                            (float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3]))
+                        )
+                        face_confs.append(float(box.conf[0]))
 
-            if self._hand_model is not None:
-                h_res = self._hand_model.predict(
-                    rgb, device="cpu", verbose=False, conf=self.hand_conf_threshold
-                )[0]
-                for box in h_res.boxes:
-                    coords = box.xyxy[0].tolist()
-                    hand_boxes.append(
-                        (float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3]))
-                    )
-                    hand_confs.append(float(box.conf[0]))
+                if self._hand_model is not None:
+                    h_res = self._hand_model.predict(
+                        rgb, device="cpu", verbose=False, conf=self.hand_conf_threshold
+                    )[0]
+                    for box in h_res.boxes:
+                        coords = box.xyxy[0].tolist()
+                        hand_boxes.append(
+                            (float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3]))
+                        )
+                        hand_confs.append(float(box.conf[0]))
 
-            if self._pose_model is not None:
-                p_res = self._pose_model.predict(
-                    rgb, device="cpu", verbose=False, conf=0.005
-                )[0]
-                p_boxes = [[float(v) for v in box.xyxy[0].tolist()] for box in p_res.boxes]
-                p_confs = [float(box.conf[0]) for box in p_res.boxes]
-                p_kpts = (
-                    p_res.keypoints.data.tolist()
-                    if p_res.keypoints is not None and len(p_res.boxes) > 0
-                    else []
-                )
-                self._last_pose_detections = (p_boxes, p_confs, p_kpts)
-            else:
-                self._last_pose_detections = ([], [], [])
+                if run_pose and self._pose_model is not None:
+                    p_res = self._pose_model.predict(
+                        rgb, device="cpu", verbose=False, conf=0.005
+                    )[0]
+                    p_boxes = [[float(v) for v in box.xyxy[0].tolist()] for box in p_res.boxes]
+                    p_confs = [float(box.conf[0]) for box in p_res.boxes]
+                    p_kpts = (
+                        p_res.keypoints.data.tolist()
+                        if p_res.keypoints is not None and len(p_res.boxes) > 0
+                        else []
+                    )
+                    self._last_pose_detections = (p_boxes, p_confs, p_kpts)
+                else:
+                    self._last_pose_detections = ([], [], [])
 
             return face_boxes, face_confs, hand_boxes, hand_confs, "yolo_cpu"
 
         if self.use_yolo:
-            return self._detect_anatomy_external(rgb)
+            return self._detect_anatomy_external(rgb, run_pose=run_pose)
 
         # Explicitly disabled detection retains the existing heuristic inspection mode.
         w, h = rgb.size
@@ -320,6 +329,7 @@ class QualityInspector:
         face_bbox: tuple[float, float, float, float] | None = None,
         *,
         rgb_array: np.ndarray | None = None,
+        _detect_if_missing: bool = True,
     ) -> dict[str, Any]:
         """Locate left and right eye regions, isolate saturated iris pixels in HSV, and check for drift."""
         if isinstance(image, (str, Path)):
@@ -332,13 +342,13 @@ class QualityInspector:
         w, h = rgb.size
         detector_source = "provided_bbox"
         if face_bbox is None:
-            f_boxes, _, _, _, detector_source = self.detect_anatomy(rgb)
-            if f_boxes:
-                face_bbox = f_boxes[0]
-            else:
+            if _detect_if_missing:
+                f_boxes, _, _, _, detector_source = self.detect_anatomy(rgb, run_pose=False)
+                if f_boxes:
+                    face_bbox = f_boxes[0]
+            if face_bbox is None:
                 face_bbox = (0.30 * w, 0.08 * h, 0.70 * w, 0.34 * h)
                 detector_source = "fallback_upper_body"
-
         x1, y1, x2, y2 = face_bbox
         fw = max(1.0, x2 - x1)
         fh = max(1.0, y2 - y1)
@@ -639,14 +649,16 @@ class QualityInspector:
                     )
 
                 face_boxes, face_confs, hand_boxes, hand_confs, detector_source = (
-                    self.detect_anatomy(rgb_im)
+                    self.detect_anatomy(rgb_im, run_pose=(framing == "full_body"))
                 )
                 face_count = len(face_boxes)
                 hand_count = len(hand_boxes)
                 multiple_subjects = bool(solo_prompt and face_count > 1)
 
                 primary_face = face_boxes[0] if face_boxes else None
-                iris = self.analyze_iris_color(rgb_im, face_bbox=primary_face, rgb_array=arr)
+                iris = self.analyze_iris_color(
+                    rgb_im, face_bbox=primary_face, rgb_array=arr, _detect_if_missing=False
+                )
                 iris["anatomy_detector_source"] = detector_source
                 try:
                     garment = self.analyze_garment_color(

@@ -186,7 +186,7 @@
       ],
       "widgets_values_named": {
         "seed": 20261027,
-        "control_after_generate": "randomize",
+        "control_after_generate": "fixed",
         "steps": 36,
         "cfg": 5.5,
         "sampler_name": "dpmpp_2m_sde",
@@ -564,7 +564,7 @@
         "emilia/community/quality_pag_native"
       ],
       "widgets_values_named": {
-        "filename_prefix": "emilia/community/pag_scale1"
+        "filename_prefix": "emilia/community/quality_pag_native"
       }
     },
     {
@@ -933,10 +933,10 @@
         "Node name for S&R": "PerturbedAttentionGuidance"
       },
       "widgets_values": [
-        1
+        1.0
       ],
       "widgets_values_named": {
-        "scale": 1
+        "scale": 1.0
       },
       "title": "Community PAG / conservative scale 1.0"
     },

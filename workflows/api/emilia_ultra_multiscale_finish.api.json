@@ -91,7 +91,7 @@
   "17": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "text": "masterpiece, best quality, rezero emilia, emilia \\(re:zero\\), anime face, symmetrical violet eyes, clear glossy purple irises, soft vertical oval pupils, bright white eye highlights, delicate eyelashes, subtle nose and lip shading, natural warm smile, silver-white hair, straight bangs, crown braid, white flower hair ornament, x hair ornament, pointed elf ears, clean delicate lineart, layered anime cel shading",
+      "text": "masterpiece, best quality, rezero emilia, emilia \\(re:zero\\), anime face, symmetrical violet eyes, clear glossy purple outer irises with luminous cyan-blue inner ring around soft vertical oval pupils, bright white eye highlights, delicate eyelashes, subtle nose and lip shading, natural warm smile, silver-white hair, straight bangs, crown braid, white flower hair ornament, x hair ornament, pointed elf ears, clean delicate lineart, layered anime cel shading",
       "clip": [
         "10",
         1
@@ -104,7 +104,7 @@
   "18": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "text": "worst quality, low quality, blurry face, concentric iris rings, ringed eyes, spiral eyes, target eyes, multiple pupils, asymmetrical eyes, crossed eyes, red eyes, blue eyes, pink eyes, heterochromia, dot mouth, flat shading, distorted face, deformed mouth, realistic, photo, 3d, text, watermark",
+      "text": "worst quality, low quality, blurry face, spiral eyes, target eyes, multiple pupils, asymmetrical eyes, crossed eyes, red eyes, solid blue eyes, pink eyes, heterochromia, dot mouth, flat shading, distorted face, deformed mouth, realistic, photo, 3d, text, watermark, signature, copyright",
       "clip": [
         "10",
         1

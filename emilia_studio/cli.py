@@ -431,12 +431,26 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "workflows":
             builder = EmiliaWorkflowBuilder(config=config)
             audit = builder.audit_workflow_directory()
-            summary = {
+            summary: dict[str, object] = {
                 "canonical_api_count": len(audit["canonical_workflows"]),
                 "experiment_report_count": len(audit["experiment_reports"]),
                 "historical_count": len(audit["historical_workflows"]),
                 "canonical_workflows": sorted(audit["canonical_workflows"]),
             }
+            if getattr(args, "sync_visual", False) and config.visual_workflows_dir.is_dir():
+                visual_pairs = [
+                    (builder.build_highres_native(seed=20261027, pag=False), "Emilia_08_HighRes_Quality_Base_8GB.json"),
+                    (builder.build_highres_finish("emilia_quality_selected_native.png", seed=20261027, pag=False), "Emilia_09_Quality_Finish_2x.json"),
+                    (builder.build_highres_native(seed=20261027, pag=True), "Emilia_10_Community_PAG_Quality_8GB.json"),
+                ]
+                synced_visuals: list[str] = []
+                for api_g, vis_name in visual_pairs:
+                    v_path = config.visual_workflows_dir / vis_name
+                    if v_path.is_file():
+                        synced_doc = builder.sync_visual_workflow(api_g, v_path)
+                        v_path.write_text(json.dumps(synced_doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                        synced_visuals.append(vis_name)
+                summary["synced_visual_workflows"] = synced_visuals
             print(json.dumps(summary, indent=2))
             return 0
 
@@ -489,11 +503,15 @@ def main(argv: list[str] | None = None) -> int:
                     api_dst_dir.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(decisions_src, api_dst_dir / "WORKFLOW_DECISIONS.txt")
                     synced_files.append("emilia/WORKFLOW_DECISIONS.txt")
-                test_src = config.root_dir / "tests" / "test_emilia_studio.py"
-                test_dst = config.app_dir / "tests-unit" / "comfy_test" / "test_emilia_studio.py"
-                if test_src.is_file() and test_dst.parent.is_dir():
-                    shutil.copy2(test_src, test_dst)
-                    synced_files.append("tests-unit/comfy_test/test_emilia_studio.py")
+                test_dst_dir = config.app_dir / "tests-unit" / "comfy_test"
+                if test_dst_dir.is_dir():
+                    for tf in [
+                        config.root_dir / "tests" / "test_emilia_studio.py",
+                        *sorted((config.root_dir / "tests" / "comfy_core").glob("test_*.py")),
+                    ]:
+                        if tf.is_file():
+                            shutil.copy2(tf, test_dst_dir / tf.name)
+                            synced_files.append(f"tests-unit/comfy_test/{tf.name}")
             missing: list[str] = []
             verified_models: list[dict[str, object]] = []
             for item in manifest.get("models", []) + manifest.get("reference_assets", []):

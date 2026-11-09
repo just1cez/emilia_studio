@@ -61,3 +61,44 @@ def test_outfit_mask_softens_internal_edges():
         assert float(mask[0, y - 1, x - 1]) == 0
     finally:
         sys.path.pop(0)
+
+
+def test_eye_repair_upscale_false_prunes_realesrgan_nodes_and_sync_visual_skips_links():
+    cfg = load_config()
+    builder = EmiliaWorkflowBuilder(cfg)
+    full_repair = builder.build_eye_repair('in.png', seed=100, upscale=True)
+    fast_repair = builder.build_eye_repair('in.png', seed=100, upscale=False)
+    for nid in ('13', '14', '15', '16'):
+        assert nid in full_repair
+        assert nid not in fast_repair
+    assert '22' in fast_repair
+
+    vis_path = cfg.visual_workflows_dir / 'Emilia_08_HighRes_Quality_Base_8GB.json'
+    api_pag = builder.build_highres_native(seed=20261027, pag=True)
+    synced = builder.sync_visual_workflow(api_pag, vis_path)
+    nodes_by_id = {str(n['id']): n for n in synced['nodes']}
+    assert nodes_by_id['3']['widgets_values'][1] == 'fixed'
+
+
+def test_inspector_zero_face_does_not_run_duplicate_detect_anatomy(tmp_path, monkeypatch):
+    from PIL import Image
+    from emilia_studio.inspector import QualityInspector
+
+    img_path = tmp_path / 'blank_face.png'
+    im = Image.new('RGB', (1152, 1728), (120, 130, 140))
+    im.putpixel((10, 10), (250, 250, 250))
+    im.putpixel((20, 20), (10, 10, 10))
+    im.save(img_path)
+
+    inspector = QualityInspector(use_yolo=False)
+    call_count = {'n': 0}
+
+    def fake_detect(image, *, run_pose=True):
+        call_count['n'] += 1
+        return [], [], [], [], 'yolo_cpu'
+
+    monkeypatch.setattr(inspector, 'detect_anatomy', fake_detect)
+    rep = inspector.inspect_image(img_path, stage='native', framing='portrait')
+    assert rep.face_count == 0
+    assert rep.recommended_action == 'reject_seed'
+    assert call_count['n'] == 1

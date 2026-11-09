@@ -259,3 +259,17 @@ Standalone executable smoke: seed `20261027`, quality profile, launched outside 
 3. **Same-Stage Process Reuse Batch Pipeline (`emilia_studio/engine.py::render_batch_pipeline`, `emilia batch`)**:
    - Executes $N$ Stage 1 native renders sequentially in a single isolated Stage 1 ComfyUI process, runs CPU quality/pose inspection, terminates Stage 1 to release all VRAM/commit memory, and executes all accepted Stage 2 finish renders in a single isolated Stage 2 ComfyUI process.
    - Verified with a 2-seed `2304x3456` batch (`03_finished_2x_00010_.png` and `03_finished_2x_00011_.png`, wall time `441.4s`; second image finished in `120.6s` native + `55.0s` finish).
+
+## Phase 13 Top-10 Audit Optimizations & Visual Fidelity Verification (2026-11-09)
+
+1. **Torso/Peplum Spatial Mask Narrowing & Coattail Disambiguation (`emilia_studio/workflows.py`, `emilia_studio/config.py`)**:
+   - Narrowed `full_body` `node 201`/`202` in `build_ultra_native` from `0.58W x 0.53H (x=0.21W, y=0.28H..0.81H)` to `0.42W x 0.34H (x=0.29W, y=0.25H..0.59H)` and separated `plain white split dress coattails with thin purple border trim and pale lavender lining` from `pointed purple sleeve cuffs bearing yellow hawk emblem`.
+2. **First-Chunk Unweighted Watermark Suppression & Dual-Tone Iris Prompting (`emilia_studio/config.py`)**:
+   - Placed unweighted `text, watermark, signature, copyright, copyright name, logo, artist name, english text` in the first 77-token chunk of `DEFAULT_ULTRA_NEGATIVE_PROMPT` (avoiding parenthesized `:1.3` negative weights, which caused green color-cast instability under `RescaleCFG(0.75)`).
+   - Removed `"concentric iris rings, ringed eyes"` from ultra negative prompts and prompted `"clear glossy purple outer irises with luminous cyan-blue inner ring around soft vertical oval pupils"`.
+   - Live verification on `03_finished_2x_00015_.png` (`seed 20261027`, `165.7s` native / `86.5s` finish, final SHA256 `71f1e7deaea0c2f5e475e3e79886e8979d85ba7c8ef31405f6a2247787412e62`): eliminated the duplicated gold hawk emblems on the lower skirt coattails, eliminated the bottom-right `©ENTLELS...` watermark, and rendered luminous violet-and-cyan irises (`heterochromia_score=2.66 deg`).
+3. **Runtime, Inspector, Ledger, Visual Sync & CI Hardening**:
+   - `build_eye_repair(upscale=False)` prunes nodes `13..16` during Stage-1.5 eye repair (measured `22.1s` execution).
+   - `QualityInspector` skips duplicate `detect_anatomy` on 0-face images, skips `yolov8n-pose.pt` when `framing != "full_body"`, and guards YOLO inference with `_YOLO_LOCK`.
+   - `ExperimentLedger.ingest_existing_artifacts` recursively scans `output/emilia/**/*.run.json` with `WAL` journal mode.
+   - `sync_visual_workflow` skips link-list inputs; `emilia workflows --sync-visual` syncs GUI templates; `emilia_runtime_patches` verifies live source signatures; `tests/conftest.py` enables root `pytest tests/` across all 10 test modules (150 tests).

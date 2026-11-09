@@ -187,6 +187,18 @@
         "Preserves Emilia's facial identity and hair ornaments via paired Face IPAdapter (0.28) in Stage 1 and LoRA (0.28) in Stage 2 FaceDetailer."
       ],
       "decision": "Verified complete elimination of royal dress bleed on non-canonical outfits."
+    },
+    {
+      "image": "app/output/emilia/ultra/03_finished_2x_00015_.png",
+      "variant": "top-10 visual optimization verification seed 20261027 — preset=rose-garden, narrowed 0.42W x 0.34H torso mask, first-chunk watermark suppression, cyan-blue inner iris ring",
+      "final_sha256": "71f1e7deaea0c2f5e475e3e79886e8979d85ba7c8ef31405f6a2247787412e62",
+      "observed": [
+        "Eliminated duplicate purple/gold hawk emblems on the lower skirt coattails: only the two bell-sleeve cuffs have gold hawk emblems, while the lower split coattails are clean white with lavender lining and purple trim.",
+        "Eliminated the bottom-right copyright/watermark text present in 03_finished_2x_00013_.png.",
+        "Restored luminous cyan-blue inner pupil ring inside violet irises (left_eye_hue=263.88 deg, right_eye_hue=266.54 deg, heterochromia_score=2.66 deg).",
+        "Complete standing full-body from head to white high-heel ankle boots (face_height_ratio=0.0993, max_ankle_confidence=0.6576, hip_y_ratio=0.5059, ankle_y_ratio=0.8080)."
+      ],
+      "decision": "Accepted as new default ultra canonical configuration."
     }
   ]
 }

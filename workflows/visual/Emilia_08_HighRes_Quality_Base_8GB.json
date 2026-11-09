@@ -186,7 +186,7 @@
       ],
       "widgets_values_named": {
         "seed": 20261027,
-        "control_after_generate": "randomize",
+        "control_after_generate": "fixed",
         "steps": 36,
         "cfg": 5.5,
         "sampler_name": "dpmpp_2m_sde",

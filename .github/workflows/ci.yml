@@ -30,4 +30,4 @@ jobs:
 
       - name: Run Emilia Studio standalone unit tests
         run: |
-          python -m pytest tests/test_emilia_studio.py -k "not sqlite_ledger and not real_seed"
+          python -m pytest tests/

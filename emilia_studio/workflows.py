@@ -137,6 +137,9 @@ class EmiliaWorkflowBuilder:
             "steps": steps,
             "guide_size": guide_size
         })
+        if not upscale:
+            for node_id in ("13", "14", "15", "16"):
+                graph.pop(node_id, None)
         return graph
 
     def build_lora_native(
@@ -390,8 +393,8 @@ class EmiliaWorkflowBuilder:
                 "class_type": "SolidMask",
                 "inputs": {
                     "value": 1.0,
-                    "width": round(base_width * (0.70 if framing == "upper_body" else 0.58)),
-                    "height": round(base_height * (0.48 if framing == "upper_body" else 0.53)),
+                    "width": round(base_width * (0.60 if framing == "upper_body" else 0.42)),
+                    "height": round(base_height * (0.44 if framing == "upper_body" else 0.34)),
                 },
             }
             graph["202"] = {
@@ -399,8 +402,8 @@ class EmiliaWorkflowBuilder:
                 "inputs": {
                     "destination": ["200", 0],
                     "source": ["203", 0],
-                    "x": round(base_width * (0.15 if framing == "upper_body" else 0.21)),
-                    "y": round(base_height * (0.45 if framing == "upper_body" else 0.28)),
+                    "x": round(base_width * (0.20 if framing == "upper_body" else 0.29)),
+                    "y": round(base_height * (0.45 if framing == "upper_body" else 0.25)),
                     "operation": "add",
                 },
             }
@@ -760,7 +763,7 @@ class EmiliaWorkflowBuilder:
                 wvn = node.get("widgets_values_named")
                 if wvn is not None:
                     for key in wvn:
-                        if key in inputs:
+                        if key in inputs and not isinstance(inputs[key], list):
                             wvn[key] = inputs[key]
                     node["widgets_values"] = list(wvn.values())
         return visual

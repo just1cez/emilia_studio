@@ -230,53 +230,80 @@ def _patched_load_latent_is_changed(s, latent):
     return m.digest().hex()
 
 
+def _safe_getsource(obj: Any) -> str:
+    try:
+        return inspect.getsource(obj)
+    except Exception:
+        return ""
+
+
 def apply_all_patches() -> dict[str, bool]:
     """
-    Applies performance optimization patches idempotently.
-    Ensures optimizations are present and marked with _emilia_patched.
+    Applies performance optimization patches idempotently and verifies source signatures.
     Returns status of each patch.
     """
     results: dict[str, bool] = {}
 
     # 1. VAE Decode/Encode Destination Buffers (in-place processing)
-    comfy.sd.VAE._emilia_patched_vae = True
-    results["vae_memory_management"] = True
+    vae_src = _safe_getsource(getattr(comfy.sd.VAE, "decode", None))
+    vae_patched = (not vae_src) or ("pixel_samples[x:x+batch_number].copy_(out)" in vae_src)
+    if vae_patched:
+        comfy.sd.VAE._emilia_patched_vae = True
+    results["vae_memory_management"] = vae_patched
 
     # 2. Feather Mask Caching & In-Place Tile Accumulation in tiled_scale_multidim + Lanczos
-    if "ps_view.mul_(mask_view)" not in inspect.getsource(comfy.utils.tiled_scale_multidim):
+    ts_src = _safe_getsource(comfy.utils.tiled_scale_multidim)
+    if ts_src and "ps_view.mul_(mask_view)" not in ts_src:
         comfy.utils.tiled_scale_multidim = _patched_tiled_scale_multidim
     comfy.utils.tiled_scale_multidim._emilia_patched = True
 
-    if "np.clip(arr, 0, 255, out=arr)" not in inspect.getsource(comfy.utils.lanczos):
+    lz_src = _safe_getsource(comfy.utils.lanczos)
+    if lz_src and "np.clip(arr, 0, 255, out=arr)" not in lz_src:
         comfy.utils.lanczos = _patched_lanczos
     comfy.utils.lanczos._emilia_patched = True
     results["utils_mask_caching"] = True
 
     # 3. SaveImage in-place clip & LoadLatent/LoadImage chunked hash
-    if "while chunk :=" not in inspect.getsource(nodes.LoadImage.IS_CHANGED):
+    li_src = _safe_getsource(getattr(nodes.LoadImage, "IS_CHANGED", None))
+    if li_src and "while chunk :=" not in li_src:
         nodes.LoadImage.IS_CHANGED = _patched_load_image_is_changed
-    if "while chunk :=" not in inspect.getsource(nodes.LoadLatent.IS_CHANGED):
+    ll_src = _safe_getsource(getattr(nodes.LoadLatent, "IS_CHANGED", None))
+    if ll_src and "while chunk :=" not in ll_src:
         nodes.LoadLatent.IS_CHANGED = _patched_load_latent_is_changed
-    nodes.SaveImage._emilia_patched = True
+    si_src = _safe_getsource(getattr(nodes.SaveImage, "save_images", None))
+    save_patched = (not si_src) or ("np.clip(i, 0, 255, out=i)" in si_src)
+    if save_patched:
+        nodes.SaveImage._emilia_patched = True
     nodes.LoadLatent._emilia_patched = True
     nodes.LoadImage._emilia_patched = True
-    results["nodes_io_optimizations"] = True
+    results["nodes_io_optimizations"] = save_patched
 
     # 4. ImageUpscaleWithModel in-place clamp & per-tile GPU transfer
     try:
-        from comfy_extras import nodes_upscale_model
-
-        nodes_upscale_model.ImageUpscaleWithModel._emilia_patched = True
-        results["upscale_model_in_place_clamp"] = True
+        upscale_cls = getattr(nodes, "NODE_CLASS_MAPPINGS", {}).get("ImageUpscaleWithModel")
+        if upscale_cls is None:
+            from comfy_extras import nodes_upscale_model
+            upscale_cls = nodes_upscale_model.ImageUpscaleWithModel
+        up_src = _safe_getsource(getattr(upscale_cls, "execute", None))
+        up_patched = (not up_src) or ("s.clamp_(min=0, max=1.0)" in up_src)
+        if up_patched:
+            upscale_cls._emilia_patched = True
+        results["upscale_model_in_place_clamp"] = up_patched
     except Exception:
         results["upscale_model_in_place_clamp"] = False
 
     # 5. CrossAttentionPatch batch-1 copy removal & per-step sigma scalar cache
     cap_mod = _resolve_cross_attention_patch_module()
     if cap_mod is not None:
-        cap_mod.ipadapter_attention._emilia_patched = True
-        cap_mod.Attn2Replace._emilia_patched = True
-        results["ipadapter_attention_copy_removal"] = True
+        ipa_src = _safe_getsource(getattr(cap_mod, "ipadapter_attention", None))
+        attn_src = _safe_getsource(getattr(getattr(cap_mod, "Attn2Replace", None), "__call__", None))
+        ipa_patched = ((not ipa_src) or ("if batch_prompt != 1:" in ipa_src)) and (
+            (not attn_src) or ("_emilia_sigma_val" in attn_src)
+        )
+        if ipa_patched:
+            cap_mod.ipadapter_attention._emilia_patched = True
+            cap_mod.Attn2Replace._emilia_patched = True
+        results["ipadapter_attention_copy_removal"] = ipa_patched
     else:
         results["ipadapter_attention_copy_removal"] = False
 
@@ -284,25 +311,41 @@ def apply_all_patches() -> dict[str, bool]:
 
 
 def verify_patches() -> dict[str, bool]:
-    """Verifies patches are active."""
+    """Verifies patches are genuinely active by checking both markers and source signatures."""
     cap_mod = _resolve_cross_attention_patch_module()
-    ipadapter_ok = bool(
-        cap_mod is not None
-        and getattr(cap_mod.ipadapter_attention, "_emilia_patched", False)
-    )
+    ipadapter_ok = False
+    if cap_mod is not None and getattr(cap_mod.ipadapter_attention, "_emilia_patched", False):
+        ipa_src = _safe_getsource(getattr(cap_mod, "ipadapter_attention", None))
+        attn_src = _safe_getsource(getattr(getattr(cap_mod, "Attn2Replace", None), "__call__", None))
+        ipadapter_ok = ((not ipa_src) or ("if batch_prompt != 1:" in ipa_src)) and (
+            (not attn_src) or ("_emilia_sigma_val" in attn_src)
+        )
     upscale_ok = False
     try:
-        from comfy_extras import nodes_upscale_model
-
-        upscale_ok = hasattr(nodes_upscale_model.ImageUpscaleWithModel, "_emilia_patched")
+        upscale_cls = getattr(nodes, "NODE_CLASS_MAPPINGS", {}).get("ImageUpscaleWithModel")
+        if upscale_cls is None:
+            from comfy_extras import nodes_upscale_model
+            upscale_cls = nodes_upscale_model.ImageUpscaleWithModel
+        if hasattr(upscale_cls, "_emilia_patched"):
+            up_src = _safe_getsource(getattr(upscale_cls, "execute", None))
+            upscale_ok = (not up_src) or ("s.clamp_(min=0, max=1.0)" in up_src)
     except Exception:
         pass
 
+    vae_src = _safe_getsource(getattr(comfy.sd.VAE, "decode", None))
+    vae_ok = hasattr(comfy.sd.VAE, "_emilia_patched_vae") and (
+        (not vae_src) or ("pixel_samples[x:x+batch_number].copy_(out)" in vae_src)
+    )
+    si_src = _safe_getsource(getattr(nodes.SaveImage, "save_images", None))
+    nodes_ok = hasattr(nodes.SaveImage, "_emilia_patched") and (
+        (not si_src) or ("np.clip(i, 0, 255, out=i)" in si_src)
+    )
+
     return {
-        "vae_memory_management": hasattr(comfy.sd.VAE, "_emilia_patched_vae"),
+        "vae_memory_management": vae_ok,
         "utils_mask_caching": hasattr(comfy.utils.tiled_scale_multidim, "_emilia_patched")
         and hasattr(comfy.utils.lanczos, "_emilia_patched"),
-        "nodes_io_optimizations": hasattr(nodes.SaveImage, "_emilia_patched"),
+        "nodes_io_optimizations": nodes_ok,
         "upscale_model_in_place_clamp": upscale_ok,
         "ipadapter_attention_copy_removal": ipadapter_ok,
     }

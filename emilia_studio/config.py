@@ -77,15 +77,15 @@ DEFAULT_HAND_DETAILER_NEGATIVE_PROMPT: str = (
 ULTRA_EMILIA_OUTFIT_CANONICAL: str = (
     r"emilia_rezero, rezero emilia, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, "
     "official character design, anime key visual, silver-white hair, very long hair, straight bangs, "
-    "crown braid, symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, "
+    "crown braid, symmetrical violet eyes with cyan-blue inner pupil ring, clear round purple irises, natural eye highlights, pointed elf ears, "
     "white rose hair ornament, x hair ornament, purple hair ribbon, "
     "detached white high collar with scalloped purple trim, green diamond crystal pendant at throat, bare shoulders, "
     "white sweetheart bustier cups with purple frilled trim, "
     "white corset waist panel with six vertical purple dash markings, "
     "three-tiered white petal-scalloped peplum overskirt with lavender edges, "
     "white box-pleated miniskirt with thin purple stripe near hem, "
-    "long split white dress coattails on both sides, "
-    "detached wide white juliet bell sleeves with purple frilled upper cuffs and long purple sleeve tails with yellow hawk-bird emblem, "
+    "plain white split dress coattails with thin purple border trim and pale lavender lining, "
+    "detached wide white juliet bell sleeves with purple frilled upper cuffs and pointed purple sleeve cuffs bearing yellow hawk emblem, "
     "zettai ryouiki, bare thighs, white thighhigh stockings with purple zig-zag V-shaped cuffs, "
     "white high-heel ankle boots with purple V-cuffs"
 )
@@ -113,6 +113,7 @@ DEFAULT_ULTRA_POSITIVE_PROMPT: str = (
 
 DEFAULT_ULTRA_NEGATIVE_PROMPT: str = (
     "worst quality, low quality, lowres, unfinished, sketch, blurry, overexposed, neon greens, oversaturated, "
+    "text, watermark, signature, copyright, copyright name, logo, artist name, english text, "
     "flat lighting, harsh contrast, blown-out highlights, anime screencap, flat background, simple background, "
     "white background, glowing outline, halo around body, "
     "bad anatomy, bad proportions, long torso, long legs, warped legs, bowed legs, knock-kneed, "
@@ -121,13 +122,14 @@ DEFAULT_ULTRA_NEGATIVE_PROMPT: str = (
     "bad hands, malformed hands, fused fingers, extra fingers, missing fingers, "
     "hood, hooded cloak, white cloak, fur hood, cape hood, purple bodysuit, bodysuit, "
     "solid purple corset, dark purple apron, floor-length gown, wedding dress, "
+    "emblem on skirt, emblem on coattails, four purple tails, "
     "round gold button, double brooch, background character, distant person, crowd, multiple girls, "
-    "asymmetrical eyes, crossed eyes, concentric iris rings, ringed eyes, spiral eyes, "
-    "red eyes, blue eyes, pink eyes, heterochromia, cropped head, text, watermark, signature, photo, realistic, 3d, nsfw"
+    "asymmetrical eyes, crossed eyes, spiral eyes, target eyes, multiple pupils, "
+    "red eyes, solid blue eyes, pink eyes, heterochromia, cropped head, photo, realistic, 3d, nsfw"
 )
 DEFAULT_ULTRA_FACE_POSITIVE_PROMPT: str = (
     r"masterpiece, best quality, rezero emilia, emilia \(re:zero\), anime face, "
-    "symmetrical violet eyes, clear glossy purple irises, soft vertical oval pupils, "
+    "symmetrical violet eyes, clear glossy purple outer irises with luminous cyan-blue inner ring around soft vertical oval pupils, "
     "bright white eye highlights, delicate eyelashes, subtle nose and lip shading, "
     "natural warm smile, silver-white hair, straight bangs, crown braid, "
     "white flower hair ornament, x hair ornament, pointed elf ears, "
@@ -135,10 +137,10 @@ DEFAULT_ULTRA_FACE_POSITIVE_PROMPT: str = (
 )
 
 DEFAULT_ULTRA_FACE_NEGATIVE_PROMPT: str = (
-    "worst quality, low quality, blurry face, concentric iris rings, ringed eyes, "
+    "worst quality, low quality, blurry face, "
     "spiral eyes, target eyes, multiple pupils, asymmetrical eyes, crossed eyes, "
-    "red eyes, blue eyes, pink eyes, heterochromia, dot mouth, flat shading, "
-    "distorted face, deformed mouth, realistic, photo, 3d, text, watermark"
+    "red eyes, solid blue eyes, pink eyes, heterochromia, dot mouth, flat shading, "
+    "distorted face, deformed mouth, realistic, photo, 3d, text, watermark, signature, copyright"
 )
 
 DEFAULT_ULTRA_HAND_POSITIVE_PROMPT: str = (

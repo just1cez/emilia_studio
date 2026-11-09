@@ -31,11 +31,14 @@ class ExperimentLedger:
     )
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
 
     def _init_db(self) -> None:
         with closing(self._connect()) as conn, conn:
-            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS runs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,6 +68,7 @@ class ExperimentLedger:
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_seed ON runs(seed)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_round ON runs(round_num)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_mode ON runs(mode)")
 
     def _normalize_row(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         row = {k: kwargs.get(k) for k in self._RUN_COLS}
@@ -72,6 +76,11 @@ class ExperimentLedger:
             row["timestamp"] = datetime.now(timezone.utc).isoformat()
         if isinstance(row["eye_drift_detected"], bool):
             row["eye_drift_detected"] = 1 if row["eye_drift_detected"] else 0
+        for k, v in row.items():
+            if isinstance(v, dict):
+                row[k] = v.get("path") or v.get("image") or json.dumps(v, ensure_ascii=False)
+            elif isinstance(v, (list, tuple)):
+                row[k] = json.dumps(v, ensure_ascii=False)
         return row
 
     def record_run(self, **kwargs: Any) -> int:
@@ -116,26 +125,43 @@ class ExperimentLedger:
             now_iso = datetime.now(timezone.utc).isoformat()
             total_matched = 0
 
-            # 1. Scan output/emilia/quality/*.run.json
-            quality_dir = app_path / "output" / "emilia" / "quality"
-            if quality_dir.is_dir():
-                for run_file in quality_dir.glob("*.run.json"):
+            # 1. Scan all output/emilia/**/*.run.json receipts (quality, ultra, etc.)
+            out_base = (self.config.output_dir if (app_dir is None and self.config.output_dir) else (app_path / "output"))
+            emilia_out_dir = out_base / "emilia"
+            if emilia_out_dir.is_dir():
+                for run_file in sorted(emilia_out_dir.rglob("*.run.json")):
                     resolved_str = str(run_file.resolve())
                     if resolved_str in existing_paths:
                         total_matched += 1
                         continue
                     try:
                         data = json.loads(run_file.read_text(encoding="utf-8"))
-                        gen = data.get("generation", {})
-                        fin = data.get("finishing", {})
-                        n_sec = gen.get("seconds", 0.0)
-                        f_sec = fin.get("seconds", 0.0)
-                        qi_native = data.get("quality_inspection", {}).get("native", {})
-                        qi_final = data.get("quality_inspection", {}).get("final", {})
+                        gen = data.get("generation") or {}
+                        fin = data.get("finishing") or {}
+                        qi = data.get("quality_inspection") or {}
+                        qi_native = qi.get("native") or {}
+                        qi_final = qi.get("final") or {}
+                        eye_rep = qi.get("eye_repair") or data.get("eye_repair") or {}
+                        n_sec = float(gen.get("seconds") or 0.0)
+                        f_sec = float(fin.get("seconds") or 0.0)
+                        r_sec = float(eye_rep.get("seconds") or 0.0) if isinstance(eye_rep, dict) else 0.0
+                        profile = str(data.get("profile") or "quality")
+                        sel_settings = data.get("selected_settings") or {}
+                        is_pag = bool(sel_settings.get("pag")) or ("PAG" in str(data.get("guidance") or ""))
+                        mode = f"{profile}_pag" if is_pag and not profile.endswith("_pag") else profile
+                        try:
+                            file_ts = datetime.fromtimestamp(run_file.stat().st_mtime, tz=timezone.utc).isoformat()
+                        except OSError:
+                            file_ts = now_iso
+                        action = (
+                            "reject_seed"
+                            if data.get("status") == "quality_rejected"
+                            else (qi_final.get("recommended_action") or qi_native.get("recommended_action") or "accept")
+                        )
                         row = self._normalize_row({
-                            "timestamp": now_iso,
+                            "timestamp": data.get("timestamp") or file_ts,
                             "seed": data.get("seed"),
-                            "mode": "quality",
+                            "mode": mode,
                             "guidance": data.get("guidance", "baseline"),
                             "prompt_idea": data.get("user_idea"),
                             "native_path": data.get("native"),
@@ -144,12 +170,12 @@ class ExperimentLedger:
                             "final_sha256": qi_final.get("pixel_sha256"),
                             "native_seconds": n_sec,
                             "finish_seconds": f_sec,
-                            "total_seconds": n_sec + f_sec,
+                            "total_seconds": n_sec + f_sec + r_sec,
                             "face_count": qi_native.get("face_count"),
                             "hand_count": qi_native.get("hand_count"),
                             "heterochromia_score": qi_native.get("heterochromia_score"),
                             "eye_drift_detected": qi_native.get("eye_drift_detected"),
-                            "quality_action": qi_native.get("recommended_action"),
+                            "quality_action": action,
                             "receipt_path": resolved_str,
                         })
                         pending_rows.append(tuple(row[c] for c in self._RUN_COLS))

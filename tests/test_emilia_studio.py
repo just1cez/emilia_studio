@@ -202,6 +202,9 @@ def test_compiler_prompt_cleaning_and_routing() -> None:
 
 
 def test_sqlite_ledger_ingestion_and_round_comparison(tmp_path: Path) -> None:
+    cfg = load_config()
+    if not (cfg.app_dir / "temp" / "architecture_iterations").is_dir():
+        pytest.skip("Local architecture_iterations benchmark artifacts not present in standalone CI")
     db_file = tmp_path / "test_ledger.sqlite3"
     ledger = ExperimentLedger(db_path=db_file)
     ingested = ledger.ingest_existing_artifacts()
@@ -217,9 +220,13 @@ def test_sqlite_ledger_ingestion_and_round_comparison(tmp_path: Path) -> None:
 
 def test_real_seed_20261030_multi_subject_rejection() -> None:
     cfg = load_config()
-    inspector = QualityInspector(app_dir=cfg.app_dir, use_yolo=True)
     defect_img = cfg.app_dir / "output" / "emilia" / "quality" / "01_base_00011_.png"
     good_img = cfg.app_dir / "output" / "emilia" / "quality" / "01_base_00001_.png"
+    seated_img = cfg.app_dir / "output" / "emilia" / "experiments_20261109" / "garden_single_lanczos_final_00001_.png"
+    standing_img = cfg.app_dir / "output" / "emilia" / "ultra" / "03_finished_2x_00008_.png"
+    if not any(p.is_file() for p in (defect_img, good_img, seated_img, standing_img)):
+        pytest.skip("Local rendered output fixtures not present in standalone CI")
+    inspector = QualityInspector(app_dir=cfg.app_dir, use_yolo=True)
     if defect_img.is_file():
         rep_bad = inspector.inspect_image(defect_img, stage="native")
         assert rep_bad.face_count == 2
@@ -232,10 +239,6 @@ def test_real_seed_20261030_multi_subject_rejection() -> None:
         assert rep_good.multiple_subjects is False
         assert rep_good.recommended_action == "accept"
         assert rep_good.passed is True
-
-
-    seated_img = cfg.app_dir / "output" / "emilia" / "experiments_20261109" / "garden_single_lanczos_final_00001_.png"
-    standing_img = cfg.app_dir / "output" / "emilia" / "ultra" / "03_finished_2x_00008_.png"
     if seated_img.is_file() and standing_img.is_file():
         rep_seated = inspector.inspect_image(seated_img, stage="final", framing="full_body", require_full_body_pose=True)
         assert rep_seated.pose_analysis["full_body_complete"] is False

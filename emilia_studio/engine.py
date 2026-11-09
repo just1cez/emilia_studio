@@ -160,7 +160,7 @@ class EmiliaRenderEngine:
         log_dir: Path | None = None,
         extra_pnginfo: dict[str, Any] | None = None,
     ) -> StageResult:
-        if stage in ("finish", "eye_repair"):
+        if stage.startswith(("finish", "eye_repair")):
             raw_img = str(graph["1"]["inputs"]["image"])
             if not (raw_img.endswith("[output]") or raw_img.endswith("[input]") or raw_img.endswith("[temp]")):
                 selected = Path(raw_img)
@@ -281,107 +281,16 @@ class EmiliaRenderEngine:
         extra_pnginfo: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run a single stage in an isolated ComfyUI child process and exit cleanly."""
-        assert self.config.app_dir is not None
-        base = f"http://127.0.0.1:{port}"
-        with socket.socket() as sock:
-            if sock.connect_ex(("127.0.0.1", port)) == 0:
-                raise RuntimeError(
-                    f"Port {port} is occupied; existing ComfyUI was not stopped."
-                )
-        home = run_dir / stage
-        (home / "user").mkdir(parents=True, exist_ok=True)
-        stage_temp = (home / "temp").resolve()
-        stage_temp.mkdir(parents=True, exist_ok=True)
-        output_dir = (self.config.output_dir or self.config.app_dir / "output").resolve()
-        output_dir.mkdir(parents=True, exist_ok=True)
-        python_exe = self._python_executable()
-        command = [
-            python_exe,
-            "-u",
-            str((self.config.app_dir / "main.py").resolve()),
-            "--listen",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--reserve-vram",
-            "0.8",
-            "--fp32-vae",
-            "--disable-pinned-memory",
-            "--preview-method",
-            "none",
-            "--disable-api-nodes",
-            "--disable-auto-launch",
-            "--user-directory",
-            str((home / "user").resolve()),
-            "--temp-directory",
-            str(stage_temp),
-            "--output-directory",
-            str(output_dir),
-            "--database-url",
-            "sqlite:///:memory:",
-            "--log-stdout",
-        ]
-        environment = os.environ.copy()
-        environment.update(
-            HF_HUB_OFFLINE="1",
-            TRANSFORMERS_OFFLINE="1",
-            HF_HUB_DISABLE_TELEMETRY="1",
-            DO_NOT_TRACK="1",
-        )
-        with (home / "server.log").open("w", encoding="utf-8") as log:
-            process = subprocess.Popen(
-                command,
-                cwd=self.config.app_dir,
-                env=environment,
-                stdout=log,
-                stderr=subprocess.STDOUT,
+        async with self._stage_server_session(stage, run_dir, port) as (session, base, home):
+            stage_res = await self._execute_graph_on_session(
+                session=session,
+                base_url=base,
+                graph=graph,
+                stage=stage,
+                log_dir=home,
+                extra_pnginfo=extra_pnginfo,
             )
-            self._active_temp_dir = stage_temp
-            try:
-                async with aiohttp.ClientSession(
-                    timeout=aiohttp.ClientTimeout(total=60),
-                    trust_env=False,
-                ) as session:
-                    deadline = time.monotonic() + 300
-                    while True:
-                        if process.poll() is not None:
-                            raise RuntimeError(
-                                f'{stage} server exited; see {home / "server.log"}'
-                            )
-                        try:
-                            async with session.get(
-                                base + "/system_stats",
-                                timeout=aiohttp.ClientTimeout(total=3),
-                            ) as response:
-                                if response.status == 200:
-                                    break
-                        except (aiohttp.ClientError, TimeoutError):
-                            pass
-                        if time.monotonic() >= deadline:
-                            raise TimeoutError(
-                                f'{stage} server did not start; see {home / "server.log"}'
-                            )
-                        await asyncio.sleep(0.1)
-
-                    stage_res = await self._execute_graph_on_session(
-                        session=session,
-                        base_url=base,
-                        graph=graph,
-                        stage=stage,
-                        log_dir=home,
-                        extra_pnginfo=extra_pnginfo,
-                    )
-                    return stage_res.to_dict()
-            finally:
-                self._active_temp_dir = None
-                if process.poll() is None:
-                    process.terminate()
-                    try:
-                        await asyncio.to_thread(process.wait, timeout=30)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        await asyncio.to_thread(process.wait, timeout=10)
-
+            return stage_res.to_dict()
 
     @asynccontextmanager
     async def _stage_server_session(self, stage: str, run_dir: Path, port: int):
@@ -642,13 +551,19 @@ class EmiliaRenderEngine:
         if not strict_seed_lock and native_report.recommended_action == "repair_eyes":
             if not auto_eye_repair:
                 reject("Eye repair is required but automatic eye repair is disabled.")
-            repair_graph = self.builder.build_eye_repair(image_path=str(selected), seed=current_seed + 9)
+            repair_graph = self.builder.build_eye_repair(
+                image_path=str(selected), seed=current_seed + 9, upscale=False
+            )
             if is_ultra:
-                repair_graph['4']['inputs']['ckpt_name'] = native_graph['4']['inputs']['ckpt_name']
+                repair_graph["4"]["inputs"]["ckpt_name"] = native_graph["4"]["inputs"]["ckpt_name"]
                 finish_lora_strength = float(finish_options.get("lora_strength", native_graph["10"]["inputs"]["strength_model"]))
                 repair_graph["10"]["inputs"]["lora_name"] = finish_options.get("lora_name", native_graph["10"]["inputs"]["lora_name"])
                 repair_graph["10"]["inputs"]["strength_model"] = max(0.25, finish_lora_strength)
                 repair_graph["10"]["inputs"]["strength_clip"] = max(0.25, finish_lora_strength)
+                repair_graph["17"]["inputs"]["text"] = self.config.ultra_face_positive_prompt
+                repair_graph["18"]["inputs"]["text"] = self.config.ultra_face_negative_prompt
+                repair_graph["21"]["inputs"]["feather"] = 12
+                repair_graph["21"]["inputs"]["noise_mask_feather"] = 0
             eye_repair_result = await self.render_stage_isolated(repair_graph, "eye_repair", run_dir, port)
             selected = _output_path(output_dir, eye_repair_result["outputs"]["22"]["images"][0])
             repaired_report = self.inspector.inspect_image(
@@ -818,7 +733,7 @@ class EmiliaRenderEngine:
                 async with self._stage_server_session("batch_eye_repair", run_dir, port) as (session, base, home):
                     for idx, item in enumerate(repair_candidates):
                         repair_graph = self.builder.build_eye_repair(
-                            image_path=str(item["selected"]), seed=item["seed"] + 9
+                            image_path=str(item["selected"]), seed=item["seed"] + 9, upscale=False
                         )
                         if is_ultra:
                             repair_graph["4"]["inputs"]["ckpt_name"] = item["native_graph"]["4"]["inputs"]["ckpt_name"]
@@ -830,6 +745,10 @@ class EmiliaRenderEngine:
                             )
                             repair_graph["10"]["inputs"]["strength_model"] = max(0.25, finish_lora_strength)
                             repair_graph["10"]["inputs"]["strength_clip"] = max(0.25, finish_lora_strength)
+                            repair_graph["17"]["inputs"]["text"] = self.config.ultra_face_positive_prompt
+                            repair_graph["18"]["inputs"]["text"] = self.config.ultra_face_negative_prompt
+                            repair_graph["21"]["inputs"]["feather"] = 12
+                            repair_graph["21"]["inputs"]["noise_mask_feather"] = 0
                         stage_res = await self._execute_graph_on_session(
                             session=session,
                             base_url=base,
@@ -911,11 +830,20 @@ class EmiliaRenderEngine:
                 "generation": item["generation"],
                 "finishing": item["finishing"],
                 "eye_repair": item["eye_repair_result"],
+                "selected_settings": {
+                    "pag": pag,
+                    "ipadapter_weight": eff_ipa_weight,
+                    "strict_seed_lock": strict_seed_lock,
+                    "auto_eye_repair": auto_eye_repair,
+                    "max_seed_retries": max_seed_retries,
+                    "native_options": native_options,
+                    "finish_options": finish_options,
+                },
                 "quality_inspection": {
                     "native": nat_rep.to_dict(),
                     "eye_repair": item["eye_repair_result"],
-                    "repaired": rep_rep.to_dict() if rep_rep is not None else None,
-                    "final": fin_rep.to_dict() if fin_rep is not None else None,
+                    "repaired": rep_rep.to_dict() if rep_rep is not None else {},
+                    "final": fin_rep.to_dict() if fin_rep is not None else {},
                 },
                 "attempts": item["attempts"],
                 "logs": str(run_dir),
@@ -934,7 +862,7 @@ class EmiliaRenderEngine:
             repair_seconds = float(item["eye_repair_result"]["seconds"]) if item["eye_repair_result"] is not None else 0.0
             self.ledger.record_run(
                 seed=item["seed"],
-                mode="quality",
+                mode=(f"{profile}_pag" if pag else profile),
                 guidance=receipt["guidance"],
                 prompt_idea=user_idea,
                 positive_prompt=positive_prompt or (self.config.ultra_positive_prompt if is_ultra else self.config.base_positive_prompt),
