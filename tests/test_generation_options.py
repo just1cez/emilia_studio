@@ -35,10 +35,11 @@ def test_invalid_generation_settings_rejected_before_execution(options):
         EmiliaWorkflowBuilder(load_config()).build_ultra_native(**options)
 
 def test_outfit_mask_softens_internal_edges():
+    import importlib.util
     import sys
     cfg = load_config()
-    if not (cfg.app_dir / 'comfy_extras' / 'nodes_mask.py').is_file():
-        pytest.skip('ComfyUI runtime unavailable')
+    if not (cfg.app_dir / 'comfy_extras' / 'nodes_mask.py').is_file() or importlib.util.find_spec('torch') is None:
+        pytest.skip('ComfyUI runtime or torch unavailable')
     sys.path.insert(0, str(cfg.app_dir))
     try:
         from comfy_extras.nodes_mask import SolidMask, FeatherMask, MaskComposite
