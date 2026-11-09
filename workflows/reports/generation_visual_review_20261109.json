@@ -148,6 +148,45 @@
         "Warm bedroom window lighting and bare lower legs; Emilia outfit LoRA at 0.15 still retains the six-dash corset panel on the upper dress."
       ],
       "decision": "Verified creative interpretation; documented LoRA outfit retention."
+    },
+    {
+      "image": "app/output/emilia/ultra/03_finished_2x_00010_.png",
+      "variant": "batch stage-reuse seed 20261113 — outfit=nightgown (lora_strength_base=0.0, lora_strength_finish=0.28, paired face IPA=0.28)",
+      "final_sha256": "e19941f763e8a507738c58773bdcd64fbf3dce829d17bb0954a5a8d201d0a842",
+      "observed": [
+        "At Stage 1 LoRA=0.0 without alternate_costume tag, Illustrious-XL still recalled Emilia's six-dash corset from the character tag alone."
+      ],
+      "decision": "Intermediate diagnostic; motivated alternate_costume + negative official_costume suppression."
+    },
+    {
+      "image": "app/output/emilia/ultra/03_finished_2x_00011_.png",
+      "variant": "batch stage-reuse seed 20261114 — outfit=nightgown (lora_strength_base=0.0, lora_strength_finish=0.28, paired face IPA=0.28)",
+      "final_sha256": "a98be5bc1dd54f403f9029e4badd2d6fd77adade4301914f0b404c06a9efd891",
+      "observed": [
+        "Eliminated the six vertical purple dash markings on the bodice: renders a soft white/lavender morning dress with a purple ribbon bow under the bust and green crystal pendant at the throat.",
+        "Second image in the same-stage batch completed Stage 1 in 120.6s and Stage 2 in 55.0s without restarting ComfyUI."
+      ],
+      "decision": "Verified corset-bleed removal and same-stage batch process reuse."
+    },
+    {
+      "image": "app/output/emilia/ultra/03_finished_2x_00013_.png",
+      "variant": "pose auto-gate verification seed 20261027 — preset=rose-garden, full_body",
+      "final_sha256": "8107a1dd62de258e17f39e5ace3bdcfd60a32768e78bb14c8002760360d17aa9",
+      "observed": [
+        "Complete standing full-body from head to white high-heel ankle boots on stone garden path surrounded by white roses (face_height_ratio=0.1451, max_ankle_confidence=0.7275, hip_y_ratio=0.5211, ankle_y_ratio=0.8119).",
+        "CPU yolov8n-pose gate verified full-body standing completeness before Stage 2."
+      ],
+      "decision": "Verified standing full-body pose gate."
+    },
+    {
+      "image": "app/output/emilia/ultra/03_finished_2x_00014_.png",
+      "variant": "alternate-costume verification seed 20261111 — outfit=frozen-bond (alternate costume, lora_strength_base=0.0, lora_strength_finish=0.28)",
+      "final_sha256": "665b8f73dca66ea039c6c83a95367fa36e7854ddeba4a82d0ca99c56b0e34481",
+      "observed": [
+        "Completely eliminated the six-dash royal corset, juliet sleeves, and hawk coattails: renders a pure white one-piece forest sundress with a lavender ribbon sash at the waist, green emerald pendant, silver hair, violet eyes, and white ankle boots standing on ice.",
+        "Preserves Emilia's facial identity and hair ornaments via paired Face IPAdapter (0.28) in Stage 1 and LoRA (0.28) in Stage 2 FaceDetailer."
+      ],
+      "decision": "Verified complete elimination of royal dress bleed on non-canonical outfits."
     }
   ]
 }

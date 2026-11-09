@@ -292,3 +292,75 @@ def test_ultra_options_reach_real_builders_and_receipt(pipeline):
     assert calls[1][1] == engine.builder.build_ultra_finish(image_path=receipt["native"], seed=123, **finish_options)
     assert receipt["selected_settings"]["native_options"] == native_options
     assert receipt["selected_settings"]["finish_options"] == finish_options
+
+
+def test_pose_completeness_rejects_seated_full_body_and_accepts_standing(tmp_path):
+    inspector = QualityInspector(use_yolo=False)
+    path = tmp_path / "pose_test.png"
+    _fixture_image(path, (1152, 1728), "accept")
+
+    # Simulate a seated/cropped pose detection: low ankle confidence (0.12) and low pelvis (hip_y=1200/1728=0.694)
+    seated_kpts = [[576.0, 200.0, 0.99]] * 11 + [
+        [600.0, 1200.0, 0.95], [500.0, 1200.0, 0.95],
+        [600.0, 1500.0, 0.60], [500.0, 1500.0, 0.60],
+        [600.0, 1600.0, 0.12], [500.0, 1600.0, 0.10],
+    ]
+    pose_info_bad = inspector.analyze_pose_completeness(
+        Image.new("RGB", (1152, 1728)),
+        [(380.0, 120.0, 760.0, 440.0)],  # fh = 320 -> fh_ratio = 0.1852 > 0.165
+        framing="full_body",
+        detector_source="yolo_cpu",
+    )
+    assert pose_info_bad["full_body_complete"] is False
+    assert any("face_height_ratio" in r for r in pose_info_bad["reasons"])
+
+    # Simulate a clean standing full-body pose
+    standing_kpts = [[576.0, 200.0, 0.99]] * 11 + [
+        [620.0, 800.0, 0.98], [520.0, 800.0, 0.98],
+        [620.0, 1150.0, 0.95], [520.0, 1150.0, 0.95],
+        [620.0, 1500.0, 0.85], [520.0, 1500.0, 0.85],
+    ]
+    inspector._last_pose_detections = ([[200.0, 80.0, 900.0, 1620.0]], [0.90], [standing_kpts])
+    pose_info_ok = inspector.analyze_pose_completeness(
+        Image.new("RGB", (1152, 1728)),
+        [(450.0, 120.0, 680.0, 320.0)],  # fh = 200 -> fh_ratio = 0.1157 <= 0.165
+        framing="full_body",
+        detector_source="yolo_cpu",
+    )
+    assert pose_info_ok["full_body_complete"] is True
+    assert pose_info_ok["standing_pose"] is True
+    assert pose_info_ok["reasons"] == []
+
+
+def test_batch_pipeline_reuses_same_stage_sessions_and_isolates_stages(tmp_path, monkeypatch):
+    config = replace(load_config(), app_dir=tmp_path / "app", output_dir=tmp_path / "output", temp_dir=tmp_path / "temp")
+    config.output_dir.mkdir()
+    ledger = ExperimentLedger(tmp_path / "ledger.sqlite3", config)
+    engine = EmiliaRenderEngine(config=config, inspector=QualityInspector(use_yolo=False), ledger=ledger)
+    sessions_opened: list[str] = []
+    executed_stages: list[str] = []
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def fake_stage_session(stage: str, run_dir: Path, port: int):
+        sessions_opened.append(stage)
+        yield "fake_session", f"http://127.0.0.1:{port}", run_dir / stage
+
+    async def fake_exec(session, base_url, graph, stage, log_dir=None, extra_pnginfo=None):
+        executed_stages.append(stage)
+        filename = f"{stage}_{len(executed_stages)}.png"
+        size = (2304, 3456) if stage == "finish" else (1152, 1728)
+        _fixture_image(config.output_dir / filename, size, "accept")
+        node_id = "16" if stage == "finish" else "9"
+        from emilia_studio.engine import StageResult
+        return StageResult(stage=stage, prompt_id="pid", seconds=1.0, outputs={node_id: {"images": [{"filename": filename}]}}, submitted_graph=graph)
+
+    monkeypatch.setattr(engine, "_stage_server_session", fake_stage_session)
+    monkeypatch.setattr(engine, "_execute_graph_on_session", fake_exec)
+
+    receipts = asyncio.run(engine.render_batch_pipeline(seeds=[1001, 1002, 1003], profile="ultra"))
+    assert len(receipts) == 3
+    assert sessions_opened == ["batch_native", "batch_finish"]
+    assert executed_stages == ["native_1", "native_2", "native_3", "finish", "finish", "finish"]
+    assert engine.ledger.get_summary_stats()["total_runs"] == 3

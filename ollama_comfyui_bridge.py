@@ -311,17 +311,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1)
         spec_outfit = EMILIA_OUTFIT_MODES[args.outfit]
+        eff_ipa = (
+            max(spec.recommended_ipadapter_weight, float(spec_outfit.get("ipadapter_weight", 0.18)))
+            if is_ultra
+            else spec.recommended_ipadapter_weight
+        )
         native_opts = (
             {
                 "framing": spec.framing,
                 "camera_angle": args.angle,
-                "lora_strength_base": spec_outfit["lora_strength"],
+                "reference_mode": spec_outfit.get("reference_mode", "single"),
+                "lora_strength_base": spec_outfit.get("lora_strength_base", spec_outfit["lora_strength"]),
                 "skirt_ipadapter_weight": 0.45 if spec_outfit["use_skirt_ipa"] else 0.0,
             }
             if is_ultra
             else None
         )
-        finish_opts = {"lora_strength": spec_outfit["lora_strength"]} if is_ultra else None
+        finish_opts = {"lora_strength": spec_outfit.get("lora_strength_finish", spec_outfit["lora_strength"])} if is_ultra else None
         engine = EmiliaRenderEngine(CONFIG)
         receipt = asyncio.run(
             engine.render_quality_pipeline(
@@ -331,7 +337,7 @@ def main(argv: list[str] | None = None) -> int:
                 profile=args.mode,
                 positive_prompt=spec.positive_prompt,
                 negative_prompt=spec.negative_prompt,
-                ipadapter_weight=spec.recommended_ipadapter_weight,
+                ipadapter_weight=eff_ipa,
                 user_idea=idea,
                 strict_seed_lock=not args.auto_gate,
                 auto_eye_repair=args.auto_gate,

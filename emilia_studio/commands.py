@@ -78,7 +78,7 @@ def handle(args, config, main, parser):
         print_banner()
         if cmd == 'banner':
             return 0
-        print('Commands: config, doctor, pull, presets, outfits, render, idea, inspect, gallery, compare, export, benchmark, clean, ledger, workflows, setup')
+        print('Commands: config, doctor, pull, presets, outfits, render, batch, idea, inspect, gallery, compare, export, benchmark, clean, ledger, workflows, setup')
         print('Example: render --profile ultra --preset rose-garden --outfit royal --angle three-quarter\nUse help or COMMAND --help. Type exit to leave.')
         if not sys.stdin.isatty():
             return 0
@@ -155,6 +155,9 @@ def handle(args, config, main, parser):
                 'title': spec['title'],
                 'framing': args.framing,
                 'lora_strength': spec['lora_strength'],
+                'lora_strength_base': spec.get('lora_strength_base', spec['lora_strength']),
+                'lora_strength_finish': spec.get('lora_strength_finish', spec['lora_strength']),
+                'reference_mode': spec.get('reference_mode', 'single'),
                 'use_skirt_ipa': spec['use_skirt_ipa'],
                 'use_brooch_detailer': spec['use_brooch_detailer'],
                 'positive_prompt': pos,
@@ -165,13 +168,13 @@ def handle(args, config, main, parser):
                 [
                     k,
                     v['title'],
-                    f"{v['lora_strength']:.2f}",
+                    f"{v.get('lora_strength_base', v['lora_strength']):.2f} -> {v.get('lora_strength_finish', v['lora_strength']):.2f}",
                     'yes' if v['use_skirt_ipa'] else 'no',
                     'yes' if v['use_brooch_detailer'] else 'no',
                 ]
                 for k, v in EMILIA_OUTFIT_MODES.items()
             ]
-            print(render_table(['Outfit', 'Description', 'LoRA', 'Skirt IPA', 'Brooch Detailer'], rows, title='Emilia Outfit Modes'))
+            print(render_table(['Outfit', 'Description', 'LoRA (Base->Finish)', 'Skirt IPA', 'Brooch Detailer'], rows, title='Emilia Outfit Modes'))
         return 0
     if cmd == 'gallery':
         if args.limit < 1:

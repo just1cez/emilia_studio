@@ -219,8 +219,10 @@ class OllamaPromptCompiler:
         if framing == 'portrait':
             identity = ', '.join(tag.strip() for tag in identity.split(',') if not any(word in tag for word in ('skirt', 'stockings', 'boots', 'thighs', 'zettai', 'coattails')))
         framing_lead = ULTRA_FRAMING_LEADS[framing]
-        if outfit == 'nightgown' and framing == 'full_body':
-            framing_lead = 'full body, entire figure visible, generous headroom, natural proportions'
+        if outfit == "nightgown" and framing == "full_body":
+            framing_lead = "full body, entire figure visible, generous headroom, natural proportions"
+        elif outfit not in ("royal", "sanctuary") and framing == "upper_body":
+            framing_lead = "upper body, cowboy shot, generous headroom above head, entire head, waist, and upper dress visible in frame"
         subject = '1girl, solo' if companion == 'none' else '1girl, one human girl with one small cat spirit companion'
         return deduplicate_tags(
             f"masterpiece, best quality, absurdres, {subject}, {framing_lead}, "

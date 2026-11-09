@@ -233,6 +233,16 @@ def test_real_seed_20261030_multi_subject_rejection() -> None:
         assert rep_good.recommended_action == "accept"
         assert rep_good.passed is True
 
+
+    seated_img = cfg.app_dir / "output" / "emilia" / "experiments_20261109" / "garden_single_lanczos_final_00001_.png"
+    standing_img = cfg.app_dir / "output" / "emilia" / "ultra" / "03_finished_2x_00008_.png"
+    if seated_img.is_file() and standing_img.is_file():
+        rep_seated = inspector.inspect_image(seated_img, stage="final", framing="full_body", require_full_body_pose=True)
+        assert rep_seated.pose_analysis["full_body_complete"] is False
+        assert rep_seated.recommended_action == "reject_seed"
+        rep_standing = inspector.inspect_image(standing_img, stage="final", framing="full_body", require_full_body_pose=True)
+        assert rep_standing.pose_analysis["full_body_complete"] is True
+        assert rep_standing.recommended_action == "accept"
 def test_setup_manifest_verification() -> None:
     cfg = load_config()
     if not (cfg.app_dir / "models" / "checkpoints" / "Illustrious-XL-v0.1.safetensors").is_file():

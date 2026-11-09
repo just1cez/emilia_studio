@@ -57,6 +57,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_render.add_argument('--magic', choices=tuple(EMILIA_MAGIC_TAGS), default=None, help='Ice magic effect (ultra profile)')
     p_render.add_argument("--auto-gate", action="store_true", help="Enable automatic seed retry and eye-repair gate")
     p_render.add_argument("--max-retries", type=int, default=2, help="Max seed retries when auto-gate rejects anatomy")
+    p_batch = sub.add_parser(
+        "batch",
+        help="Render multiple seeds using same-stage process reuse while keeping Stage 1 and Stage 2 isolated.",
+    )
+    p_batch.add_argument("--seeds", type=int, nargs="*", default=None, help="Explicit list of seeds")
+    p_batch.add_argument("--seed", type=int, default=20261027, help="Starting seed when --count is used")
+    p_batch.add_argument("--count", type=int, default=2, help="Number of seeds to generate when --seeds is omitted")
+    p_batch.add_argument("--port", type=int, default=None, help="Override configured rendering port")
+    p_batch.add_argument("--pag", action="store_true", help="Enable PerturbedAttentionGuidance (scale 1.0)")
+    p_batch.add_argument("--profile", choices=("ultra", "quality"), default="ultra")
+    p_batch.add_argument("--prompt", type=str, default=None, help="Custom positive English prompt")
+    p_batch.add_argument("--preset", choices=tuple(BUILTIN_SCENE_PRESETS))
+    p_batch.add_argument("--outfit", choices=tuple(EMILIA_OUTFIT_MODES), default=None, help="Emilia outfit mode (ultra profile)")
+    p_batch.add_argument("--angle", choices=tuple(EMILIA_ANGLE_SPECS), default=None, help="Camera angle & pose reference routing (ultra profile)")
+    p_batch.add_argument("--puck", action="store_true", help="Include Puck fairy cat companion (ultra profile)")
+    p_batch.add_argument("--magic", choices=tuple(EMILIA_MAGIC_TAGS), default=None, help="Ice magic effect (ultra profile)")
+    p_batch.add_argument("--auto-gate", action="store_true", help="Enable automatic seed retry, full-body pose gate, and eye-repair gate")
+    p_batch.add_argument("--max-retries", type=int, default=2, help="Max seed retries when auto-gate rejects anatomy")
     p_idea = sub.add_parser(
         "idea",
         help="Compile a Chinese idea with Ollama and render via HighRes Quality or Fast LoRA.",
@@ -79,10 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_idea.add_argument("--auto-gate", action="store_true", help="Enable automatic eye-repair and anatomy gate")
     p_inspect = sub.add_parser(
         "inspect",
-        help="Inspect an existing PNG for violet iris consistency, heterochromia, and face/hand counts.",
+        help="Inspect an existing PNG for violet iris consistency, heterochromia, full-body pose, and face/hand counts.",
     )
     p_inspect.add_argument("image", type=Path, help="Path to PNG image")
     p_inspect.add_argument("--stage", choices=("native", "final"), default=None)
+    p_inspect.add_argument("--framing", choices=("full_body", "upper_body", "portrait"), default="full_body")
+    p_inspect.add_argument("--require-full-body-pose", action="store_true", help="Fail gate if full-body standing/ankle completeness is not met")
 
     # 4. ledger: ingest, stats, list, compare rounds
     p_ledger = sub.add_parser(
@@ -186,15 +206,18 @@ def main(argv: list[str] | None = None) -> int:
                     angle=angle,
                 )
                 neg_prompt = compiler.build_emilia_ultra_negative(outfit=outfit, framing=framing)
+            ipa_weight_override: float | None = None
             if args.profile == "ultra" and (has_creative_flags or args.preset):
                 spec_outfit = EMILIA_OUTFIT_MODES[outfit]
+                ipa_weight_override = float(spec_outfit.get("ipadapter_weight", 0.18))
                 native_opts = {
                     "framing": framing,
                     "camera_angle": angle,
-                    "lora_strength_base": spec_outfit["lora_strength"],
+                    "reference_mode": spec_outfit.get("reference_mode", "single"),
+                    "lora_strength_base": spec_outfit.get("lora_strength_base", spec_outfit["lora_strength"]),
                     "skirt_ipadapter_weight": 0.45 if spec_outfit["use_skirt_ipa"] else 0.0,
                 }
-                finish_opts = {"lora_strength": spec_outfit["lora_strength"]}
+                finish_opts = {"lora_strength": spec_outfit.get("lora_strength_finish", spec_outfit["lora_strength"])}
             engine = EmiliaRenderEngine(config=config)
             asyncio.run(
                 engine.render_quality_pipeline(
@@ -204,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
                     profile=args.profile,
                     positive_prompt=args.prompt,
                     negative_prompt=neg_prompt,
+                    ipadapter_weight=ipa_weight_override,
                     strict_seed_lock=not args.auto_gate,
                     auto_eye_repair=args.auto_gate,
                     max_seed_retries=args.max_retries if args.auto_gate else 0,
@@ -211,6 +235,112 @@ def main(argv: list[str] | None = None) -> int:
                     finish_options=finish_opts,
                 )
             )
+            return 0
+        if args.command == "batch":
+            if args.seeds:
+                seeds = [int(s) for s in args.seeds]
+            else:
+                if args.count < 1:
+                    raise ValueError("--count must be positive")
+                seeds = [int(args.seed) + i for i in range(args.count)]
+            has_creative_flags = any([
+                args.outfit is not None,
+                args.angle is not None,
+                args.puck,
+                args.magic is not None,
+            ])
+            if has_creative_flags and args.profile != "ultra":
+                raise ValueError("Creative flags (--outfit, --angle, --puck, --magic) require --profile ultra")
+            outfit = args.outfit or "royal"
+            angle = args.angle or "auto"
+            companion = "puck" if args.puck else "none"
+            magic = args.magic or "none"
+            framing = "full_body"
+            neg_prompt = None
+            native_opts = None
+            finish_opts = None
+            ipa_weight_override = None
+            if args.preset:
+                if args.prompt:
+                    raise ValueError("Use --preset or --prompt, not both")
+                preset = BUILTIN_SCENE_PRESETS[args.preset]
+                framing = preset["framing"]
+                compiler = OllamaPromptCompiler(config)
+                args.prompt = compiler.build_emilia_ultra_prompt(
+                    preset["tags"],
+                    framing,
+                    outfit=outfit,
+                    companion=companion,
+                    magic=magic,
+                    angle=angle,
+                )
+                if args.profile == "ultra":
+                    neg_prompt = compiler.build_emilia_ultra_negative(outfit=outfit, framing=framing)
+            elif has_creative_flags and args.prompt is None:
+                preset = BUILTIN_SCENE_PRESETS["rose-garden"]
+                framing = preset["framing"]
+                compiler = OllamaPromptCompiler(config)
+                args.prompt = compiler.build_emilia_ultra_prompt(
+                    preset["tags"],
+                    framing,
+                    outfit=outfit,
+                    companion=companion,
+                    magic=magic,
+                    angle=angle,
+                )
+                neg_prompt = compiler.build_emilia_ultra_negative(outfit=outfit, framing=framing)
+            elif has_creative_flags and args.prompt is not None:
+                compiler = OllamaPromptCompiler(config)
+                args.prompt = compiler.build_emilia_ultra_prompt(
+                    args.prompt,
+                    framing,
+                    outfit=outfit,
+                    companion=companion,
+                    magic=magic,
+                    angle=angle,
+                )
+                neg_prompt = compiler.build_emilia_ultra_negative(outfit=outfit, framing=framing)
+            if args.profile == "ultra" and (has_creative_flags or args.preset):
+                spec_outfit = EMILIA_OUTFIT_MODES[outfit]
+                ipa_weight_override = float(spec_outfit.get("ipadapter_weight", 0.18))
+                native_opts = {
+                    "framing": framing,
+                    "camera_angle": angle,
+                    "reference_mode": spec_outfit.get("reference_mode", "single"),
+                    "lora_strength_base": spec_outfit.get("lora_strength_base", spec_outfit["lora_strength"]),
+                    "skirt_ipadapter_weight": 0.45 if spec_outfit["use_skirt_ipa"] else 0.0,
+                }
+                finish_opts = {"lora_strength": spec_outfit.get("lora_strength_finish", spec_outfit["lora_strength"])}
+            engine = EmiliaRenderEngine(config=config)
+            receipts = asyncio.run(
+                engine.render_batch_pipeline(
+                    seeds=seeds,
+                    port=args.port if args.port is not None else config.quality_port,
+                    pag=args.pag,
+                    profile=args.profile,
+                    positive_prompt=args.prompt,
+                    negative_prompt=neg_prompt,
+                    ipadapter_weight=ipa_weight_override,
+                    strict_seed_lock=not args.auto_gate,
+                    auto_eye_repair=args.auto_gate,
+                    max_seed_retries=args.max_retries if args.auto_gate else 0,
+                    native_options=native_opts,
+                    finish_options=finish_opts,
+                )
+            )
+            from .tui import render_table
+            rows = [
+                [
+                    str(r["requested_seed"]),
+                    str(r["seed"]),
+                    r["status"],
+                    f"{float(r['generation'].get('seconds', 0.0)):.1f}s",
+                    f"{float(r['finishing'].get('seconds', 0.0)):.1f}s",
+                    str(r["final"] or r["selected_native"]),
+                ]
+                for r in receipts
+            ]
+            print(render_table(["Req Seed", "Used Seed", "Status", "Native", "Finish", "Output"], rows, title="Emilia Batch Render Summary"))
             return 0
 
         if args.command == "idea":
@@ -235,17 +365,23 @@ def main(argv: list[str] | None = None) -> int:
             )
             seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1)
             spec_outfit = EMILIA_OUTFIT_MODES[args.outfit]
+            eff_ipa = (
+                max(spec.recommended_ipadapter_weight, float(spec_outfit.get("ipadapter_weight", 0.18)))
+                if is_ultra
+                else spec.recommended_ipadapter_weight
+            )
             native_opts = (
                 {
                     "framing": spec.framing,
                     "camera_angle": args.angle,
-                    "lora_strength_base": spec_outfit["lora_strength"],
+                    "reference_mode": spec_outfit.get("reference_mode", "single"),
+                    "lora_strength_base": spec_outfit.get("lora_strength_base", spec_outfit["lora_strength"]),
                     "skirt_ipadapter_weight": 0.45 if spec_outfit["use_skirt_ipa"] else 0.0,
                 }
                 if is_ultra
                 else None
             )
-            finish_opts = {"lora_strength": spec_outfit["lora_strength"]} if is_ultra else None
+            finish_opts = {"lora_strength": spec_outfit.get("lora_strength_finish", spec_outfit["lora_strength"])} if is_ultra else None
             engine = EmiliaRenderEngine(config=config)
             asyncio.run(
                 engine.render_quality_pipeline(
@@ -255,7 +391,7 @@ def main(argv: list[str] | None = None) -> int:
                     profile=args.profile,
                     positive_prompt=spec.positive_prompt,
                     negative_prompt=spec.negative_prompt,
-                    ipadapter_weight=spec.recommended_ipadapter_weight,
+                    ipadapter_weight=eff_ipa,
                     user_idea=idea_text,
                     strict_seed_lock=not args.auto_gate,
                     auto_eye_repair=args.auto_gate,
@@ -268,7 +404,12 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "inspect":
             inspector = QualityInspector(app_dir=config.app_dir, python_executable=config.conda_python)
-            report = inspector.inspect_image(args.image, stage=args.stage)
+            report = inspector.inspect_image(
+                args.image,
+                stage=args.stage,
+                framing=args.framing,
+                require_full_body_pose=args.require_full_body_pose,
+            )
             print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
             return 0 if report.passed else 2
 

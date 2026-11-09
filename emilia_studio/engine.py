@@ -7,6 +7,7 @@ import json
 import os
 import socket
 import subprocess
+from contextlib import asynccontextmanager
 import sys
 import time
 import uuid
@@ -381,6 +382,101 @@ class EmiliaRenderEngine:
                         process.kill()
                         await asyncio.to_thread(process.wait, timeout=10)
 
+
+    @asynccontextmanager
+    async def _stage_server_session(self, stage: str, run_dir: Path, port: int):
+        """Context manager launching a single isolated ComfyUI server for a batch of same-stage graphs."""
+        assert self.config.app_dir is not None
+        base = f"http://127.0.0.1:{port}"
+        with socket.socket() as sock:
+            if sock.connect_ex(("127.0.0.1", port)) == 0:
+                raise RuntimeError(
+                    f"Port {port} is occupied; existing ComfyUI was not stopped."
+                )
+        home = run_dir / stage
+        (home / "user").mkdir(parents=True, exist_ok=True)
+        stage_temp = (home / "temp").resolve()
+        stage_temp.mkdir(parents=True, exist_ok=True)
+        output_dir = (self.config.output_dir or self.config.app_dir / "output").resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        python_exe = self._python_executable()
+        command = [
+            python_exe,
+            "-u",
+            str((self.config.app_dir / "main.py").resolve()),
+            "--listen",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--reserve-vram",
+            "0.8",
+            "--fp32-vae",
+            "--disable-pinned-memory",
+            "--preview-method",
+            "none",
+            "--disable-api-nodes",
+            "--disable-auto-launch",
+            "--user-directory",
+            str((home / "user").resolve()),
+            "--temp-directory",
+            str(stage_temp),
+            "--output-directory",
+            str(output_dir),
+            "--database-url",
+            "sqlite:///:memory:",
+            "--log-stdout",
+        ]
+        environment = os.environ.copy()
+        environment.update(
+            HF_HUB_OFFLINE="1",
+            TRANSFORMERS_OFFLINE="1",
+            HF_HUB_DISABLE_TELEMETRY="1",
+            DO_NOT_TRACK="1",
+        )
+        with (home / "server.log").open("w", encoding="utf-8") as log:
+            process = subprocess.Popen(
+                command,
+                cwd=self.config.app_dir,
+                env=environment,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+            )
+            self._active_temp_dir = stage_temp
+            try:
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=60),
+                    trust_env=False,
+                ) as session:
+                    deadline = time.monotonic() + 300
+                    while True:
+                        if process.poll() is not None:
+                            raise RuntimeError(
+                                f'{stage} server exited; see {home / "server.log"}'
+                            )
+                        try:
+                            async with session.get(
+                                base + "/system_stats",
+                                timeout=aiohttp.ClientTimeout(total=3),
+                            ) as response:
+                                if response.status == 200:
+                                    break
+                        except (aiohttp.ClientError, TimeoutError):
+                            pass
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError(
+                                f'{stage} server did not start; see {home / "server.log"}'
+                            )
+                        await asyncio.sleep(0.1)
+                    yield session, base, home
+            finally:
+                self._active_temp_dir = None
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        await asyncio.to_thread(process.wait, timeout=30)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        await asyncio.to_thread(process.wait, timeout=10)
     async def render_quality_pipeline(
         self,
         *,
@@ -507,6 +603,8 @@ class EmiliaRenderEngine:
             receipt, receipt_path = save_receipt(reason)
             raise QualityGateRejected(reason, receipt_path, receipt)
 
+        req_framing = str(native_options.get("framing", "full_body")) if is_ultra else "full_body"
+        require_pose = bool(is_ultra and not strict_seed_lock and req_framing == "full_body")
         while True:
             attempt = len(attempts) + 1
             if is_ultra:
@@ -527,6 +625,7 @@ class EmiliaRenderEngine:
             native_report = self.inspector.inspect_image(
                 selected, expected_size=(1152, 1728), stage="native",
                 solo_prompt=True, strict_seed_lock=strict_seed_lock,
+                framing=req_framing, require_full_body_pose=require_pose,
             )
             attempts.append({"seed": current_seed, "generation": generation, "inspection": native_report.to_dict()})
             if not native_report.dimensions_match:
@@ -546,13 +645,16 @@ class EmiliaRenderEngine:
             repair_graph = self.builder.build_eye_repair(image_path=str(selected), seed=current_seed + 9)
             if is_ultra:
                 repair_graph['4']['inputs']['ckpt_name'] = native_graph['4']['inputs']['ckpt_name']
-                for key in ('lora_name', 'strength_model', 'strength_clip'):
-                    repair_graph['10']['inputs'][key] = native_graph['10']['inputs'][key]
+                finish_lora_strength = float(finish_options.get("lora_strength", native_graph["10"]["inputs"]["strength_model"]))
+                repair_graph["10"]["inputs"]["lora_name"] = finish_options.get("lora_name", native_graph["10"]["inputs"]["lora_name"])
+                repair_graph["10"]["inputs"]["strength_model"] = max(0.25, finish_lora_strength)
+                repair_graph["10"]["inputs"]["strength_clip"] = max(0.25, finish_lora_strength)
             eye_repair_result = await self.render_stage_isolated(repair_graph, "eye_repair", run_dir, port)
             selected = _output_path(output_dir, eye_repair_result["outputs"]["22"]["images"][0])
             repaired_report = self.inspector.inspect_image(
                 selected, expected_size=(1152, 1728), stage="eye_repair",
                 solo_prompt=True, strict_seed_lock=False,
+                framing=req_framing, require_full_body_pose=require_pose,
             )
             if not repaired_report.passed:
                 reject("Repaired native image did not pass the quality gate.")
@@ -570,6 +672,7 @@ class EmiliaRenderEngine:
         final_report = self.inspector.inspect_image(
             final, expected_size=(2304, 3456), stage="final",
             solo_prompt=True, strict_seed_lock=strict_seed_lock,
+            framing=req_framing, require_full_body_pose=require_pose,
         )
         if not final_report.dimensions_match:
             reject("Finished output dimensions differ from the quality workflow contract.")
@@ -579,3 +682,278 @@ class EmiliaRenderEngine:
         print(f"FINISHED: {final}", file=sys.stderr, flush=True)
         print(f"RECEIPT: {receipt_path}", file=sys.stderr, flush=True)
         return receipt
+
+    async def render_batch_pipeline(
+        self,
+        *,
+        seeds: list[int],
+        port: int = 8199,
+        pag: bool = False,
+        profile: str = "ultra",
+        positive_prompt: str | None = None,
+        negative_prompt: str | None = None,
+        ipadapter_weight: float | None = None,
+        user_idea: str | None = None,
+        strict_seed_lock: bool = True,
+        auto_eye_repair: bool = False,
+        max_seed_retries: int = 0,
+        native_options: dict[str, Any] | None = None,
+        finish_options: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Render a batch of seeds using same-stage process reuse while keeping Stage 1 and Stage 2 strictly isolated."""
+        assert self.config.app_dir is not None
+        if not seeds:
+            raise ValueError("seeds must not be empty")
+        if profile not in {"quality", "ultra"}:
+            raise ValueError("profile must be quality or ultra")
+        if not isinstance(max_seed_retries, int) or max_seed_retries < 0:
+            raise ValueError("max_seed_retries must be a nonnegative integer")
+        for name, options, allowed in (
+            ("native_options", native_options, _NATIVE_OPTION_KEYS),
+            ("finish_options", finish_options, _FINISH_OPTION_KEYS),
+        ):
+            if options is not None and not isinstance(options, dict):
+                raise TypeError(f"{name} must be a dictionary")
+            if options and profile != "ultra":
+                raise ValueError(f"{name} is only supported by the ultra profile")
+            unknown = set(options or {}) - allowed
+            if unknown:
+                raise ValueError(f"Unsupported {name}: {', '.join(sorted(map(str, unknown)))}")
+        native_options = dict(native_options or {})
+        finish_options = dict(finish_options or {})
+        is_ultra = profile == "ultra"
+        eff_ipa_weight = (0.18 if is_ultra else 0.40) if ipadapter_weight is None else ipadapter_weight
+        req_framing = str(native_options.get("framing", "full_body")) if is_ultra else "full_body"
+        require_pose = bool(is_ultra and not strict_seed_lock and req_framing == "full_body")
+
+        run_id = uuid.uuid4().hex[:12]
+        temp_dir = self.config.temp_dir or self.config.app_dir / "temp"
+        output_dir = (self.config.output_dir or self.config.app_dir / "output").resolve()
+        run_dir = temp_dir.resolve() / (f"{profile}_batch_" + run_id)
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        batch_items: list[dict[str, Any]] = []
+
+        # Wave 1: Persistent Stage 1 Native Server for all seeds
+        async with self._stage_server_session("batch_native", run_dir, port) as (session, base, home):
+            for idx, req_seed in enumerate(seeds):
+                current_seed = int(req_seed)
+                attempts: list[dict[str, Any]] = []
+                generation: dict[str, Any] = {}
+                native: Path | None = None
+                selected: Path | None = None
+                native_report: InspectionReport | None = None
+                rejected_reason: str | None = None
+                while True:
+                    attempt = len(attempts) + 1
+                    if is_ultra:
+                        native_graph = self.builder.build_ultra_native(
+                            seed=current_seed, pag=pag, positive_prompt=positive_prompt,
+                            negative_prompt=negative_prompt, ipadapter_weight=eff_ipa_weight,
+                            **native_options,
+                        )
+                    else:
+                        native_graph = self.builder.build_highres_native(
+                            seed=current_seed, pag=pag, positive_prompt=positive_prompt,
+                            negative_prompt=negative_prompt, ipadapter_weight=eff_ipa_weight,
+                        )
+                    stage_label = f"native_{idx + 1}" if attempt == 1 else f"native_{idx + 1}_retry_{attempt}"
+                    stage_res = await self._execute_graph_on_session(
+                        session=session,
+                        base_url=base,
+                        graph=native_graph,
+                        stage=stage_label,
+                        log_dir=home / stage_label,
+                    )
+                    generation = stage_res.to_dict()
+                    native = selected = _output_path(output_dir, generation["outputs"]["9"]["images"][0])
+                    native_report = self.inspector.inspect_image(
+                        selected, expected_size=(1152, 1728), stage="native",
+                        solo_prompt=True, strict_seed_lock=strict_seed_lock,
+                        framing=req_framing, require_full_body_pose=require_pose,
+                    )
+                    attempts.append({"seed": current_seed, "generation": generation, "inspection": native_report.to_dict()})
+                    if not native_report.dimensions_match:
+                        rejected_reason = "Native output dimensions differ from the quality workflow contract."
+                        break
+                    if not strict_seed_lock and native_report.recommended_action == "reject_seed":
+                        if attempt <= max_seed_retries:
+                            print(
+                                f"quality-gate: seed {current_seed} rejected ({native_report.reasons}); retrying with new seed...",
+                                file=sys.stderr, flush=True,
+                            )
+                            current_seed += 1000
+                            continue
+                        rejected_reason = "Quality gate rejected all permitted seed attempts."
+                    break
+                batch_items.append({
+                    "requested_seed": int(req_seed),
+                    "seed": current_seed,
+                    "native_graph": native_graph,
+                    "generation": generation,
+                    "native": native,
+                    "selected": selected,
+                    "native_report": native_report,
+                    "repaired_report": None,
+                    "eye_repair_result": None,
+                    "finishing": {},
+                    "final": None,
+                    "final_report": None,
+                    "attempts": attempts,
+                    "rejected_reason": rejected_reason,
+                })
+
+        # Optional Wave 1.5: Eye repair for items that need it
+        repair_candidates = [
+            item for item in batch_items
+            if item["rejected_reason"] is None
+            and not strict_seed_lock
+            and item["native_report"].recommended_action == "repair_eyes"
+        ]
+        if repair_candidates:
+            if not auto_eye_repair:
+                for item in repair_candidates:
+                    item["rejected_reason"] = "Eye repair is required but automatic eye repair is disabled."
+            else:
+                async with self._stage_server_session("batch_eye_repair", run_dir, port) as (session, base, home):
+                    for idx, item in enumerate(repair_candidates):
+                        repair_graph = self.builder.build_eye_repair(
+                            image_path=str(item["selected"]), seed=item["seed"] + 9
+                        )
+                        if is_ultra:
+                            repair_graph["4"]["inputs"]["ckpt_name"] = item["native_graph"]["4"]["inputs"]["ckpt_name"]
+                            finish_lora_strength = float(
+                                finish_options.get("lora_strength", item["native_graph"]["10"]["inputs"]["strength_model"])
+                            )
+                            repair_graph["10"]["inputs"]["lora_name"] = finish_options.get(
+                                "lora_name", item["native_graph"]["10"]["inputs"]["lora_name"]
+                            )
+                            repair_graph["10"]["inputs"]["strength_model"] = max(0.25, finish_lora_strength)
+                            repair_graph["10"]["inputs"]["strength_clip"] = max(0.25, finish_lora_strength)
+                        stage_res = await self._execute_graph_on_session(
+                            session=session,
+                            base_url=base,
+                            graph=repair_graph,
+                            stage="eye_repair",
+                            log_dir=home / f"eye_repair_{idx + 1}",
+                        )
+                        eye_res = stage_res.to_dict()
+                        item["eye_repair_result"] = eye_res
+                        repaired_path = _output_path(output_dir, eye_res["outputs"]["22"]["images"][0])
+                        item["selected"] = repaired_path
+                        rep_report = self.inspector.inspect_image(
+                            repaired_path, expected_size=(1152, 1728), stage="eye_repair",
+                            solo_prompt=True, strict_seed_lock=False,
+                            framing=req_framing, require_full_body_pose=require_pose,
+                        )
+                        item["repaired_report"] = rep_report
+                        if not rep_report.passed:
+                            item["rejected_reason"] = "Repaired native image did not pass the quality gate."
+
+        # Wave 2: Persistent Stage 2 Finish Server for all accepted items
+        finish_candidates = [item for item in batch_items if item["rejected_reason"] is None]
+        if finish_candidates:
+            async with self._stage_server_session("batch_finish", run_dir, port) as (session, base, home):
+                for idx, item in enumerate(finish_candidates):
+                    if is_ultra:
+                        finish_graph = self.builder.build_ultra_finish(
+                            image_path=str(item["selected"]), seed=item["seed"], pag=pag, **finish_options,
+                        )
+                    else:
+                        finish_graph = self.builder.build_highres_finish(
+                            image_path=str(item["selected"]), seed=item["seed"], pag=pag,
+                        )
+                    stage_res = await self._execute_graph_on_session(
+                        session=session,
+                        base_url=base,
+                        graph=finish_graph,
+                        stage="finish",
+                        log_dir=home / f"finish_{idx + 1}",
+                    )
+                    finishing = stage_res.to_dict()
+                    item["finishing"] = finishing
+                    final_path = _output_path(output_dir, finishing["outputs"]["16"]["images"][0])
+                    item["final"] = final_path
+                    fin_report = self.inspector.inspect_image(
+                        final_path, expected_size=(2304, 3456), stage="final",
+                        solo_prompt=True, strict_seed_lock=strict_seed_lock,
+                        framing=req_framing, require_full_body_pose=require_pose,
+                    )
+                    item["final_report"] = fin_report
+                    if not fin_report.dimensions_match:
+                        item["rejected_reason"] = "Finished output dimensions differ from the quality workflow contract."
+                    elif not strict_seed_lock and not fin_report.passed:
+                        item["rejected_reason"] = "Finished image did not pass the quality gate."
+
+        # Save receipts and record runs in SQLite ledger
+        receipts: list[dict[str, Any]] = []
+        for item in batch_items:
+            nat_rep: InspectionReport = item["native_report"]
+            rep_rep: InspectionReport | None = item["repaired_report"]
+            fin_rep: InspectionReport | None = item["final_report"]
+            rejection: str | None = item["rejected_reason"]
+            receipt: dict[str, Any] = {
+                "seed": item["seed"],
+                "requested_seed": item["requested_seed"],
+                "profile": profile,
+                "status": "quality_rejected" if rejection else "completed",
+                "rejection_reason": rejection,
+                "guidance": (
+                    ("Ultra Multi-Scale + PAG" if pag else "Ultra Multi-Scale (832->1152->2304)")
+                    if is_ultra else ("PAG scale 1.0" if pag else "baseline")
+                ),
+                "python": self._python_executable(),
+                "isolation": "Batch Stage 1 process exited before Batch Stage 2 process started; same-stage model reuse.",
+                "temperature_power_software_stop": False,
+                "native": str(item["native"]),
+                "selected_native": str(item["selected"]),
+                "final": str(item["final"]) if item["final"] is not None else None,
+                "generation": item["generation"],
+                "finishing": item["finishing"],
+                "eye_repair": item["eye_repair_result"],
+                "quality_inspection": {
+                    "native": nat_rep.to_dict(),
+                    "eye_repair": item["eye_repair_result"],
+                    "repaired": rep_rep.to_dict() if rep_rep is not None else None,
+                    "final": fin_rep.to_dict() if fin_rep is not None else None,
+                },
+                "attempts": item["attempts"],
+                "logs": str(run_dir),
+            }
+            if user_idea is not None:
+                receipt["user_idea"] = user_idea
+            target = item["final"] or item["selected"] or item["native"]
+            receipt_path = target.with_suffix(".run.json")
+            if receipt_path.exists():
+                receipt_path = target.with_name(f"{target.stem}_{run_id}.run.json")
+            receipt_path.write_text(
+                json.dumps(receipt, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            native_seconds = sum(float(a["generation"]["seconds"]) for a in item["attempts"])
+            finish_seconds = float(item["finishing"].get("seconds", 0.0))
+            repair_seconds = float(item["eye_repair_result"]["seconds"]) if item["eye_repair_result"] is not None else 0.0
+            self.ledger.record_run(
+                seed=item["seed"],
+                mode="quality",
+                guidance=receipt["guidance"],
+                prompt_idea=user_idea,
+                positive_prompt=positive_prompt or (self.config.ultra_positive_prompt if is_ultra else self.config.base_positive_prompt),
+                native_path=str(item["native"]),
+                final_path=str(item["final"]) if item["final"] is not None else None,
+                native_sha256=nat_rep.pixel_sha256,
+                final_sha256=fin_rep.pixel_sha256 if fin_rep is not None else None,
+                native_seconds=native_seconds,
+                finish_seconds=finish_seconds,
+                total_seconds=native_seconds + finish_seconds + repair_seconds,
+                face_count=nat_rep.face_count,
+                hand_count=nat_rep.hand_count,
+                heterochromia_score=nat_rep.heterochromia_score,
+                eye_drift_detected=nat_rep.eye_drift_detected,
+                quality_action="reject_seed" if rejection else (fin_rep or nat_rep).recommended_action,
+                receipt_path=str(receipt_path.resolve()),
+            )
+            if item["final"] is not None:
+                print(f"FINISHED: {item['final']}", file=sys.stderr, flush=True)
+            print(f"RECEIPT: {receipt_path}", file=sys.stderr, flush=True)
+            receipts.append(receipt)
+        return receipts

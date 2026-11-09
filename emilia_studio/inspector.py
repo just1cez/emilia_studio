@@ -95,6 +95,11 @@ class InspectionReport:
         "available": False, "advisory_only": True, "method": "face_relative_geometry_color_prior",
         "reason": "Image unavailable", "brooch": {"available": False}, "garment": {"available": False},
     })
+    pose_analysis: dict[str, Any] = field(default_factory=lambda: {
+        "available": False, "framing": "full_body", "full_body_complete": True,
+        "standing_pose": True, "face_height_ratio": 0.0, "max_ankle_confidence": 0.0,
+        "hip_y_ratio": 0.0, "ankle_y_ratio": 0.0, "leg_span_ratio": 0.0, "reasons": [],
+    })
     recommended_action: str = "accept"
     strict_seed_lock: bool = False
     effective_action: str = "accept"
@@ -151,11 +156,13 @@ class QualityInspector:
 
         self.face_model_path = self.app_dir / "models" / "ultralytics" / "bbox" / "face_yolov8n.pt"
         self.hand_model_path = self.app_dir / "models" / "ultralytics" / "bbox" / "hand_yolov8n.pt"
+        self.pose_model_path = self.app_dir / "models" / "ultralytics" / "pose" / "yolov8n-pose.pt"
 
         self._face_model: Any = None
         self._hand_model: Any = None
+        self._pose_model: Any = None
+        self._last_pose_detections: tuple[list[list[float]], list[float], list[list[list[float]]]] = ([], [], [])
         self._yolo_load_attempted: bool = False
-
     def _ensure_yolo_models(self) -> bool:
         """Load local CPU detectors, or select the configured external interpreter."""
         if not self.use_yolo:
@@ -176,9 +183,15 @@ class QualityInspector:
                     _YOLO_MODEL_CACHE[key] = YOLO(key)
             self._face_model = _YOLO_MODEL_CACHE[str(self.face_model_path.resolve())]
             self._hand_model = _YOLO_MODEL_CACHE[str(self.hand_model_path.resolve())]
+            if self.pose_model_path.is_file():
+                p_key = str(self.pose_model_path.resolve())
+                if p_key not in _YOLO_MODEL_CACHE:
+                    _YOLO_MODEL_CACHE[p_key] = YOLO(p_key)
+                self._pose_model = _YOLO_MODEL_CACHE[p_key]
         except Exception as exc:
             self._face_model = None
             self._hand_model = None
+            self._pose_model = None
             if self.python_executable is None:
                 raise InspectionRuntimeError(
                     "CPU YOLO is unavailable; configure conda_python with torch and ultralytics installed."
@@ -203,11 +216,13 @@ class QualityInspector:
         with io.BytesIO() as encoded:
             image.save(encoded, format="PNG")
             try:
+                pose_arg = str(self.pose_model_path.resolve()) if self.pose_model_path.is_file() else ""
                 result = subprocess.run(
                     [
                         executable, "-u", str(worker),
                         str(self.face_model_path.resolve()), str(self.hand_model_path.resolve()),
                         str(self.face_conf_threshold), str(self.hand_conf_threshold),
+                        pose_arg,
                     ],
                     input=encoded.getvalue(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     check=False,
@@ -219,6 +234,11 @@ class QualityInspector:
             raise InspectionRuntimeError(f"CPU YOLO inspection failed using {executable}: {detail}")
         try:
             data = json.loads(result.stdout)
+            self._last_pose_detections = (
+                [[float(v) for v in b] for b in data.get("pose_boxes", [])],
+                [float(v) for v in data.get("pose_confidences", [])],
+                [[[float(v) for v in k] for k in person] for person in data.get("pose_keypoints", [])],
+            )
             return (
                 [tuple(float(value) for value in box) for box in data["face_boxes"]],
                 [float(value) for value in data["face_confidences"]],
@@ -268,6 +288,21 @@ class QualityInspector:
                     )
                     hand_confs.append(float(box.conf[0]))
 
+            if self._pose_model is not None:
+                p_res = self._pose_model.predict(
+                    rgb, device="cpu", verbose=False, conf=0.005
+                )[0]
+                p_boxes = [[float(v) for v in box.xyxy[0].tolist()] for box in p_res.boxes]
+                p_confs = [float(box.conf[0]) for box in p_res.boxes]
+                p_kpts = (
+                    p_res.keypoints.data.tolist()
+                    if p_res.keypoints is not None and len(p_res.boxes) > 0
+                    else []
+                )
+                self._last_pose_detections = (p_boxes, p_confs, p_kpts)
+            else:
+                self._last_pose_detections = ([], [], [])
+
             return face_boxes, face_confs, hand_boxes, hand_confs, "yolo_cpu"
 
         if self.use_yolo:
@@ -276,6 +311,7 @@ class QualityInspector:
         # Explicitly disabled detection retains the existing heuristic inspection mode.
         w, h = rgb.size
         heuristic_box = (0.30 * w, 0.08 * h, 0.70 * w, 0.34 * h)
+        self._last_pose_detections = ([], [], [])
         return [heuristic_box], [1.0], [], [], "heuristic_cpu"
 
     def analyze_iris_color(
@@ -449,6 +485,89 @@ class QualityInspector:
         result["reason"] = "Advisory ROI color evidence" if result["available"] else "No reliable color evidence"
         return result
 
+    def analyze_pose_completeness(
+        self,
+        image: Image.Image,
+        face_boxes: list[tuple[float, float, float, float]],
+        *,
+        framing: str = "full_body",
+        detector_source: str = "yolo_cpu",
+    ) -> dict[str, Any]:
+        """Evaluate full-body standing and ankle completeness using face-height ratio and CPU YOLO pose keypoints."""
+        w, h = image.size
+        result: dict[str, Any] = {
+            "available": False,
+            "framing": framing,
+            "full_body_complete": True,
+            "standing_pose": True,
+            "face_height_ratio": 0.0,
+            "max_ankle_confidence": 0.0,
+            "hip_y_ratio": 0.0,
+            "ankle_y_ratio": 0.0,
+            "leg_span_ratio": 0.0,
+            "reasons": [],
+        }
+        if not face_boxes or h <= 0 or w <= 0:
+            return result
+        fx1, fy1, fx2, fy2 = face_boxes[0]
+        fh = max(1.0, fy2 - fy1)
+        fcx, fcy = (fx1 + fx2) / 2.0, (fy1 + fy2) / 2.0
+        fh_ratio = fh / float(h)
+        result["face_height_ratio"] = round(fh_ratio, 4)
+
+        p_boxes, _, p_kpts = self._last_pose_detections
+        matched_kpts: list[list[float]] | None = None
+        for box, kpts in zip(p_boxes, p_kpts):
+            if len(box) >= 4 and len(kpts) >= 17:
+                if box[0] <= fcx <= box[2] and box[1] <= fcy <= box[3] and (box[2] - box[0]) >= 0.20 * w:
+                    matched_kpts = kpts
+                    break
+
+        if matched_kpts is not None:
+            result["available"] = True
+            l_hip, r_hip = matched_kpts[11], matched_kpts[12]
+            l_ankle, r_ankle = matched_kpts[15], matched_kpts[16]
+            hip_y = min(float(l_hip[1]), float(r_hip[1])) / float(h)
+            ankle_y = max(float(l_ankle[1]), float(r_ankle[1])) / float(h)
+            max_ankle_conf = max(float(l_ankle[2]), float(r_ankle[2]))
+            leg_span = max(0.0, ankle_y - hip_y)
+            result["max_ankle_confidence"] = round(max_ankle_conf, 4)
+            result["hip_y_ratio"] = round(hip_y, 4)
+            result["ankle_y_ratio"] = round(ankle_y, 4)
+            result["leg_span_ratio"] = round(leg_span, 4)
+
+            if framing == "full_body":
+                reasons: list[str] = []
+                if fh_ratio > 0.165:
+                    reasons.append(
+                        f"face_height_ratio={fh_ratio:.3f} exceeds 0.165 (seated/close-up framing instead of standing full_body)"
+                    )
+                if max_ankle_conf < 0.30:
+                    reasons.append(
+                        f"max_ankle_confidence={max_ankle_conf:.3f} below 0.30 (cropped feet or kneeling/seated pose)"
+                    )
+                if hip_y > 0.60:
+                    reasons.append(
+                        f"hip_y_ratio={hip_y:.3f} exceeds 0.60 (pelvis too low in frame for standing full_body)"
+                    )
+                if ankle_y < 0.68:
+                    reasons.append(
+                        f"ankle_y_ratio={ankle_y:.3f} below 0.68 (seated or floating legs)"
+                    )
+                if reasons:
+                    result["full_body_complete"] = False
+                    result["standing_pose"] = False
+                    result["reasons"] = reasons
+        elif detector_source == "yolo_cpu" and framing == "full_body":
+            result["available"] = True
+            if fh_ratio > 0.165:
+                result["full_body_complete"] = False
+                result["standing_pose"] = False
+                result["reasons"] = [
+                    f"face_height_ratio={fh_ratio:.3f} exceeds 0.165 (seated/close-up framing instead of standing full_body)"
+                ]
+        return result
+
     def inspect_image(
         self,
         image_path: str | Path,
@@ -456,6 +575,8 @@ class QualityInspector:
         stage: str | None = None,
         solo_prompt: bool = True,
         strict_seed_lock: bool = False,
+        framing: str = "full_body",
+        require_full_body_pose: bool = False,
     ) -> InspectionReport:
         """Run full deterministic inspection on an image and return an InspectionReport."""
         path = Path(image_path)
@@ -539,6 +660,9 @@ class QualityInspector:
                         "reason": f"Color diagnostics unavailable: {type(exc).__name__}",
                         "brooch": {"available": False}, "garment": {"available": False},
                     }
+                pose_info = self.analyze_pose_completeness(
+                    rgb_im, face_boxes, framing=framing, detector_source=detector_source
+                )
         except InspectionRuntimeError:
             raise
         except Exception as exc:
@@ -561,6 +685,9 @@ class QualityInspector:
             reasons.append(f"Multiple faces detected ({face_count}) for solo subject prompt")
         elif not dimensions_match or not non_blank or not non_nan:
             recommended_action = "reject_seed"
+        elif require_full_body_pose and framing == "full_body" and not pose_info["full_body_complete"]:
+            recommended_action = "reject_seed"
+            reasons.extend(pose_info["reasons"])
         elif iris["eye_drift_detected"]:
             recommended_action = "repair_eyes"
             reasons.extend(iris["drift_reasons"])
@@ -601,6 +728,7 @@ class QualityInspector:
             eye_drift_detected=iris["eye_drift_detected"],
             iris_analysis=iris,
             garment_analysis=garment,
+            pose_analysis=pose_info,
             recommended_action=recommended_action,
             strict_seed_lock=strict_seed_lock,
             effective_action=effective_action,

@@ -28,12 +28,12 @@ emilia
 | --- | --- |
 | `config init/show/set/path` | 保存、查看和修改用户 TOML 配置；`init --force` 才覆盖已有文件 |
 | `doctor` | 检查 ComfyUI、推理 Python、依赖、模型大小、参考图和节点目录；缺失时返回非零 |
-| `pull --list` / `pull yolo-face` / `pull all` | 列出或下载模型，显示字节、速度和 ETA；支持断点续传和可用 SHA256 校验 |
+| `pull --list` / `pull yolo-face` / `pull yolo-pose` / `pull all` | 列出或下载模型，显示字节、速度和 ETA；支持断点续传和可用 SHA256 校验 |
 | `presets` / `presets rose-garden` | 列出场景或打印完整提示词，无需调用 Ollama |
-| `outfits` / `outfits cloak --framing portrait` | 列出 5 套爱蜜莉雅服装模式（`royal` / `cloak` / `frozen-bond` / `sanctuary` / `nightgown`）或输出指定服装 JSON |
+| `outfits` / `outfits cloak --framing portrait` | 列出 5 套爱蜜莉雅服装模式（`royal` / `cloak` / `frozen-bond` / `sanctuary` / `nightgown`）及 Stage 1$\to$Stage 2 解耦 LoRA 参数 |
 | `render --profile ultra --preset rose-garden [--outfit royal] [--angle three-quarter] [--puck] [--magic ice]` | 用预设及专属服装/视角/帕克/冰魔法参数执行真实两阶段渲染，显示采样进度 |
+| `batch --seeds 20261113 20261114 --profile ultra [--outfit nightgown] [--auto-gate]` | 多图同阶段进程池连抽（全批次 Stage 1 $\to$ CPU 质检门禁 $\to$ 全批次 Stage 2，消除模型重复加载耗时） |
 | `idea "爱蜜莉雅在月光下的花园" [--outfit cloak] [--angle side] [--puck] [--magic blizzard]` | CPU Ollama 编译提示词并融合角色创作参数后渲染 |
-| `gallery --limit 10` / `gallery --open 1` | 浏览最近 PNG，按显示序号打开图片 |
 | `compare <img_a> <img_b> [--json]` | 对比两张成品 PNG 或 `.run.json` 回执的分辨率、SHA256、紫瞳色相与异色瞳评分 |
 | `export <dest_dir> [--image <path>]` | 将最新或指定成品图、母版图、回执及工作流 JSON 打包导出至目标目录 |
 | `benchmark [--limit 10] [--run]` | 汇总 SQLite 账本历史耗时与门禁统计，或运行单种子实测基准 |

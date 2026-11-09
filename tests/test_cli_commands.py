@@ -123,3 +123,44 @@ def test_render_rejects_creative_flags_on_quality_profile_and_routes_ultra(monke
     assert captured_kwargs['native_options']['skirt_ipadapter_weight'] == 0.0
     assert 'Puck' in captured_kwargs['positive_prompt']
     assert 'ice crystals' in captured_kwargs['positive_prompt']
+
+
+def test_non_canonical_outfit_decouples_base_and_finish_lora_and_batch_command_routes(monkeypatch, capsys):
+    captured_render = {}
+
+    async def fake_render(self, **kwargs):
+        captured_render.update(kwargs)
+        return {}
+
+    monkeypatch.setattr('emilia_studio.engine.EmiliaRenderEngine.render_quality_pipeline', fake_render)
+    assert main(['render', '--profile', 'ultra', '--outfit', 'frozen-bond', '--angle', 'three-quarter']) == 0
+    assert captured_render['native_options']['lora_strength_base'] == 0.0
+    assert captured_render['native_options']['reference_mode'] == 'paired'
+    assert captured_render['native_options']['skirt_ipadapter_weight'] == 0.0
+    assert captured_render['finish_options']['lora_strength'] == 0.28
+    assert captured_render['ipadapter_weight'] == 0.28
+    assert 'corset' in captured_render['negative_prompt']
+
+    captured_batch = {}
+
+    async def fake_batch(self, **kwargs):
+        captured_batch.update(kwargs)
+        return [
+            {
+                'requested_seed': s,
+                'seed': s,
+                'status': 'completed',
+                'generation': {'seconds': 10.0},
+                'finishing': {'seconds': 5.0},
+                'final': f'out_{s}.png',
+                'selected_native': f'nat_{s}.png',
+            }
+            for s in kwargs['seeds']
+        ]
+
+    monkeypatch.setattr('emilia_studio.engine.EmiliaRenderEngine.render_batch_pipeline', fake_batch)
+    assert main(['batch', '--seeds', '20261113', '20261114', '--profile', 'ultra', '--outfit', 'nightgown']) == 0
+    assert captured_batch['seeds'] == [20261113, 20261114]
+    assert captured_batch['native_options']['lora_strength_base'] == 0.0
+    assert captured_batch['finish_options']['lora_strength'] == 0.28
+    assert 'Emilia Batch Render Summary' in capsys.readouterr().out

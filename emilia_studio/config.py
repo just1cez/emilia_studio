@@ -180,6 +180,10 @@ EMILIA_OUTFIT_MODES: dict[str, dict[str, Any]] = {
         "use_skirt_ipa": True,
         "use_brooch_detailer": True,
         "lora_strength": 0.25,
+        "lora_strength_base": 0.25,
+        "lora_strength_finish": 0.25,
+        "ipadapter_weight": 0.18,
+        "reference_mode": "single",
     },
     "cloak": {
         "title": "第一季认识阻碍白兜帽斗篷 (S1 White Hooded Cloak)",
@@ -196,24 +200,36 @@ EMILIA_OUTFIT_MODES: dict[str, dict[str, Any]] = {
         "negative_add": "modern jacket, hoodie, zipper, dark black cloak",
         "use_skirt_ipa": False,
         "use_brooch_detailer": False,
-        "lora_strength": 0.20,
+        "lora_strength": 0.15,
+        "lora_strength_base": 0.15,
+        "lora_strength_finish": 0.25,
+        "ipadapter_weight": 0.22,
+        "reference_mode": "paired",
     },
     "frozen-bond": {
         "title": "冰结森林主题创作服装（非官设复刻） / Frozen-forest interpretation",
         "positive": (
-            r"emilia_rezero, rezero emilia, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, "
-            "official character design, anime key visual, silver-white hair, very long hair, straight bangs, "
+            r"emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, alternate costume, "
+            "anime key visual, silver-white hair, very long hair, straight bangs, "
             "crown braid, symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, "
             "white rose hair ornament, x hair ornament, "
-            "pure white ethereal forest dress with lavender ribbon trim, translucent white shawl collar, "
-            "green emerald crystal pendant at chest, flowing layered white chiffon skirt, "
-            "delicate white lace stockings, white ankle boots"
+            "(pure white ethereal one-piece forest sundress:1.3), (soft lavender ribbon sash tied at waist:1.2), "
+            "translucent white chiffon shawl over shoulders, green emerald crystal pendant at chest, "
+            "(flowing layered white chiffon long skirt:1.2), delicate white lace stockings, white ankle boots"
         ),
-        "negative_remove": (),
-        "negative_add": "heavy armor, dark purple bodysuit, modern clothes",
+        "negative_remove": ("floor-length gown, wedding dress, ",),
+        "negative_add": (
+            "heavy armor, dark purple bodysuit, modern clothes, official costume, default outfit, "
+            "corset, waist panel, vertical purple dash markings, juliet bell sleeves, detached sleeves, "
+            "split coattails, yellow hawk emblem, purple sleeve tails, miniskirt"
+        ),
         "use_skirt_ipa": False,
         "use_brooch_detailer": False,
-        "lora_strength": 0.18,
+        "lora_strength": 0.0,
+        "lora_strength_base": 0.0,
+        "lora_strength_finish": 0.28,
+        "ipadapter_weight": 0.28,
+        "reference_mode": "paired",
     },
     "sanctuary": {
         "title": "圣域冬日主题创作服装（非官设复刻） / Winter interpretation",
@@ -227,23 +243,35 @@ EMILIA_OUTFIT_MODES: dict[str, dict[str, Any]] = {
         "use_skirt_ipa": True,
         "use_brooch_detailer": True,
         "lora_strength": 0.25,
+        "lora_strength_base": 0.25,
+        "lora_strength_finish": 0.25,
+        "ipadapter_weight": 0.18,
+        "reference_mode": "single",
     },
     "nightgown": {
         "title": "宅邸晨衣主题创作服装（非官设复刻） / Morning dress interpretation",
         "positive": (
-            r"emilia_rezero, rezero emilia, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, "
-            "official character design, anime key visual, silver-white hair, very long loose hair, straight bangs, "
+            r"emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, alternate costume, "
+            "anime key visual, silver-white hair, very long loose hair, straight bangs, "
             "symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, "
             "white rose hair ornament, "
-            "opaque white and soft lavender ankle-length nightgown dress with ruffled collar and ribbon bow, "
-            "opaque white morning robe over shoulders, green crystal pendant at throat, "
+            "(loose flowing opaque white and soft lavender nightgown dress with ruffled collar and ribbon bow:1.3), "
+            "(soft white morning robe draped over shoulders:1.2), green crystal pendant at throat, "
             "bare lower legs, soft bedroom morning light"
         ),
-        "negative_remove": ("stocking feet, shoeless, barefoot, ",),
-        "negative_add": "heavy boots, armor, hooded cloak",
+        "negative_remove": ("stocking feet, shoeless, barefoot, ", "floor-length gown, wedding dress, "),
+        "negative_add": (
+            "heavy boots, armor, hooded cloak, official costume, default outfit, "
+            "corset, waist panel, vertical purple dash markings, bustier, juliet sleeves, detached sleeves, "
+            "split coattails, yellow hawk emblem, thighhighs, stockings"
+        ),
         "use_skirt_ipa": False,
         "use_brooch_detailer": False,
-        "lora_strength": 0.15,
+        "lora_strength": 0.0,
+        "lora_strength_base": 0.0,
+        "lora_strength_finish": 0.28,
+        "ipadapter_weight": 0.28,
+        "reference_mode": "paired",
     },
 }
 
