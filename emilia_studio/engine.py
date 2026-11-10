@@ -768,6 +768,89 @@ class EmiliaRenderEngine:
 
         batch_items: list[dict[str, Any]] = []
 
+        receipts: list[dict[str, Any]] = []
+
+        def _persist_batch_item(item: dict[str, Any]) -> None:
+            if item.get("_persisted"):
+                return
+            nat_rep: InspectionReport = item["native_report"]
+            rep_rep: InspectionReport | None = item["repaired_report"]
+            fin_rep: InspectionReport | None = item["final_report"]
+            rejection: str | None = item["rejected_reason"]
+            receipt: dict[str, Any] = {
+                "seed": item["seed"],
+                "requested_seed": item["requested_seed"],
+                "profile": profile,
+                "status": "quality_rejected" if rejection else "completed",
+                "rejection_reason": rejection,
+                "guidance": (
+                    ("Ultra Multi-Scale + PAG" if pag else "Ultra Multi-Scale (832->1152->2304)")
+                    if is_ultra else ("PAG scale 1.0" if pag else "baseline")
+                ),
+                "python": self._python_executable(),
+                "isolation": "Batch Stage 1 process exited before Batch Stage 2 process started; same-stage model reuse.",
+                "temperature_power_software_stop": False,
+                "native": str(item["native"]),
+                "selected_native": str(item["selected"]),
+                "final": str(item["final"]) if item["final"] is not None else None,
+                "generation": item["generation"],
+                "finishing": item["finishing"],
+                "eye_repair": item["eye_repair_result"],
+                "selected_settings": {
+                    "pag": pag,
+                    "ipadapter_weight": eff_ipa_weight,
+                    "strict_seed_lock": strict_seed_lock,
+                    "auto_eye_repair": auto_eye_repair,
+                    "max_seed_retries": max_seed_retries,
+                    "native_options": native_options,
+                    "finish_options": finish_options,
+                },
+                "quality_inspection": {
+                    "native": nat_rep.to_dict(),
+                    "eye_repair": item["eye_repair_result"],
+                    "repaired": rep_rep.to_dict() if rep_rep is not None else {},
+                    "final": fin_rep.to_dict() if fin_rep is not None else {},
+                },
+                "attempts": item["attempts"],
+                "logs": str(run_dir),
+            }
+            if user_idea is not None:
+                receipt["user_idea"] = user_idea
+            target = item["final"] or item["selected"] or item["native"]
+            receipt_path = target.with_suffix(".run.json")
+            if receipt_path.exists():
+                receipt_path = target.with_name(f"{target.stem}_{run_id}.run.json")
+            receipt_path.write_text(
+                json.dumps(receipt, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            native_seconds = sum(float(a["generation"]["seconds"]) for a in item["attempts"])
+            finish_seconds = float(item["finishing"].get("seconds", 0.0))
+            repair_seconds = float(item["eye_repair_result"]["seconds"]) if item["eye_repair_result"] is not None else 0.0
+            self.ledger.record_run(
+                seed=item["seed"],
+                mode=(f"{profile}_pag" if pag else profile),
+                guidance=receipt["guidance"],
+                prompt_idea=user_idea,
+                positive_prompt=positive_prompt or (self.config.ultra_positive_prompt if is_ultra else self.config.base_positive_prompt),
+                native_path=str(item["native"]),
+                final_path=str(item["final"]) if item["final"] is not None else None,
+                native_sha256=nat_rep.pixel_sha256,
+                final_sha256=fin_rep.pixel_sha256 if fin_rep is not None else None,
+                native_seconds=native_seconds,
+                finish_seconds=finish_seconds,
+                total_seconds=native_seconds + finish_seconds + repair_seconds,
+                face_count=nat_rep.face_count,
+                hand_count=nat_rep.hand_count,
+                heterochromia_score=nat_rep.heterochromia_score,
+                eye_drift_detected=nat_rep.eye_drift_detected,
+                quality_action="reject_seed" if rejection else (fin_rep or nat_rep).recommended_action,
+                receipt_path=str(receipt_path.resolve()),
+            )
+            if item["final"] is not None:
+                print(f"FINISHED: {item['final']}", file=sys.stderr, flush=True)
+            print(f"RECEIPT: {receipt_path}", file=sys.stderr, flush=True)
+            item["_persisted"] = True
+            item["_receipt"] = receipt
         # Wave 1: Persistent Stage 1 Native Server for all seeds (warm CPU YOLO during pass 1)
         self._pending_inspector_warmup = (req_framing == "full_body",)
         async with self._stage_server_session("batch_native", run_dir, port) as (session, base, home):
@@ -923,85 +1006,10 @@ class EmiliaRenderEngine:
                         item["rejected_reason"] = "Finished output dimensions differ from the quality workflow contract."
                     elif not strict_seed_lock and not fin_report.passed:
                         item["rejected_reason"] = "Finished image did not pass the quality gate."
+                    _persist_batch_item(item)
 
-        # Save receipts and record runs in SQLite ledger
-        receipts: list[dict[str, Any]] = []
+        # Persist any items that were rejected during Wave 1 or Wave 1.5 and return all in order
         for item in batch_items:
-            nat_rep: InspectionReport = item["native_report"]
-            rep_rep: InspectionReport | None = item["repaired_report"]
-            fin_rep: InspectionReport | None = item["final_report"]
-            rejection: str | None = item["rejected_reason"]
-            receipt: dict[str, Any] = {
-                "seed": item["seed"],
-                "requested_seed": item["requested_seed"],
-                "profile": profile,
-                "status": "quality_rejected" if rejection else "completed",
-                "rejection_reason": rejection,
-                "guidance": (
-                    ("Ultra Multi-Scale + PAG" if pag else "Ultra Multi-Scale (832->1152->2304)")
-                    if is_ultra else ("PAG scale 1.0" if pag else "baseline")
-                ),
-                "python": self._python_executable(),
-                "isolation": "Batch Stage 1 process exited before Batch Stage 2 process started; same-stage model reuse.",
-                "temperature_power_software_stop": False,
-                "native": str(item["native"]),
-                "selected_native": str(item["selected"]),
-                "final": str(item["final"]) if item["final"] is not None else None,
-                "generation": item["generation"],
-                "finishing": item["finishing"],
-                "eye_repair": item["eye_repair_result"],
-                "selected_settings": {
-                    "pag": pag,
-                    "ipadapter_weight": eff_ipa_weight,
-                    "strict_seed_lock": strict_seed_lock,
-                    "auto_eye_repair": auto_eye_repair,
-                    "max_seed_retries": max_seed_retries,
-                    "native_options": native_options,
-                    "finish_options": finish_options,
-                },
-                "quality_inspection": {
-                    "native": nat_rep.to_dict(),
-                    "eye_repair": item["eye_repair_result"],
-                    "repaired": rep_rep.to_dict() if rep_rep is not None else {},
-                    "final": fin_rep.to_dict() if fin_rep is not None else {},
-                },
-                "attempts": item["attempts"],
-                "logs": str(run_dir),
-            }
-            if user_idea is not None:
-                receipt["user_idea"] = user_idea
-            target = item["final"] or item["selected"] or item["native"]
-            receipt_path = target.with_suffix(".run.json")
-            if receipt_path.exists():
-                receipt_path = target.with_name(f"{target.stem}_{run_id}.run.json")
-            receipt_path.write_text(
-                json.dumps(receipt, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-            native_seconds = sum(float(a["generation"]["seconds"]) for a in item["attempts"])
-            finish_seconds = float(item["finishing"].get("seconds", 0.0))
-            repair_seconds = float(item["eye_repair_result"]["seconds"]) if item["eye_repair_result"] is not None else 0.0
-            self.ledger.record_run(
-                seed=item["seed"],
-                mode=(f"{profile}_pag" if pag else profile),
-                guidance=receipt["guidance"],
-                prompt_idea=user_idea,
-                positive_prompt=positive_prompt or (self.config.ultra_positive_prompt if is_ultra else self.config.base_positive_prompt),
-                native_path=str(item["native"]),
-                final_path=str(item["final"]) if item["final"] is not None else None,
-                native_sha256=nat_rep.pixel_sha256,
-                final_sha256=fin_rep.pixel_sha256 if fin_rep is not None else None,
-                native_seconds=native_seconds,
-                finish_seconds=finish_seconds,
-                total_seconds=native_seconds + finish_seconds + repair_seconds,
-                face_count=nat_rep.face_count,
-                hand_count=nat_rep.hand_count,
-                heterochromia_score=nat_rep.heterochromia_score,
-                eye_drift_detected=nat_rep.eye_drift_detected,
-                quality_action="reject_seed" if rejection else (fin_rep or nat_rep).recommended_action,
-                receipt_path=str(receipt_path.resolve()),
-            )
-            if item["final"] is not None:
-                print(f"FINISHED: {item['final']}", file=sys.stderr, flush=True)
-            print(f"RECEIPT: {receipt_path}", file=sys.stderr, flush=True)
-            receipts.append(receipt)
+            _persist_batch_item(item)
+            receipts.append(item["_receipt"])
         return receipts
