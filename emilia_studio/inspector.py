@@ -314,13 +314,26 @@ class QualityInspector:
             "hand_threshold": float(self.hand_conf_threshold),
             "pose_path": pose_arg,
         }
-        if image_path is not None and image_path.is_file():
+        w_orig, h_orig = image.size
+        max_dim = max(w_orig, h_orig)
+        if max_dim > 960:
+            scale_down = 640.0 / float(max_dim)
+            small_w = max(32, int(round(w_orig * scale_down)))
+            small_h = max(32, int(round(h_orig * scale_down)))
+            small_img = image.resize((small_w, small_h), Image.Resampling.BILINEAR)
+            sx = float(w_orig) / float(small_w)
+            sy = float(h_orig) / float(small_h)
+            with io.BytesIO() as encoded:
+                small_img.save(encoded, format="PNG", compress_level=1)
+                req["image_b64"] = base64.b64encode(encoded.getvalue()).decode("ascii")
+        elif image_path is not None and image_path.is_file():
             req["image_path"] = str(image_path.resolve())
+            sx, sy = 1.0, 1.0
         else:
             with io.BytesIO() as encoded:
-                image.save(encoded, format="PNG")
+                image.save(encoded, format="PNG", compress_level=1)
                 req["image_b64"] = base64.b64encode(encoded.getvalue()).decode("ascii")
-
+            sx, sy = 1.0, 1.0
         worker_key = f"{Path(resolved_executable).resolve()}::{worker.resolve()}"
         with _EXTERNAL_WORKER_LOCK:
             proc = _EXTERNAL_WORKERS.get(worker_key)
@@ -359,14 +372,20 @@ class QualityInspector:
         try:
             data = resp["data"]
             self._last_pose_detections = (
-                [[float(v) for v in b] for b in data.get("pose_boxes", [])],
+                [[float(b[0]) * sx, float(b[1]) * sy, float(b[2]) * sx, float(b[3]) * sy] for b in data.get("pose_boxes", [])],
                 [float(v) for v in data.get("pose_confidences", [])],
-                [[[float(v) for v in k] for k in person] for person in data.get("pose_keypoints", [])],
+                [
+                    [
+                        [float(k[0]) * sx, float(k[1]) * sy, *(float(v) for v in k[2:])]
+                        for k in person
+                    ]
+                    for person in data.get("pose_keypoints", [])
+                ],
             )
             return (
-                [tuple(float(value) for value in box) for box in data["face_boxes"]],
+                [(float(b[0]) * sx, float(b[1]) * sy, float(b[2]) * sx, float(b[3]) * sy) for b in data["face_boxes"]],
                 [float(value) for value in data["face_confidences"]],
-                [tuple(float(value) for value in box) for box in data["hand_boxes"]],
+                [(float(b[0]) * sx, float(b[1]) * sy, float(b[2]) * sx, float(b[3]) * sy) for b in data["hand_boxes"]],
                 [float(value) for value in data["hand_confidences"]],
                 "yolo_cpu",
             )
@@ -389,6 +408,19 @@ class QualityInspector:
         """Run real CPU YOLO; heuristics are available only when explicitly disabled."""
         rgb = image.convert("RGB") if image.mode != "RGB" else image
         if self._ensure_yolo_models():
+            w_orig, h_orig = rgb.size
+            max_dim = max(w_orig, h_orig)
+            if max_dim > 960:
+                scale_down = 640.0 / float(max_dim)
+                small_w = max(32, int(round(w_orig * scale_down)))
+                small_h = max(32, int(round(h_orig * scale_down)))
+                det_img = rgb.resize((small_w, small_h), Image.Resampling.BILINEAR)
+                sx = float(w_orig) / float(small_w)
+                sy = float(h_orig) / float(small_h)
+            else:
+                det_img = rgb
+                sx, sy = 1.0, 1.0
+
             face_boxes: list[tuple[float, float, float, float]] = []
             face_confs: list[float] = []
             hand_boxes: list[tuple[float, float, float, float]] = []
@@ -397,37 +429,45 @@ class QualityInspector:
             with _YOLO_LOCK:
                 if self._face_model is not None:
                     f_res = self._face_model.predict(
-                        rgb, device="cpu", verbose=False, conf=self.face_conf_threshold
+                        det_img, device="cpu", verbose=False, conf=self.face_conf_threshold
                     )[0]
                     for box in f_res.boxes:
                         coords = box.xyxy[0].tolist()
                         face_boxes.append(
-                            (float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3]))
+                            (float(coords[0]) * sx, float(coords[1]) * sy, float(coords[2]) * sx, float(coords[3]) * sy)
                         )
                         face_confs.append(float(box.conf[0]))
 
                 if self._hand_model is not None:
                     h_res = self._hand_model.predict(
-                        rgb, device="cpu", verbose=False, conf=self.hand_conf_threshold
+                        det_img, device="cpu", verbose=False, conf=self.hand_conf_threshold
                     )[0]
                     for box in h_res.boxes:
                         coords = box.xyxy[0].tolist()
                         hand_boxes.append(
-                            (float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3]))
+                            (float(coords[0]) * sx, float(coords[1]) * sy, float(coords[2]) * sx, float(coords[3]) * sy)
                         )
                         hand_confs.append(float(box.conf[0]))
 
                 if run_pose and self._pose_model is not None:
                     p_res = self._pose_model.predict(
-                        rgb, device="cpu", verbose=False, conf=0.005
+                        det_img, device="cpu", verbose=False, conf=0.005
                     )[0]
-                    p_boxes = [[float(v) for v in box.xyxy[0].tolist()] for box in p_res.boxes]
+                    p_boxes = [
+                        [float(c[0]) * sx, float(c[1]) * sy, float(c[2]) * sx, float(c[3]) * sy]
+                        for box in p_res.boxes
+                        for c in (box.xyxy[0].tolist(),)
+                    ]
                     p_confs = [float(box.conf[0]) for box in p_res.boxes]
-                    p_kpts = (
+                    raw_kpts = (
                         p_res.keypoints.data.tolist()
                         if p_res.keypoints is not None and len(p_res.boxes) > 0
                         else []
                     )
+                    p_kpts = [
+                        [[float(k[0]) * sx, float(k[1]) * sy, *(float(v) for v in k[2:])] for k in person]
+                        for person in raw_kpts
+                    ]
                     self._last_pose_detections = (p_boxes, p_confs, p_kpts)
                 else:
                     self._last_pose_detections = ([], [], [])

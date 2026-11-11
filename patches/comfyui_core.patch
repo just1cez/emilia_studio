@@ -1,11 +1,24 @@
 diff --git a/comfy/sd.py b/comfy/sd.py
-index a73607cb..0f3520d1 100644
+index a73607cb..cab567fe 100644
 --- a/comfy/sd.py
 +++ b/comfy/sd.py
-@@ -1137,12 +1137,14 @@ class VAE:
+@@ -1131,18 +1131,26 @@ class VAE:
+         return model_management.intermediate_dtype()
+ 
+     def decode_tiled_(self, samples, tile_x=64, tile_y=64, overlap = 16):
++        decode_fn = lambda a: self.first_stage_model.decode(a.to(self.vae_dtype).to(self.device)).to(dtype=self.vae_output_dtype())
++        if os.environ.get("EMILIA_FAST_TILED_VAE") == "1":
++            fast_overlap = max(overlap, min(tile_x, tile_y) // 4)
++            steps = samples.shape[0] * comfy.utils.get_tiled_scale_steps(samples.shape[3], samples.shape[2], tile_x, tile_y, fast_overlap)
++            pbar = comfy.utils.ProgressBar(steps)
++            output = comfy.utils.tiled_scale(samples, decode_fn, tile_x, tile_y, fast_overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar)
++            return self.process_output(output)
+         steps = samples.shape[0] * comfy.utils.get_tiled_scale_steps(samples.shape[3], samples.shape[2], tile_x, tile_y, overlap)
+         steps += samples.shape[0] * comfy.utils.get_tiled_scale_steps(samples.shape[3], samples.shape[2], tile_x // 2, tile_y * 2, overlap)
+         steps += samples.shape[0] * comfy.utils.get_tiled_scale_steps(samples.shape[3], samples.shape[2], tile_x * 2, tile_y // 2, overlap)
          pbar = comfy.utils.ProgressBar(steps)
  
-         decode_fn = lambda a: self.first_stage_model.decode(a.to(self.vae_dtype).to(self.device)).to(dtype=self.vae_output_dtype())
+-        decode_fn = lambda a: self.first_stage_model.decode(a.to(self.vae_dtype).to(self.device)).to(dtype=self.vae_output_dtype())
 -        output = self.process_output(
 -            (comfy.utils.tiled_scale(samples, decode_fn, tile_x // 2, tile_y * 2, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar) +
 -            comfy.utils.tiled_scale(samples, decode_fn, tile_x * 2, tile_y // 2, overlap, upscale_amount = self.upscale_ratio, output_device=self.output_device, pbar = pbar) +
@@ -23,7 +36,26 @@ index a73607cb..0f3520d1 100644
  
      def decode_tiled_1d(self, samples, tile_x=256, overlap=32):
          if samples.ndim == 3:
-@@ -1243,7 +1245,7 @@ class VAE:
+@@ -1163,12 +1171,17 @@ class VAE:
+         return self.process_output(out.to(device=self.output_device, dtype=self.vae_output_dtype(), copy=True))
+ 
+     def encode_tiled_(self, pixel_samples, tile_x=512, tile_y=512, overlap = 64):
++        encode_fn = lambda a: self.first_stage_model.encode((self.process_input(a)).to(self.vae_dtype).to(self.device)).to(dtype=self.vae_output_dtype())
++        if os.environ.get("EMILIA_FAST_TILED_VAE") == "1":
++            fast_overlap = max(overlap, min(tile_x, tile_y) // 4)
++            steps = pixel_samples.shape[0] * comfy.utils.get_tiled_scale_steps(pixel_samples.shape[3], pixel_samples.shape[2], tile_x, tile_y, fast_overlap)
++            pbar = comfy.utils.ProgressBar(steps)
++            return comfy.utils.tiled_scale(pixel_samples, encode_fn, tile_x, tile_y, fast_overlap, upscale_amount = (1/self.downscale_ratio), out_channels=self.latent_channels, output_device=self.output_device, pbar=pbar)
+         steps = pixel_samples.shape[0] * comfy.utils.get_tiled_scale_steps(pixel_samples.shape[3], pixel_samples.shape[2], tile_x, tile_y, overlap)
+         steps += pixel_samples.shape[0] * comfy.utils.get_tiled_scale_steps(pixel_samples.shape[3], pixel_samples.shape[2], tile_x // 2, tile_y * 2, overlap)
+         steps += pixel_samples.shape[0] * comfy.utils.get_tiled_scale_steps(pixel_samples.shape[3], pixel_samples.shape[2], tile_x * 2, tile_y // 2, overlap)
+         pbar = comfy.utils.ProgressBar(steps)
+ 
+-        encode_fn = lambda a: self.first_stage_model.encode((self.process_input(a)).to(self.vae_dtype).to(self.device)).to(dtype=self.vae_output_dtype())
+         samples = comfy.utils.tiled_scale(pixel_samples, encode_fn, tile_x, tile_y, overlap, upscale_amount = (1/self.downscale_ratio), out_channels=self.latent_channels, output_device=self.output_device, pbar=pbar)
+         samples += comfy.utils.tiled_scale(pixel_samples, encode_fn, tile_x * 2, tile_y // 2, overlap, upscale_amount = (1/self.downscale_ratio), out_channels=self.latent_channels, output_device=self.output_device, pbar=pbar)
+         samples += comfy.utils.tiled_scale(pixel_samples, encode_fn, tile_x // 2, tile_y * 2, overlap, upscale_amount = (1/self.downscale_ratio), out_channels=self.latent_channels, output_device=self.output_device, pbar=pbar)
+@@ -1243,7 +1256,7 @@ class VAE:
                      if preallocated:
                          self.first_stage_model.decode(samples, output_buffer=pixel_samples[x:x+batch_number], **vae_options)
                      else:
@@ -32,7 +64,7 @@ index a73607cb..0f3520d1 100644
                          if pixel_samples is None:
                              pixel_samples = torch.empty((samples_in.shape[0],) + tuple(out.shape[1:]), device=self.output_device, dtype=self.vae_output_dtype())
                          pixel_samples[x:x+batch_number].copy_(out)
-@@ -1260,6 +1262,8 @@ class VAE:
+@@ -1260,6 +1273,8 @@ class VAE:
  
              if do_tile:
                  pixel_samples = None
@@ -41,7 +73,7 @@ index a73607cb..0f3520d1 100644
                  comfy.model_management.soft_empty_cache()
                  dims = samples_in.ndim - 2
                  if dims == 1 or self.extra_1d_channel is not None:
-@@ -1381,10 +1385,10 @@ class VAE:
+@@ -1381,10 +1396,10 @@ class VAE:
                      else:
                          pixels_in = pixels_in.to(self.device)
                          out = self.first_stage_model.encode(pixels_in)
@@ -54,7 +86,7 @@ index a73607cb..0f3520d1 100644
  
              except Exception as e:
                  model_management.raise_non_oom(e)
-@@ -1396,6 +1400,9 @@ class VAE:
+@@ -1396,6 +1411,9 @@ class VAE:
                  do_tile = True
  
              if do_tile:
@@ -65,10 +97,61 @@ index a73607cb..0f3520d1 100644
                  if self.latent_dim == 3:
                      tile = 256
 diff --git a/comfy/utils.py b/comfy/utils.py
-index b31b70da..287ed9ea 100644
+index b31b70da..ebd7ce30 100644
 --- a/comfy/utils.py
 +++ b/comfy/utils.py
-@@ -1092,14 +1092,41 @@ def bislerp(samples, width, height):
+@@ -92,6 +92,39 @@ def _invalid_safetensors_error(message, ckpt):
+ def _incomplete_safetensors_error(message, ckpt):
+     return ValueError("{}\n\nFile path: {}\n\nThe safetensors file is corrupt/incomplete. Check the file size and make sure you have copied/downloaded it correctly.".format(message, ckpt))
+ 
++class _WIN32_MEMORY_RANGE_ENTRY(ctypes.Structure):
++    _fields_ = [("VirtualAddress", ctypes.c_void_p), ("NumberOfBytes", ctypes.c_size_t)]
++
++
++def _prefetch_mmap_sequential(base_addr: int, num_bytes: int) -> None:
++    """Ask Windows to coalesce sequential HDD page-ins for ModelMMAP mappings >= 64 MiB."""
++    if os.name != "nt" or num_bytes < 64 * 1024 * 1024 or os.environ.get("EMILIA_DISABLE_MMAP_PREFETCH") == "1":
++        return
++    try:
++        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
++        prefetch = kernel32.PrefetchVirtualMemory
++        prefetch.argtypes = [
++            ctypes.c_void_p,
++            ctypes.c_size_t,
++            ctypes.POINTER(_WIN32_MEMORY_RANGE_ENTRY),
++            ctypes.c_uint32,
++        ]
++        prefetch.restype = ctypes.c_int
++        proc = kernel32.GetCurrentProcess
++        proc.restype = ctypes.c_void_p
++        chunk = 512 * 1024 * 1024
++        entry = _WIN32_MEMORY_RANGE_ENTRY()
++        hproc = proc()
++        offset = 0
++        while offset < num_bytes:
++            span = min(chunk, num_bytes - offset)
++            entry.VirtualAddress = ctypes.c_void_p(base_addr + offset)
++            entry.NumberOfBytes = span
++            prefetch(hproc, 1, ctypes.byref(entry), 0)
++            offset += span
++    except Exception:
++        pass
++
+ 
+ def load_safetensors(ckpt):
+     import comfy_aimdo.model_mmap
+@@ -103,7 +136,9 @@ def load_safetensors(ckpt):
+     file_lock = threading.Lock()
+     model_mmap = comfy_aimdo.model_mmap.ModelMMAP(ckpt)
+     f = model_mmap.get_file_handle()
+-    mv = memoryview((ctypes.c_uint8 * file_size).from_address(model_mmap.get()))
++    base_addr = model_mmap.get()
++    _prefetch_mmap_sequential(base_addr, file_size)
++    mv = memoryview((ctypes.c_uint8 * file_size).from_address(base_addr))
+ 
+     header_size = struct.unpack("<Q", mv[:8])[0]
+     if header_size > _SAFETENSORS_MAX_HEADER_SIZE:
+@@ -1092,14 +1127,41 @@ def bislerp(samples, width, height):
      result = result.reshape(n, h_new, w_new, c).movedim(-1, 1)
      return result.to(orig_dtype)
  
@@ -114,7 +197,7 @@ index b31b70da..287ed9ea 100644
      return result.to(samples.device, samples.dtype)
  
  def common_upscale(samples, width, height, upscale_method, crop):
-@@ -1199,6 +1226,7 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
+@@ -1199,6 +1261,7 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
          return out
  
      output = torch.empty([samples.shape[0], out_channels] + mult_list_upscale(samples.shape[2:]), device=output_device)
@@ -122,7 +205,7 @@ index b31b70da..287ed9ea 100644
  
      for b in range(samples.shape[0]):
          s = samples[b:b+1]
-@@ -1226,16 +1254,20 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
+@@ -1226,16 +1289,20 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
                  upscaled.append(round(get_pos(d, pos)))
  
              ps = function(s_in).to(output_device)
@@ -153,7 +236,7 @@ index b31b70da..287ed9ea 100644
  
              o = out
              o_d = out_div
-@@ -1249,7 +1281,8 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
+@@ -1249,7 +1316,8 @@ def tiled_scale_multidim(samples, function, tile=(64, 64), overlap=8, upscale_am
                      ps_view = ps_view.narrow(d + 2, 0, l)
                      mask_view = mask_view.narrow(d + 2, 0, l)
  
@@ -199,10 +282,26 @@ index 6003bc7b..dc0ca65d 100644
                          #old ModelPatchers are the first to go
                          oom_ram_usage = 1e30
 diff --git a/comfy_extras/nodes_upscale_model.py b/comfy_extras/nodes_upscale_model.py
-index d1e0401b..1749b701 100644
+index d1e0401b..e81268b5 100644
 --- a/comfy_extras/nodes_upscale_model.py
 +++ b/comfy_extras/nodes_upscale_model.py
-@@ -74,7 +74,7 @@ class ImageUpscaleWithModel(io.ComfyNode):
+@@ -1,4 +1,5 @@
+ import logging
++import os
+ from spandrel import ModelLoader, ImageModelDescriptor
+ from comfy import model_management
+ import torch
+@@ -43,6 +44,9 @@ class UpscaleModelLoader(io.ComfyNode):
+         if not isinstance(out, ImageModelDescriptor):
+             raise Exception("Upscale model must be a single-image model.")
+ 
++        if os.environ.get("EMILIA_FP16_UPSCALER") == "1" and getattr(out, "supports_half", True) and model_management.should_use_fp16():
++            out.model.half()
++            out._emilia_fp16 = True
+         out.patcher = comfy.model_patcher.CoreModelPatcher(out.model, load_device=model_management.get_torch_device(), offload_device=model_management.unet_offload_device())
+         return io.NodeOutput(out)
+ 
+@@ -74,7 +78,7 @@ class ImageUpscaleWithModel(io.ComfyNode):
          memory_required += image.nelement() * image.element_size()
          model_management.load_models_gpu([upscale_model.patcher], memory_required=memory_required, force_full_load=True)
  
@@ -211,16 +310,17 @@ index d1e0401b..1749b701 100644
  
          tile = 512
          overlap = 32
-@@ -86,7 +86,7 @@ class ImageUpscaleWithModel(io.ComfyNode):
+@@ -86,7 +90,8 @@ class ImageUpscaleWithModel(io.ComfyNode):
              try:
                  steps = in_img.shape[0] * comfy.utils.get_tiled_scale_steps(in_img.shape[3], in_img.shape[2], tile_x=tile, tile_y=tile, overlap=overlap)
                  pbar = comfy.utils.ProgressBar(steps)
 -                s = comfy.utils.tiled_scale(in_img, lambda a: upscale_model(a.float()), tile_x=tile, tile_y=tile, overlap=overlap, upscale_amount=upscale_model.scale, pbar=pbar, output_device=output_device)
-+                s = comfy.utils.tiled_scale(in_img, lambda a: upscale_model(a.to(device=device, dtype=torch.float32)), tile_x=tile, tile_y=tile, overlap=overlap, upscale_amount=upscale_model.scale, pbar=pbar, output_device=output_device)
++                run_dtype = torch.float16 if getattr(upscale_model, "_emilia_fp16", False) else torch.float32
++                s = comfy.utils.tiled_scale(in_img, lambda a: upscale_model(a.to(device=device, dtype=run_dtype)).float() if run_dtype == torch.float16 else upscale_model(a.to(device=device, dtype=torch.float32)), tile_x=tile, tile_y=tile, overlap=overlap, upscale_amount=upscale_model.scale, pbar=pbar, output_device=output_device)
                  oom = False
              except Exception as e:
                  model_management.raise_non_oom(e)
-@@ -94,7 +94,8 @@ class ImageUpscaleWithModel(io.ComfyNode):
+@@ -94,7 +99,8 @@ class ImageUpscaleWithModel(io.ComfyNode):
                  if tile < 128:
                      raise e
  
@@ -267,7 +367,7 @@ index 50222cc5..e09532ea 100644
              init_db()
              if args.enable_assets:
 diff --git a/nodes.py b/nodes.py
-index e2072144..22017890 100644
+index e2072144..63ed3061 100644
 --- a/nodes.py
 +++ b/nodes.py
 @@ -585,7 +585,8 @@ class LoadLatent:
@@ -280,6 +380,15 @@ index e2072144..22017890 100644
          return m.digest().hex()
  
      @classmethod
+@@ -1661,7 +1662,7 @@ class SaveImage:
+         self.output_dir = folder_paths.get_output_directory()
+         self.type = "output"
+         self.prefix_append = ""
+-        self.compress_level = 4
++        self.compress_level = 1 if os.environ.get("EMILIA_HEADLESS_FAST_BOOT") == "1" else 4
+ 
+     @classmethod
+     def INPUT_TYPES(s):
 @@ -1694,8 +1695,7 @@ class SaveImage:
          full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0])
          results = list()

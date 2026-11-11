@@ -147,7 +147,10 @@ emilia idea "爱蜜莉雅站在飘雪的月光庭院里微笑，双手轻捧冰�
 # 4. Same-stage wave batch rendering (zero redundant model reloads across seeds)
 emilia batch --seeds 20261113 20261114 20261115 --profile ultra --preset rose-garden --auto-gate
 
-# 5. Reproducible fixed-seed baseline (or via the PowerShell launcher)
+# 5. High-speed TensorCore preset (FP16 upscaler + FP16-fix VAE + 1-pass tiled VAE + 32/16 steps, ~213s)
+emilia render --profile quality --seed 20261027 --fast
+
+# 6. Reproducible fixed-seed baseline (or via the PowerShell launcher, supports -Fast)
 .\render-emilia-quality.ps1 -Seed 20261027 -Profile quality
 ```
 
@@ -179,7 +182,7 @@ emilia clean --older-than-hours 1.0
 | `doctor` / `setup --sync` | Validate Python, dependencies, model sizes (`required` / `experimental`), references, and sync into `app/` |
 | `pull --list / <key> / all` | Resumable HTTP Range downloader with `.part` staging and SHA-256 verification (prints manual guide for LoRAs) |
 | `presets [name]` / `outfits [name]` | Browse 6 zero-Ollama scene presets and 5 Emilia outfits (`royal`, `cloak`, `frozen-bond`, `sanctuary`, `nightgown`) |
-| `render` / `batch` / `idea` | Single render, wave-pooled batch render, and Ollama prompt-compiled render (supports `--garment-region`, `--hires-bridge`, etc.) |
+| `render` / `batch` / `idea` | Single render, wave-pooled batch render, and Ollama prompt-compiled render (supports `--fast`, `--fp16-upscaler`, `--fp16-vae`, `--fast-tiled-vae`, `--steps`, etc.) |
 | `inspect` / `compare` | CPU-only image diagnostics; side-by-side pixel hash and iris hue comparison |
 | `export` / `clean` | Export deliverable bundle; prune finished temporary stage directories |
 | `ledger` / `benchmark` / `workflows` | Query SQLite ledger & cross-round parity; summarize benchmarks; audit/sync 27 API & 10 GUI workflows |
@@ -215,12 +218,12 @@ emilia clean --older-than-hours 1.0
 │   ├── impact_pack.patch          # SAMLoader meta+mmap+assign load & SAMWrapper feature cache patch
 │   └── impact_subpack.patch       # Zero-copy bbox mask & quiet inference patch for subcore.py
 ├── packaging/                     # PyInstaller spec and Windows build script (emilia.spec, build_windows.ps1)
-├── tests/                         # 10 standalone test modules (154 tests) + comfy_core/ operator unit tests
+├── tests/                         # 10 standalone test modules (158 tests) + comfy_core/ operator unit tests
 ├── AGENTS.md                      # Hardware constraints, process isolation rules, and engineering guidelines
-├── PROGRESS.md                    # 15-phase engineering ledger and benchmark tables
+├── PROGRESS.md                    # 16-phase engineering ledger and benchmark tables
 ├── build_support.py               # Build-time immutable resource stager for wheel & PyInstaller
 ├── config.example.toml            # Portable TOML configuration template
-├── models_manifest.json           # 13 required/experimental model weights, references, and pinned node commits
+├── models_manifest.json           # 14 required/experimental model weights, references, and pinned node commits
 ├── ollama_comfyui_bridge.py       # Standalone natural-language bridge script (--mode quality / fast)
 ├── render-emilia-quality.ps1      # One-click PowerShell two-stage quality launcher
 └── start-comfyui.ps1              # Interactive ComfyUI GUI server launcher (default 127.0.0.1:8188)

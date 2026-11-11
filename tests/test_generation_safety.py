@@ -364,3 +364,60 @@ def test_batch_pipeline_reuses_same_stage_sessions_and_isolates_stages(tmp_path,
     assert sessions_opened == ["batch_native", "batch_finish"]
     assert executed_stages == ["native_1", "native_2", "native_3", "finish", "finish", "finish"]
     assert engine.ledger.get_summary_stats()["total_runs"] == 3
+
+
+def test_batch_eye_repair_reuses_finish_stage_server_without_extra_boot(tmp_path, monkeypatch):
+    config = replace(load_config(), app_dir=tmp_path / "app", output_dir=tmp_path / "output", temp_dir=tmp_path / "temp")
+    config.output_dir.mkdir()
+    (config.app_dir / "models" / "vae").mkdir(parents=True)
+    (config.app_dir / "models" / "vae" / "sdxl-vae-fp16-fix.safetensors").write_bytes(b"vae")
+    ledger = ExperimentLedger(tmp_path / "ledger.sqlite3", config)
+    engine = EmiliaRenderEngine(config=config, inspector=QualityInspector(use_yolo=False), ledger=ledger)
+    sessions_opened: list[str] = []
+    executed_stages: list[str] = []
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def fake_stage_session(stage: str, run_dir: Path, port: int):
+        sessions_opened.append(stage)
+        yield "fake_session", f"http://127.0.0.1:{port}", run_dir / stage
+
+    async def fake_exec(session, base_url, graph, stage, log_dir=None, extra_pnginfo=None):
+        executed_stages.append(stage)
+        filename = f"{stage}_{len(executed_stages)}.png"
+        if stage == "finish":
+            size, kind, node_id = (2304, 3456), "accept", "16"
+        elif stage == "eye_repair":
+            size, kind, node_id = (1152, 1728), "accept", "22"
+        elif stage == "native_1":
+            size, kind, node_id = (1152, 1728), "repair", "9"
+        else:
+            size, kind, node_id = (1152, 1728), "accept", "9"
+        _fixture_image(config.output_dir / filename, size, kind)
+        from emilia_studio.engine import StageResult
+        return StageResult(stage=stage, prompt_id="pid", seconds=1.0, outputs={node_id: {"images": [{"filename": filename}]}}, submitted_graph=graph)
+
+    monkeypatch.setattr(engine, "_stage_server_session", fake_stage_session)
+    monkeypatch.setattr(engine, "_execute_graph_on_session", fake_exec)
+
+    receipts = asyncio.run(
+        engine.render_batch_pipeline(
+            seeds=[2001, 2002],
+            profile="quality",
+            strict_seed_lock=False,
+            auto_eye_repair=True,
+            native_steps=32,
+            hand_steps=16,
+            fp16_upscaler=True,
+            fp16_vae=True,
+            fast_tiled_vae=True,
+        )
+    )
+    assert len(receipts) == 2
+    assert all(r["status"] == "completed" for r in receipts)
+    # Only 2 server boots total: batch_native and batch_finish (eye_repair shares batch_finish!)
+    assert sessions_opened == ["batch_native", "batch_finish"]
+    assert executed_stages == ["native_1", "native_2", "eye_repair", "finish", "finish"]
+    assert receipts[0]["selected_settings"]["fast_overrides"]["fp16_upscaler"] is True
+    assert receipts[0]["selected_settings"]["fast_overrides"]["fp16_vae"] is True

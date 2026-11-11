@@ -142,6 +142,17 @@
       "source_url": "https://huggingface.co/Kim2091/AnimeSharp",
       "license": "CC-BY-NC-SA-4.0"
     }
+    ,
+    {
+      "key": "sdxl-vae-fp16-fix",
+      "name": "SDXL VAE FP16 Fix (optional fast mode)",
+      "relative_path": "models/vae/sdxl-vae-fp16-fix.safetensors",
+      "size_bytes": 334641162,
+      "sha256": "235745af8d86bf4a4c1b5b4f529868b37019a10f7c0b2e79ad0abca3a22bc6e1",
+      "download_url": "https://huggingface.co/madebyollin/sdxl-vae-fp16-fix/resolve/main/sdxl.vae.safetensors",
+      "source_url": "https://huggingface.co/madebyollin/sdxl-vae-fp16-fix",
+      "license": "MIT"
+    }
   ],
   "reference_assets": [
     {

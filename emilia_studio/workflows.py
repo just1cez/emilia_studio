@@ -66,6 +66,27 @@ class EmiliaWorkflowBuilder:
             parsed = json.loads(raw)
             _PARSED_WORKFLOW_CACHE[key] = parsed
         return _fast_clone_json(parsed)
+
+    @staticmethod
+    def inject_external_vae(
+        graph: Dict[str, Any],
+        vae_name: str = "sdxl-vae-fp16-fix.safetensors",
+    ) -> Dict[str, Any]:
+        """Rewire all checkpoint VAE outputs (["4", 2]) to a standalone VAELoader node."""
+        _model_name("vae_name", vae_name)
+        rewired = False
+        for node in graph.values():
+            inputs = node.get("inputs")
+            if isinstance(inputs, dict) and inputs.get("vae") == ["4", 2]:
+                inputs["vae"] = ["90", 0]
+                rewired = True
+        if rewired:
+            graph["90"] = {
+                "class_type": "VAELoader",
+                "inputs": {"vae_name": vae_name},
+                "_meta": {"title": f"External VAE ({vae_name})"},
+            }
+        return graph
     def build_highres_native(
         self,
         seed: int = 20261027,

@@ -39,6 +39,39 @@ def _add_ultra_tuning_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--secondary-upscaler", type=str, default=None, help="Secondary Stage 2 upscaler filename for blending (ultra profile)")
     parser.add_argument("--upscale-blend", type=float, default=None, help="Secondary upscaler blend strength 0..1 (ultra profile)")
 
+    parser.add_argument("--steps", type=int, default=None, help="Native/base KSampler step count override")
+    parser.add_argument("--face-steps", type=int, default=None, help="Stage 2 FaceDetailer step count override")
+    parser.add_argument("--hand-steps", type=int, default=None, help="Stage 2 HandDetailer step count override")
+    parser.add_argument("--fp16-upscaler", action="store_true", help="Run Stage 2 RealESRGAN 4x upscaler in FP16 TensorCore mode (~10x faster)")
+    parser.add_argument("--fp16-vae", action="store_true", help="Use standalone sdxl-vae-fp16-fix.safetensors in FP16 mode")
+    parser.add_argument("--fast-tiled-vae", action="store_true", help="Use single-pass feathered tiled VAE decode/encode instead of 3-pass")
+    parser.add_argument("--fast", action="store_true", help="Preset enabling --fp16-upscaler --fp16-vae --fast-tiled-vae and reduced steps (32/16)")
+
+
+def _resolve_fast_acceleration_kwargs(args: argparse.Namespace, profile: str) -> dict[str, object]:
+    is_fast = bool(getattr(args, "fast", False))
+    native_steps = getattr(args, "steps", None)
+    face_steps = getattr(args, "face_steps", None)
+    hand_steps = getattr(args, "hand_steps", None)
+    if is_fast:
+        if native_steps is None:
+            native_steps = 24 if profile == "ultra" else 32
+        if hand_steps is None:
+            hand_steps = 16
+    out: dict[str, object] = {}
+    if native_steps is not None:
+        out["native_steps"] = int(native_steps)
+    if face_steps is not None:
+        out["face_steps"] = int(face_steps)
+    if hand_steps is not None:
+        out["hand_steps"] = int(hand_steps)
+    if is_fast or getattr(args, "fp16_upscaler", False):
+        out["fp16_upscaler"] = True
+    if is_fast or getattr(args, "fp16_vae", False):
+        out["fp16_vae"] = True
+    if is_fast or getattr(args, "fast_tiled_vae", False):
+        out["fast_tiled_vae"] = True
+    return out
 
 def _apply_ultra_tuning_overrides(
     args: argparse.Namespace,
@@ -298,6 +331,7 @@ def main(argv: list[str] | None = None) -> int:
                     max_seed_retries=args.max_retries if args.auto_gate else 0,
                     native_options=native_opts,
                     finish_options=finish_opts,
+                    **_resolve_fast_acceleration_kwargs(args, args.profile),
                 )
             )
             return 0
@@ -404,6 +438,7 @@ def main(argv: list[str] | None = None) -> int:
                     max_seed_retries=args.max_retries if args.auto_gate else 0,
                     native_options=native_opts,
                     finish_options=finish_opts,
+                    **_resolve_fast_acceleration_kwargs(args, args.profile),
                 )
             )
             from .tui import render_table
@@ -478,6 +513,7 @@ def main(argv: list[str] | None = None) -> int:
                     max_seed_retries=args.max_retries if args.auto_gate else 0,
                     native_options=native_opts,
                     finish_options=finish_opts,
+                    **_resolve_fast_acceleration_kwargs(args, args.profile),
                 )
             )
             return 0

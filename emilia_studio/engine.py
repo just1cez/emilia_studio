@@ -109,6 +109,8 @@ class EmiliaRenderEngine:
         self._warmup_task: asyncio.Task[Any] | None = None
         self._pending_stage_inspection: Any = None
         self._completed_stage_inspection: InspectionReport | None = None
+        self._stage2_prewarm_done: bool = False
+        self._stage_runtime_flags: dict[str, bool] = {}
 
     def _python_executable(self) -> str:
         if self.config.conda_python is not None:
@@ -141,6 +143,31 @@ class EmiliaRenderEngine:
         if all((cn_root / name).exists() for name in desired):
             return desired
         return []
+
+    def _prewarm_stage2_files_in_ram(self) -> None:
+        """Sequentially read Stage 2 exclusive model files into OS standby RAM cache while HDD is idle during Stage 1."""
+        if self._stage2_prewarm_done or self.config.app_dir is None:
+            return
+        self._stage2_prewarm_done = True
+        candidates = [
+            self.config.app_dir / "models" / "sams" / "sam_vit_b_01ec64.pth",
+            self.config.app_dir / "models" / "upscale_models" / "RealESRGAN_x4plus_anime_6B.pth",
+            self.config.app_dir / "models" / "ultralytics" / "bbox" / "face_yolov8n.pt",
+            self.config.app_dir / "models" / "ultralytics" / "bbox" / "hand_yolov8n.pt",
+        ]
+        if self._stage_runtime_flags.get("fp16_vae"):
+            candidates.append(self.config.app_dir / "models" / "vae" / "sdxl-vae-fp16-fix.safetensors")
+        buf = bytearray(4 * 1024 * 1024)
+        mv = memoryview(buf)
+        for path in candidates:
+            if not path.is_file():
+                continue
+            try:
+                with path.open("rb", buffering=0) as f:
+                    while f.readinto(mv):
+                        pass
+            except OSError:
+                pass
     def _resolve_local_load_image_ref(self, image_path: Path) -> str | None:
         """Return zero-copy ComfyUI LoadImage annotated reference if image_path is inside local output/input/temp dirs."""
         if self.config.app_dir is None or not image_path.is_file():
@@ -249,9 +276,12 @@ class EmiliaRenderEngine:
                     if self._pending_inspector_warmup is not None:
                         (warm_pose,) = self._pending_inspector_warmup
                         self._pending_inspector_warmup = None
-                        self._warmup_task = asyncio.create_task(
-                            asyncio.to_thread(self.inspector.warmup, run_pose=warm_pose)
-                        )
+
+                        def _warm_all() -> None:
+                            self.inspector.warmup(run_pose=warm_pose)
+                            self._prewarm_stage2_files_in_ram()
+
+                        self._warmup_task = asyncio.create_task(asyncio.to_thread(_warm_all))
                     val = int(payload["value"])
                     mx = int(payload["max"])
                     node = payload.get("node", current_node)
@@ -384,7 +414,7 @@ class EmiliaRenderEngine:
             str(port),
             "--reserve-vram",
             "0.8",
-            "--fp32-vae",
+            "--fp16-vae" if self._stage_runtime_flags.get("fp16_vae") else "--fp32-vae",
             "--disable-pinned-memory",
             "--mmap-torch-files",
             "--preview-method",
@@ -412,6 +442,10 @@ class EmiliaRenderEngine:
             DO_NOT_TRACK="1",
             EMILIA_HEADLESS_FAST_BOOT="1",
         )
+        if self._stage_runtime_flags.get("fp16_upscaler"):
+            environment["EMILIA_FP16_UPSCALER"] = "1"
+        if self._stage_runtime_flags.get("fast_tiled_vae"):
+            environment["EMILIA_FAST_TILED_VAE"] = "1"
         server_log_path = home / "server.log"
         with server_log_path.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(
@@ -487,6 +521,12 @@ class EmiliaRenderEngine:
         isolation_mode: str = "process",
         native_options: dict[str, Any] | None = None,
         finish_options: dict[str, Any] | None = None,
+        native_steps: int | None = None,
+        face_steps: int | None = None,
+        hand_steps: int | None = None,
+        fp16_upscaler: bool = False,
+        fp16_vae: bool = False,
+        fast_tiled_vae: bool = False,
     ) -> dict[str, Any]:
         """Run isolated native/gate/finish stages and persist even quality rejections.
 
@@ -517,6 +557,23 @@ class EmiliaRenderEngine:
         finish_options = dict(finish_options or {})
         is_ultra = profile == "ultra"
         eff_ipa_weight = (0.18 if is_ultra else 0.40) if ipadapter_weight is None else ipadapter_weight
+        for step_name, step_val in (("native_steps", native_steps), ("face_steps", face_steps), ("hand_steps", hand_steps)):
+            if step_val is not None and (isinstance(step_val, bool) or not isinstance(step_val, int) or step_val < 1):
+                raise ValueError(f"{step_name} must be a positive integer")
+        ext_vae_name = "sdxl-vae-fp16-fix.safetensors"
+        if fp16_vae:
+            vae_path = self.config.app_dir / "models" / "vae" / ext_vae_name
+            if not vae_path.is_file():
+                raise FileNotFoundError(
+                    f"fp16_vae requires {vae_path}; run `emilia pull sdxl-vae-fp16-fix` or disable --fp16-vae."
+                )
+        if is_ultra:
+            if native_steps is not None:
+                native_options.setdefault("base_steps", native_steps)
+            if face_steps is not None:
+                finish_options.setdefault("face_steps", face_steps)
+            if hand_steps is not None:
+                finish_options.setdefault("hand_steps", hand_steps)
         run_id = uuid.uuid4().hex[:12]
         temp_dir = self.config.temp_dir or self.config.app_dir / "temp"
         output_dir = (self.config.output_dir or self.config.app_dir / "output").resolve()
@@ -556,6 +613,24 @@ class EmiliaRenderEngine:
                     "strict_seed_lock": strict_seed_lock, "auto_eye_repair": auto_eye_repair,
                     "max_seed_retries": max_seed_retries, "isolation_mode": isolation_mode,
                     "native_options": native_options, "finish_options": finish_options,
+                    **(
+                        {
+                            "fast_overrides": {
+                                k: v
+                                for k, v in {
+                                    "native_steps": native_steps,
+                                    "face_steps": face_steps,
+                                    "hand_steps": hand_steps,
+                                    "fp16_upscaler": fp16_upscaler,
+                                    "fp16_vae": fp16_vae,
+                                    "fast_tiled_vae": fast_tiled_vae,
+                                }.items()
+                                if v
+                            }
+                        }
+                        if any((native_steps, face_steps, hand_steps, fp16_upscaler, fp16_vae, fast_tiled_vae))
+                        else {}
+                    ),
                 },
                 "quality_inspection": {
                     "native": native_report.to_dict(),
@@ -598,124 +673,150 @@ class EmiliaRenderEngine:
 
         req_framing = str(native_options.get("framing", "full_body")) if is_ultra else "full_body"
         require_pose = bool(is_ultra and not strict_seed_lock and req_framing == "full_body")
-        while True:
-            attempt = len(attempts) + 1
-            if is_ultra:
-                native_graph = self.builder.build_ultra_native(
-                    seed=current_seed, pag=pag, positive_prompt=positive_prompt,
-                    negative_prompt=negative_prompt, ipadapter_weight=eff_ipa_weight,
-                    **native_options,
-                )
-            else:
-                native_graph = self.builder.build_highres_native(
-                    seed=current_seed, pag=pag, positive_prompt=positive_prompt,
-                    negative_prompt=negative_prompt, ipadapter_weight=eff_ipa_weight,
-                )
-            if attempt == 1:
-                self._pending_inspector_warmup = (req_framing == "full_body",)
-            self._pending_stage_inspection = lambda gen: self.inspector.inspect_image(
-                _output_path(output_dir, gen["outputs"]["9"]["images"][0]),
-                expected_size=(1152, 1728), stage="native",
-                solo_prompt=True, strict_seed_lock=strict_seed_lock,
-                framing=req_framing, require_full_body_pose=require_pose,
-            )
-            generation = await self.render_stage_isolated(
-                native_graph, "native" if attempt == 1 else f"native_retry_{attempt}", run_dir, port,
-            )
-            self._pending_stage_inspection = None
-            native = selected = _output_path(output_dir, generation["outputs"]["9"]["images"][0])
-            if self._completed_stage_inspection is not None:
-                native_report = self._completed_stage_inspection
-                self._completed_stage_inspection = None
-            else:
-                native_report = self.inspector.inspect_image(
-                    selected, expected_size=(1152, 1728), stage="native",
+        prev_flags = self._stage_runtime_flags
+        self._stage_runtime_flags = {
+            "fp16_upscaler": bool(fp16_upscaler),
+            "fp16_vae": bool(fp16_vae),
+            "fast_tiled_vae": bool(fast_tiled_vae),
+        }
+        try:
+            while True:
+                attempt = len(attempts) + 1
+                if is_ultra:
+                    native_graph = self.builder.build_ultra_native(
+                        seed=current_seed, pag=pag, positive_prompt=positive_prompt,
+                        negative_prompt=negative_prompt, ipadapter_weight=eff_ipa_weight,
+                        **native_options,
+                    )
+                else:
+                    q_native_kwargs: dict[str, Any] = {
+                        "seed": current_seed, "pag": pag,
+                        "positive_prompt": positive_prompt,
+                        "negative_prompt": negative_prompt,
+                        "ipadapter_weight": eff_ipa_weight,
+                    }
+                    if native_steps is not None:
+                        q_native_kwargs["steps"] = native_steps
+                    native_graph = self.builder.build_highres_native(**q_native_kwargs)
+                if fp16_vae:
+                    self.builder.inject_external_vae(native_graph, ext_vae_name)
+                if attempt == 1:
+                    self._pending_inspector_warmup = (req_framing == "full_body",)
+                self._pending_stage_inspection = lambda gen: self.inspector.inspect_image(
+                    _output_path(output_dir, gen["outputs"]["9"]["images"][0]),
+                    expected_size=(1152, 1728), stage="native",
                     solo_prompt=True, strict_seed_lock=strict_seed_lock,
                     framing=req_framing, require_full_body_pose=require_pose,
                 )
-            attempts.append({"seed": current_seed, "generation": generation, "inspection": native_report.to_dict()})
-            if not native_report.dimensions_match:
-                reject("Native output dimensions differ from the quality workflow contract.")
-            if not strict_seed_lock and native_report.recommended_action == "reject_seed":
-                if attempt <= max_seed_retries:
-                    print(f"quality-gate: seed {current_seed} rejected ({native_report.reasons}); retrying with new seed...", file=sys.stderr, flush=True)
-                    current_seed += 1000
-                    continue
-                reject("Quality gate rejected all permitted seed attempts.")
-            break
+                generation = await self.render_stage_isolated(
+                    native_graph, "native" if attempt == 1 else f"native_retry_{attempt}", run_dir, port,
+                )
+                self._pending_stage_inspection = None
+                native = selected = _output_path(output_dir, generation["outputs"]["9"]["images"][0])
+                if self._completed_stage_inspection is not None:
+                    native_report = self._completed_stage_inspection
+                    self._completed_stage_inspection = None
+                else:
+                    native_report = self.inspector.inspect_image(
+                        selected, expected_size=(1152, 1728), stage="native",
+                        solo_prompt=True, strict_seed_lock=strict_seed_lock,
+                        framing=req_framing, require_full_body_pose=require_pose,
+                    )
+                attempts.append({"seed": current_seed, "generation": generation, "inspection": native_report.to_dict()})
+                if not native_report.dimensions_match:
+                    reject("Native output dimensions differ from the quality workflow contract.")
+                if not strict_seed_lock and native_report.recommended_action == "reject_seed":
+                    if attempt <= max_seed_retries:
+                        print(f"quality-gate: seed {current_seed} rejected ({native_report.reasons}); retrying with new seed...", file=sys.stderr, flush=True)
+                        current_seed += 1000
+                        continue
+                    reject("Quality gate rejected all permitted seed attempts.")
+                break
 
-        assert selected is not None and native_report is not None
-        if not strict_seed_lock and native_report.recommended_action == "repair_eyes":
-            if not auto_eye_repair:
-                reject("Eye repair is required but automatic eye repair is disabled.")
-            repair_graph = self.builder.build_eye_repair(
-                image_path=str(selected), seed=current_seed + 9, upscale=False
-            )
-            if is_ultra:
-                repair_graph["4"]["inputs"]["ckpt_name"] = native_graph["4"]["inputs"]["ckpt_name"]
-                finish_lora_strength = float(finish_options.get("lora_strength", native_graph["10"]["inputs"]["strength_model"]))
-                repair_graph["10"]["inputs"]["lora_name"] = finish_options.get("lora_name", native_graph["10"]["inputs"]["lora_name"])
-                repair_graph["10"]["inputs"]["strength_model"] = max(0.25, finish_lora_strength)
-                repair_graph["10"]["inputs"]["strength_clip"] = max(0.25, finish_lora_strength)
-                repair_graph["17"]["inputs"]["text"] = self.config.ultra_face_positive_prompt
-                repair_graph["18"]["inputs"]["text"] = self.config.ultra_face_negative_prompt
-                repair_graph["21"]["inputs"]["feather"] = 12
-                repair_graph["21"]["inputs"]["noise_mask_feather"] = 0
-            self._pending_stage_inspection = lambda rep_gen: self.inspector.inspect_image(
-                _output_path(output_dir, rep_gen["outputs"]["22"]["images"][0]),
-                expected_size=(1152, 1728), stage="eye_repair",
-                solo_prompt=True, strict_seed_lock=False,
-                framing=req_framing, require_full_body_pose=require_pose,
-            )
-            eye_repair_result = await self.render_stage_isolated(repair_graph, "eye_repair", run_dir, port)
-            self._pending_stage_inspection = None
-            selected = _output_path(output_dir, eye_repair_result["outputs"]["22"]["images"][0])
-            if self._completed_stage_inspection is not None:
-                repaired_report = self._completed_stage_inspection
-                self._completed_stage_inspection = None
-            else:
-                repaired_report = self.inspector.inspect_image(
-                    selected, expected_size=(1152, 1728), stage="eye_repair",
+            assert selected is not None and native_report is not None
+            if not strict_seed_lock and native_report.recommended_action == "repair_eyes":
+                if not auto_eye_repair:
+                    reject("Eye repair is required but automatic eye repair is disabled.")
+                repair_graph = self.builder.build_eye_repair(
+                    image_path=str(selected), seed=current_seed + 9, upscale=False
+                )
+                if is_ultra:
+                    repair_graph["4"]["inputs"]["ckpt_name"] = native_graph["4"]["inputs"]["ckpt_name"]
+                    finish_lora_strength = float(finish_options.get("lora_strength", native_graph["10"]["inputs"]["strength_model"]))
+                    repair_graph["10"]["inputs"]["lora_name"] = finish_options.get("lora_name", native_graph["10"]["inputs"]["lora_name"])
+                    repair_graph["10"]["inputs"]["strength_model"] = max(0.25, finish_lora_strength)
+                    repair_graph["10"]["inputs"]["strength_clip"] = max(0.25, finish_lora_strength)
+                    repair_graph["17"]["inputs"]["text"] = self.config.ultra_face_positive_prompt
+                    repair_graph["18"]["inputs"]["text"] = self.config.ultra_face_negative_prompt
+                    repair_graph["21"]["inputs"]["feather"] = 12
+                    repair_graph["21"]["inputs"]["noise_mask_feather"] = 0
+                if fp16_vae:
+                    self.builder.inject_external_vae(repair_graph, ext_vae_name)
+                self._pending_stage_inspection = lambda rep_gen: self.inspector.inspect_image(
+                    _output_path(output_dir, rep_gen["outputs"]["22"]["images"][0]),
+                    expected_size=(1152, 1728), stage="eye_repair",
                     solo_prompt=True, strict_seed_lock=False,
                     framing=req_framing, require_full_body_pose=require_pose,
                 )
-            if not repaired_report.passed:
-                reject("Repaired native image did not pass the quality gate.")
-        elif not strict_seed_lock and not native_report.passed:
-            reject("Native image did not pass the quality gate.")
+                eye_repair_result = await self.render_stage_isolated(repair_graph, "eye_repair", run_dir, port)
+                self._pending_stage_inspection = None
+                selected = _output_path(output_dir, eye_repair_result["outputs"]["22"]["images"][0])
+                if self._completed_stage_inspection is not None:
+                    repaired_report = self._completed_stage_inspection
+                    self._completed_stage_inspection = None
+                else:
+                    repaired_report = self.inspector.inspect_image(
+                        selected, expected_size=(1152, 1728), stage="eye_repair",
+                        solo_prompt=True, strict_seed_lock=False,
+                        framing=req_framing, require_full_body_pose=require_pose,
+                    )
+                if not repaired_report.passed:
+                    reject("Repaired native image did not pass the quality gate.")
+            elif not strict_seed_lock and not native_report.passed:
+                reject("Native image did not pass the quality gate.")
 
-        if is_ultra:
-            finish_graph = self.builder.build_ultra_finish(
-                image_path=str(selected), seed=current_seed, pag=pag, **finish_options,
-            )
-        else:
-            finish_graph = self.builder.build_highres_finish(image_path=str(selected), seed=current_seed, pag=pag)
-        self._pending_stage_inspection = lambda fin_gen: self.inspector.inspect_image(
-            _output_path(output_dir, fin_gen["outputs"]["16"]["images"][0]),
-            expected_size=(2304, 3456), stage="final",
-            solo_prompt=True, strict_seed_lock=strict_seed_lock,
-            framing=req_framing, require_full_body_pose=require_pose,
-        )
-        finishing = await self.render_stage_isolated(finish_graph, "finish", run_dir, port)
-        self._pending_stage_inspection = None
-        final = _output_path(output_dir, finishing["outputs"]["16"]["images"][0])
-        if self._completed_stage_inspection is not None:
-            final_report = self._completed_stage_inspection
-            self._completed_stage_inspection = None
-        else:
-            final_report = self.inspector.inspect_image(
-                final, expected_size=(2304, 3456), stage="final",
+            if is_ultra:
+                finish_graph = self.builder.build_ultra_finish(
+                    image_path=str(selected), seed=current_seed, pag=pag, **finish_options,
+                )
+            else:
+                q_finish_kwargs: dict[str, Any] = {"image_path": str(selected), "seed": current_seed, "pag": pag}
+                if face_steps is not None:
+                    q_finish_kwargs["face_steps"] = face_steps
+                if hand_steps is not None:
+                    q_finish_kwargs["hand_steps"] = hand_steps
+                finish_graph = self.builder.build_highres_finish(**q_finish_kwargs)
+            if fp16_vae:
+                self.builder.inject_external_vae(finish_graph, ext_vae_name)
+            self._pending_stage_inspection = lambda fin_gen: self.inspector.inspect_image(
+                _output_path(output_dir, fin_gen["outputs"]["16"]["images"][0]),
+                expected_size=(2304, 3456), stage="final",
                 solo_prompt=True, strict_seed_lock=strict_seed_lock,
                 framing=req_framing, require_full_body_pose=require_pose,
             )
-        if not final_report.dimensions_match:
-            reject("Finished output dimensions differ from the quality workflow contract.")
-        if not strict_seed_lock and not final_report.passed:
-            reject("Finished image did not pass the quality gate.")
-        receipt, receipt_path = save_receipt()
-        print(f"FINISHED: {final}", file=sys.stderr, flush=True)
-        print(f"RECEIPT: {receipt_path}", file=sys.stderr, flush=True)
-        return receipt
+            finishing = await self.render_stage_isolated(finish_graph, "finish", run_dir, port)
+            self._pending_stage_inspection = None
+            final = _output_path(output_dir, finishing["outputs"]["16"]["images"][0])
+            if self._completed_stage_inspection is not None:
+                final_report = self._completed_stage_inspection
+                self._completed_stage_inspection = None
+            else:
+                final_report = self.inspector.inspect_image(
+                    final, expected_size=(2304, 3456), stage="final",
+                    solo_prompt=True, strict_seed_lock=strict_seed_lock,
+                    framing=req_framing, require_full_body_pose=require_pose,
+                )
+            if not final_report.dimensions_match:
+                reject("Finished output dimensions differ from the quality workflow contract.")
+            if not strict_seed_lock and not final_report.passed:
+                reject("Finished image did not pass the quality gate.")
+            receipt, receipt_path = save_receipt()
+            print(f"FINISHED: {final}", file=sys.stderr, flush=True)
+            print(f"RECEIPT: {receipt_path}", file=sys.stderr, flush=True)
+            return receipt
+        finally:
+            self._stage_runtime_flags = prev_flags
+        # Handled inside try/finally block above
 
     async def render_batch_pipeline(
         self,
@@ -733,6 +834,12 @@ class EmiliaRenderEngine:
         max_seed_retries: int = 0,
         native_options: dict[str, Any] | None = None,
         finish_options: dict[str, Any] | None = None,
+        native_steps: int | None = None,
+        face_steps: int | None = None,
+        hand_steps: int | None = None,
+        fp16_upscaler: bool = False,
+        fp16_vae: bool = False,
+        fast_tiled_vae: bool = False,
     ) -> list[dict[str, Any]]:
         """Render a batch of seeds using same-stage process reuse while keeping Stage 1 and Stage 2 strictly isolated."""
         assert self.config.app_dir is not None
@@ -759,6 +866,23 @@ class EmiliaRenderEngine:
         eff_ipa_weight = (0.18 if is_ultra else 0.40) if ipadapter_weight is None else ipadapter_weight
         req_framing = str(native_options.get("framing", "full_body")) if is_ultra else "full_body"
         require_pose = bool(is_ultra and not strict_seed_lock and req_framing == "full_body")
+        for step_name, step_val in (("native_steps", native_steps), ("face_steps", face_steps), ("hand_steps", hand_steps)):
+            if step_val is not None and (isinstance(step_val, bool) or not isinstance(step_val, int) or step_val < 1):
+                raise ValueError(f"{step_name} must be a positive integer")
+        ext_vae_name = "sdxl-vae-fp16-fix.safetensors"
+        if fp16_vae:
+            vae_path = self.config.app_dir / "models" / "vae" / ext_vae_name
+            if not vae_path.is_file():
+                raise FileNotFoundError(
+                    f"fp16_vae requires {vae_path}; run `emilia pull sdxl-vae-fp16-fix` or disable --fp16-vae."
+                )
+        if is_ultra:
+            if native_steps is not None:
+                native_options.setdefault("base_steps", native_steps)
+            if face_steps is not None:
+                finish_options.setdefault("face_steps", face_steps)
+            if hand_steps is not None:
+                finish_options.setdefault("hand_steps", hand_steps)
 
         run_id = uuid.uuid4().hex[:12]
         temp_dir = self.config.temp_dir or self.config.app_dir / "temp"
@@ -804,6 +928,24 @@ class EmiliaRenderEngine:
                     "max_seed_retries": max_seed_retries,
                     "native_options": native_options,
                     "finish_options": finish_options,
+                    **(
+                        {
+                            "fast_overrides": {
+                                k: v
+                                for k, v in {
+                                    "native_steps": native_steps,
+                                    "face_steps": face_steps,
+                                    "hand_steps": hand_steps,
+                                    "fp16_upscaler": fp16_upscaler,
+                                    "fp16_vae": fp16_vae,
+                                    "fast_tiled_vae": fast_tiled_vae,
+                                }.items()
+                                if v
+                            }
+                        }
+                        if any((native_steps, face_steps, hand_steps, fp16_upscaler, fp16_vae, fast_tiled_vae))
+                        else {}
+                    ),
                 },
                 "quality_inspection": {
                     "native": nat_rep.to_dict(),
@@ -851,89 +993,186 @@ class EmiliaRenderEngine:
             print(f"RECEIPT: {receipt_path}", file=sys.stderr, flush=True)
             item["_persisted"] = True
             item["_receipt"] = receipt
-        # Wave 1: Persistent Stage 1 Native Server for all seeds (warm CPU YOLO during pass 1)
-        self._pending_inspector_warmup = (req_framing == "full_body",)
-        async with self._stage_server_session("batch_native", run_dir, port) as (session, base, home):
-            for idx, req_seed in enumerate(seeds):
-                current_seed = int(req_seed)
-                attempts: list[dict[str, Any]] = []
-                generation: dict[str, Any] = {}
-                native: Path | None = None
-                selected: Path | None = None
-                native_report: InspectionReport | None = None
-                rejected_reason: str | None = None
-                while True:
-                    attempt = len(attempts) + 1
-                    if is_ultra:
-                        native_graph = self.builder.build_ultra_native(
-                            seed=current_seed, pag=pag, positive_prompt=positive_prompt,
-                            negative_prompt=negative_prompt, ipadapter_weight=eff_ipa_weight,
-                            **native_options,
-                        )
-                    else:
-                        native_graph = self.builder.build_highres_native(
-                            seed=current_seed, pag=pag, positive_prompt=positive_prompt,
-                            negative_prompt=negative_prompt, ipadapter_weight=eff_ipa_weight,
-                        )
-                    stage_label = f"native_{idx + 1}" if attempt == 1 else f"native_{idx + 1}_retry_{attempt}"
-                    stage_res = await self._execute_graph_on_session(
-                        session=session,
-                        base_url=base,
-                        graph=native_graph,
-                        stage=stage_label,
-                        log_dir=home / stage_label,
+        prev_flags = self._stage_runtime_flags
+        self._stage_runtime_flags = {
+            "fp16_upscaler": bool(fp16_upscaler),
+            "fp16_vae": bool(fp16_vae),
+            "fast_tiled_vae": bool(fast_tiled_vae),
+        }
+        try:
+            def _build_batch_native_graph(seed_val: int) -> dict[str, Any]:
+                if is_ultra:
+                    g = self.builder.build_ultra_native(
+                        seed=seed_val, pag=pag, positive_prompt=positive_prompt,
+                        negative_prompt=negative_prompt, ipadapter_weight=eff_ipa_weight,
+                        **native_options,
                     )
-                    generation = stage_res.to_dict()
-                    native = selected = _output_path(output_dir, generation["outputs"]["9"]["images"][0])
-                    native_report = self.inspector.inspect_image(
-                        selected, expected_size=(1152, 1728), stage="native",
-                        solo_prompt=True, strict_seed_lock=strict_seed_lock,
-                        framing=req_framing, require_full_body_pose=require_pose,
-                    )
-                    attempts.append({"seed": current_seed, "generation": generation, "inspection": native_report.to_dict()})
-                    if not native_report.dimensions_match:
-                        rejected_reason = "Native output dimensions differ from the quality workflow contract."
-                        break
-                    if not strict_seed_lock and native_report.recommended_action == "reject_seed":
-                        if attempt <= max_seed_retries:
-                            print(
-                                f"quality-gate: seed {current_seed} rejected ({native_report.reasons}); retrying with new seed...",
-                                file=sys.stderr, flush=True,
-                            )
-                            current_seed += 1000
-                            continue
-                        rejected_reason = "Quality gate rejected all permitted seed attempts."
-                    break
-                batch_items.append({
-                    "requested_seed": int(req_seed),
-                    "seed": current_seed,
-                    "native_graph": native_graph,
-                    "generation": generation,
-                    "native": native,
-                    "selected": selected,
-                    "native_report": native_report,
-                    "repaired_report": None,
-                    "eye_repair_result": None,
-                    "finishing": {},
-                    "final": None,
-                    "final_report": None,
-                    "attempts": attempts,
-                    "rejected_reason": rejected_reason,
-                })
+                else:
+                    q_kwargs: dict[str, Any] = {
+                        "seed": seed_val, "pag": pag,
+                        "positive_prompt": positive_prompt,
+                        "negative_prompt": negative_prompt,
+                        "ipadapter_weight": eff_ipa_weight,
+                    }
+                    if native_steps is not None:
+                        q_kwargs["steps"] = native_steps
+                    g = self.builder.build_highres_native(**q_kwargs)
+                if fp16_vae:
+                    self.builder.inject_external_vae(g, ext_vae_name)
+                return g
 
-        # Optional Wave 1.5: Eye repair for items that need it
-        repair_candidates = [
-            item for item in batch_items
-            if item["rejected_reason"] is None
-            and not strict_seed_lock
-            and item["native_report"].recommended_action == "repair_eyes"
-        ]
-        if repair_candidates:
-            if not auto_eye_repair:
+            # Wave 1: Persistent Stage 1 Native Server for all seeds (warm CPU YOLO + Stage 2 RAM cache)
+            self._pending_inspector_warmup = (req_framing == "full_body",)
+            async with self._stage_server_session("batch_native", run_dir, port) as (session, base, home):
+                if strict_seed_lock or max_seed_retries == 0:
+                    # Async pipeline: overlap CPU inspection of seed i-1 with GPU generation of seed i
+                    pending_nat_task: asyncio.Task[InspectionReport] | None = None
+                    pending_nat_item: dict[str, Any] | None = None
+
+                    async def _flush_pending_native() -> None:
+                        nonlocal pending_nat_task, pending_nat_item
+                        if pending_nat_task is None or pending_nat_item is None:
+                            return
+                        nat_report = await pending_nat_task
+                        item_ref = pending_nat_item
+                        pending_nat_task = None
+                        pending_nat_item = None
+                        item_ref["native_report"] = nat_report
+                        item_ref["attempts"][0]["inspection"] = nat_report.to_dict()
+                        if not nat_report.dimensions_match:
+                            item_ref["rejected_reason"] = "Native output dimensions differ from the quality workflow contract."
+                        elif not strict_seed_lock and nat_report.recommended_action == "reject_seed":
+                            item_ref["rejected_reason"] = "Quality gate rejected all permitted seed attempts."
+                        elif not strict_seed_lock and not nat_report.passed and nat_report.recommended_action != "repair_eyes":
+                            item_ref["rejected_reason"] = "Native image did not pass the quality gate."
+
+                    for idx, req_seed in enumerate(seeds):
+                        current_seed = int(req_seed)
+                        native_graph = _build_batch_native_graph(current_seed)
+                        stage_label = f"native_{idx + 1}"
+                        stage_res = await self._execute_graph_on_session(
+                            session=session,
+                            base_url=base,
+                            graph=native_graph,
+                            stage=stage_label,
+                            log_dir=home / stage_label,
+                        )
+                        await _flush_pending_native()
+                        generation = stage_res.to_dict()
+                        native_path = _output_path(output_dir, generation["outputs"]["9"]["images"][0])
+                        item_entry: dict[str, Any] = {
+                            "requested_seed": int(req_seed),
+                            "seed": current_seed,
+                            "native_graph": native_graph,
+                            "generation": generation,
+                            "native": native_path,
+                            "selected": native_path,
+                            "native_report": None,
+                            "repaired_report": None,
+                            "eye_repair_result": None,
+                            "finishing": {},
+                            "final": None,
+                            "final_report": None,
+                            "attempts": [{"seed": current_seed, "generation": generation, "inspection": {}}],
+                            "rejected_reason": None,
+                        }
+                        batch_items.append(item_entry)
+                        pending_nat_item = item_entry
+                        pending_nat_task = asyncio.create_task(
+                            asyncio.to_thread(
+                                self.inspector.inspect_image,
+                                native_path,
+                                (1152, 1728),
+                                "native",
+                                True,
+                                strict_seed_lock,
+                                req_framing,
+                                require_pose,
+                            )
+                        )
+                    await _flush_pending_native()
+                else:
+                    for idx, req_seed in enumerate(seeds):
+                        current_seed = int(req_seed)
+                        attempts: list[dict[str, Any]] = []
+                        generation: dict[str, Any] = {}
+                        native: Path | None = None
+                        selected: Path | None = None
+                        native_report: InspectionReport | None = None
+                        rejected_reason: str | None = None
+                        while True:
+                            attempt = len(attempts) + 1
+                            native_graph = _build_batch_native_graph(current_seed)
+                            stage_label = f"native_{idx + 1}" if attempt == 1 else f"native_{idx + 1}_retry_{attempt}"
+                            stage_res = await self._execute_graph_on_session(
+                                session=session,
+                                base_url=base,
+                                graph=native_graph,
+                                stage=stage_label,
+                                log_dir=home / stage_label,
+                            )
+                            generation = stage_res.to_dict()
+                            native = selected = _output_path(output_dir, generation["outputs"]["9"]["images"][0])
+                            native_report = await asyncio.to_thread(
+                                self.inspector.inspect_image,
+                                selected,
+                                (1152, 1728),
+                                "native",
+                                True,
+                                strict_seed_lock,
+                                req_framing,
+                                require_pose,
+                            )
+                            attempts.append({"seed": current_seed, "generation": generation, "inspection": native_report.to_dict()})
+                            if not native_report.dimensions_match:
+                                rejected_reason = "Native output dimensions differ from the quality workflow contract."
+                                break
+                            if not strict_seed_lock and native_report.recommended_action == "reject_seed":
+                                if attempt <= max_seed_retries:
+                                    print(
+                                        f"quality-gate: seed {current_seed} rejected ({native_report.reasons}); retrying with new seed...",
+                                        file=sys.stderr, flush=True,
+                                    )
+                                    current_seed += 1000
+                                    continue
+                                rejected_reason = "Quality gate rejected all permitted seed attempts."
+                            elif not strict_seed_lock and not native_report.passed and native_report.recommended_action != "repair_eyes":
+                                rejected_reason = "Native image did not pass the quality gate."
+                            break
+                        batch_items.append({
+                            "requested_seed": int(req_seed),
+                            "seed": current_seed,
+                            "native_graph": native_graph,
+                            "generation": generation,
+                            "native": native,
+                            "selected": selected,
+                            "native_report": native_report,
+                            "repaired_report": None,
+                            "eye_repair_result": None,
+                            "finishing": {},
+                            "final": None,
+                            "final_report": None,
+                            "attempts": attempts,
+                            "rejected_reason": rejected_reason,
+                        })
+
+            # Pre-filter eye-repair candidates when auto_eye_repair is disabled
+            repair_candidates = [
+                item for item in batch_items
+                if item["rejected_reason"] is None
+                and not strict_seed_lock
+                and item["native_report"].recommended_action == "repair_eyes"
+            ]
+            if repair_candidates and not auto_eye_repair:
                 for item in repair_candidates:
                     item["rejected_reason"] = "Eye repair is required but automatic eye repair is disabled."
-            else:
-                async with self._stage_server_session("batch_eye_repair", run_dir, port) as (session, base, home):
+                repair_candidates = []
+
+            # Unified Wave 2: Single Stage 2 Server handles both optional Eye Repair (Wave 1.5) and Finish (Wave 2)
+            has_stage2_work = any(item["rejected_reason"] is None for item in batch_items)
+            if has_stage2_work:
+                async with self._stage_server_session("batch_finish", run_dir, port) as (session, base, home):
+                    # Sub-wave 2a: Eye repair on the shared Stage 2 server (zero duplicate 6.5GB checkpoint reload)
                     for idx, item in enumerate(repair_candidates):
                         repair_graph = self.builder.build_eye_repair(
                             image_path=str(item["selected"]), seed=item["seed"] + 9, upscale=False
@@ -952,6 +1191,8 @@ class EmiliaRenderEngine:
                             repair_graph["18"]["inputs"]["text"] = self.config.ultra_face_negative_prompt
                             repair_graph["21"]["inputs"]["feather"] = 12
                             repair_graph["21"]["inputs"]["noise_mask_feather"] = 0
+                        if fp16_vae:
+                            self.builder.inject_external_vae(repair_graph, ext_vae_name)
                         stage_res = await self._execute_graph_on_session(
                             session=session,
                             base_url=base,
@@ -963,53 +1204,87 @@ class EmiliaRenderEngine:
                         item["eye_repair_result"] = eye_res
                         repaired_path = _output_path(output_dir, eye_res["outputs"]["22"]["images"][0])
                         item["selected"] = repaired_path
-                        rep_report = self.inspector.inspect_image(
-                            repaired_path, expected_size=(1152, 1728), stage="eye_repair",
-                            solo_prompt=True, strict_seed_lock=False,
-                            framing=req_framing, require_full_body_pose=require_pose,
+                        rep_report = await asyncio.to_thread(
+                            self.inspector.inspect_image,
+                            repaired_path,
+                            (1152, 1728),
+                            "eye_repair",
+                            True,
+                            False,
+                            req_framing,
+                            require_pose,
                         )
                         item["repaired_report"] = rep_report
                         if not rep_report.passed:
                             item["rejected_reason"] = "Repaired native image did not pass the quality gate."
 
-        # Wave 2: Persistent Stage 2 Finish Server for all accepted items
-        finish_candidates = [item for item in batch_items if item["rejected_reason"] is None]
-        if finish_candidates:
-            async with self._stage_server_session("batch_finish", run_dir, port) as (session, base, home):
-                for idx, item in enumerate(finish_candidates):
-                    if is_ultra:
-                        finish_graph = self.builder.build_ultra_finish(
-                            image_path=str(item["selected"]), seed=item["seed"], pag=pag, **finish_options,
-                        )
-                    else:
-                        finish_graph = self.builder.build_highres_finish(
-                            image_path=str(item["selected"]), seed=item["seed"], pag=pag,
-                        )
-                    stage_res = await self._execute_graph_on_session(
-                        session=session,
-                        base_url=base,
-                        graph=finish_graph,
-                        stage="finish",
-                        log_dir=home / f"finish_{idx + 1}",
-                    )
-                    finishing = stage_res.to_dict()
-                    item["finishing"] = finishing
-                    final_path = _output_path(output_dir, finishing["outputs"]["16"]["images"][0])
-                    item["final"] = final_path
-                    fin_report = self.inspector.inspect_image(
-                        final_path, expected_size=(2304, 3456), stage="final",
-                        solo_prompt=True, strict_seed_lock=strict_seed_lock,
-                        framing=req_framing, require_full_body_pose=require_pose,
-                    )
-                    item["final_report"] = fin_report
-                    if not fin_report.dimensions_match:
-                        item["rejected_reason"] = "Finished output dimensions differ from the quality workflow contract."
-                    elif not strict_seed_lock and not fin_report.passed:
-                        item["rejected_reason"] = "Finished image did not pass the quality gate."
-                    _persist_batch_item(item)
+                    # Sub-wave 2b: Finish with async pipelined final inspection + incremental receipt persistence
+                    finish_candidates = [item for item in batch_items if item["rejected_reason"] is None]
+                    pending_fin_task: asyncio.Task[InspectionReport] | None = None
+                    pending_fin_item: dict[str, Any] | None = None
 
-        # Persist any items that were rejected during Wave 1 or Wave 1.5 and return all in order
-        for item in batch_items:
-            _persist_batch_item(item)
-            receipts.append(item["_receipt"])
-        return receipts
+                    async def _flush_pending_finish() -> None:
+                        nonlocal pending_fin_task, pending_fin_item
+                        if pending_fin_task is None or pending_fin_item is None:
+                            return
+                        fin_report = await pending_fin_task
+                        fin_item = pending_fin_item
+                        pending_fin_task = None
+                        pending_fin_item = None
+                        fin_item["final_report"] = fin_report
+                        if not fin_report.dimensions_match:
+                            fin_item["rejected_reason"] = "Finished output dimensions differ from the quality workflow contract."
+                        elif not strict_seed_lock and not fin_report.passed:
+                            fin_item["rejected_reason"] = "Finished image did not pass the quality gate."
+                        _persist_batch_item(fin_item)
+
+                    for idx, item in enumerate(finish_candidates):
+                        if is_ultra:
+                            finish_graph = self.builder.build_ultra_finish(
+                                image_path=str(item["selected"]), seed=item["seed"], pag=pag, **finish_options,
+                            )
+                        else:
+                            q_fin_kwargs: dict[str, Any] = {
+                                "image_path": str(item["selected"]), "seed": item["seed"], "pag": pag,
+                            }
+                            if face_steps is not None:
+                                q_fin_kwargs["face_steps"] = face_steps
+                            if hand_steps is not None:
+                                q_fin_kwargs["hand_steps"] = hand_steps
+                            finish_graph = self.builder.build_highres_finish(**q_fin_kwargs)
+                        if fp16_vae:
+                            self.builder.inject_external_vae(finish_graph, ext_vae_name)
+                        stage_res = await self._execute_graph_on_session(
+                            session=session,
+                            base_url=base,
+                            graph=finish_graph,
+                            stage="finish",
+                            log_dir=home / f"finish_{idx + 1}",
+                        )
+                        await _flush_pending_finish()
+                        finishing = stage_res.to_dict()
+                        item["finishing"] = finishing
+                        final_path = _output_path(output_dir, finishing["outputs"]["16"]["images"][0])
+                        item["final"] = final_path
+                        pending_fin_item = item
+                        pending_fin_task = asyncio.create_task(
+                            asyncio.to_thread(
+                                self.inspector.inspect_image,
+                                final_path,
+                                (2304, 3456),
+                                "final",
+                                True,
+                                strict_seed_lock,
+                                req_framing,
+                                require_pose,
+                            )
+                        )
+                    await _flush_pending_finish()
+
+            # Persist any items that were rejected during Wave 1 or Sub-wave 2a and return all in order
+            for item in batch_items:
+                _persist_batch_item(item)
+                receipts.append(item["_receipt"])
+            return receipts
+        finally:
+            self._stage_runtime_flags = prev_flags

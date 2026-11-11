@@ -280,6 +280,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--angle", choices=tuple(EMILIA_ANGLE_SPECS), default="auto", help="镜头视角与姿态参考路由")
     parser.add_argument("--puck", action="store_true", help="加入帕克猫精灵同行")
     parser.add_argument("--magic", choices=tuple(EMILIA_MAGIC_TAGS), default="none", help="冰魔法粒子光效")
+    parser.add_argument("--fp16-upscaler", action="store_true", help="启用 FP16 TensorCore 极速超分")
+    parser.add_argument("--fp16-vae", action="store_true", help="使用 sdxl-vae-fp16-fix 半精度 VAE")
+    parser.add_argument("--fast-tiled-vae", action="store_true", help="使用单轮羽化分块 VAE 解码/编码")
+    parser.add_argument("--fast-finish", action="store_true", help="一键开启极速高分套餐 (FP16超分 + FP16-Fix VAE + 单轮分块VAE + 精简步数)")
     return parser.parse_args(argv)
 
 def main(argv: list[str] | None = None) -> int:
@@ -347,6 +351,11 @@ def main(argv: list[str] | None = None) -> int:
                 max_seed_retries=2 if args.auto_gate else 0,
                 native_options=native_opts,
                 finish_options=finish_opts,
+                native_steps=args.steps if args.steps is not None else ((24 if is_ultra else 32) if args.fast_finish else None),
+                hand_steps=16 if args.fast_finish else None,
+                fp16_upscaler=bool(args.fp16_upscaler or args.fast_finish),
+                fp16_vae=bool(args.fp16_vae or args.fast_finish),
+                fast_tiled_vae=bool(args.fast_tiled_vae or args.fast_finish),
             )
         )
         print(f"母版图片：{receipt['native']}", flush=True)

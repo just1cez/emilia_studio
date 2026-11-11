@@ -189,3 +189,22 @@ def test_experimental_models_pull_list_and_preset_default_seed_and_tuning_flags(
     assert captured['finish_options']['garment_region'] == 'brooch_and_collar'
     assert captured['finish_options']['secondary_upscaler_name'] == '4x-AnimeSharp.safetensors'
     assert captured['finish_options']['upscale_blend_strength'] == 0.35
+
+
+def test_fast_flag_preset_routes_to_quality_and_ultra(monkeypatch, capsys):
+    assert main(['pull', '--list']) == 0
+    assert 'sdxl-vae-fp16-fix' in capsys.readouterr().out
+
+    captured = {}
+
+    async def fake_render(self, **kwargs):
+        captured.update(kwargs)
+        return {}
+
+    monkeypatch.setattr('emilia_studio.engine.EmiliaRenderEngine.render_quality_pipeline', fake_render)
+    assert main(['render', '--profile', 'quality', '--fast']) == 0
+    assert captured['native_steps'] == 32
+    assert captured['hand_steps'] == 16
+    assert captured['fp16_upscaler'] is True
+    assert captured['fp16_vae'] is True
+    assert captured['fast_tiled_vae'] is True

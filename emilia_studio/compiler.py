@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import subprocess
 import time
@@ -29,6 +30,7 @@ from .config import (
     load_config,
 )
 
+_IDEA_TAG_MEM_CACHE: dict[str, str] = {}
 
 class BridgeError(RuntimeError):
     """An expected bridge or local-service failure."""
@@ -275,58 +277,98 @@ class OllamaPromptCompiler:
         companion: str = "none",
         magic: str = "none",
         angle: str = "auto",
+        use_cache: bool = True,
     ) -> CompiledPromptSpec:
         """Translate a Chinese idea into a full CompiledPromptSpec and unload Ollama from VRAM."""
         style_hint = self.config.style_hints.get(style, STYLE_HINTS["anime"])
-        body = {
-            "model": self.config.ollama_model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "Translate the Chinese image idea into concise English Danbooru-style "
-                        "tags for the local Illustrious XL model with the Emilia Re:Zero LoRA. "
-                        "Output only one comma-separated line without explanations or markdown. "
-                        "Preserve the requested pose, framing, scene and lighting. Use no more "
-                        "than 45 tags. Do not include unsafe sexual or graphic violent content. "
-                        "For Emilia, output scene and pose tags only: canonical character tags "
-                        "are added separately. Do not redesign her hair or clothes. "
-                        "For other subjects start with subject count, character and series. "
-                        "Do not add quality tags; they are appended separately. "
-                        f"Rendering direction: {style_hint}."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"Translate this idea only:\n<user_idea>{idea}</user_idea>",
-                },
-            ],
-            "stream": False,
-            "think": False,
-            # Keep the prompt model on CPU and unload it before SDXL starts so the
-            # 8 GB graphics card is reserved for image generation.
-            "options": {
-                "temperature": 0.2,
-                "num_gpu": 0,
-                "num_ctx": 2048,
-                "num_predict": 192,
-            },
-            "keep_alive": 0,
-        }
-        response = http_json(
-            f"{self.config.ollama_base}/api/chat",
-            method="POST",
-            value=body,
-            timeout=900,
+        cache_key = hashlib.sha256(
+            f"v1|{self.config.ollama_model}|{style}|{idea.strip()}".encode("utf-8")
+        ).hexdigest()
+        cache_file = (
+            (self.config.temp_dir / "ollama_prompt_cache.json")
+            if self.config.temp_dir is not None
+            else None
         )
-        try:
-            content = response["message"]["content"]
-        except (KeyError, TypeError) as exc:
-            raise BridgeError(f"Ollama 返回格式不完整：{response!r}") from exc
-        if not isinstance(content, str):
-            raise BridgeError("Ollama 返回的提示词不是文本")
+        raw_tags: str | None = _IDEA_TAG_MEM_CACHE.get(cache_key) if use_cache else None
+        if raw_tags is None and use_cache and cache_file is not None and cache_file.is_file():
+            try:
+                disk_cache = json.loads(cache_file.read_text(encoding="utf-8"))
+                if isinstance(disk_cache, dict) and isinstance(disk_cache.get(cache_key), str):
+                    raw_tags = disk_cache[cache_key]
+                    _IDEA_TAG_MEM_CACHE[cache_key] = raw_tags
+            except (OSError, ValueError):
+                pass
 
-        raw_tags = clean_generated_prompt(content)
+        if raw_tags is None:
+            logical_cpus = os.cpu_count() or 8
+            phys_threads = min(10, max(2, logical_cpus // 2))
+            body = {
+                "model": self.config.ollama_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Translate the Chinese image idea into concise English Danbooru-style "
+                            "tags for the local Illustrious XL model with the Emilia Re:Zero LoRA. "
+                            "Output only one comma-separated line without explanations or markdown. "
+                            "Preserve the requested pose, framing, scene and lighting. Use no more "
+                            "than 45 tags. Do not include unsafe sexual or graphic violent content. "
+                            "For Emilia, output scene and pose tags only: canonical character tags "
+                            "are added separately. Do not redesign her hair or clothes. "
+                            "For other subjects start with subject count, character and series. "
+                            "Do not add quality tags; they are appended separately. "
+                            f"Rendering direction: {style_hint}."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Translate this idea only:\n<user_idea>{idea}</user_idea>",
+                    },
+                ],
+                "stream": False,
+                "think": False,
+                # Keep the prompt model on CPU and unload it before SDXL starts so the
+                # 8 GB graphics card is reserved for image generation.
+                "options": {
+                    "temperature": 0.2,
+                    "num_gpu": 0,
+                    "num_thread": phys_threads,
+                    "num_ctx": 2048,
+                    "num_predict": 192,
+                },
+                "keep_alive": 0,
+            }
+            response = http_json(
+                f"{self.config.ollama_base}/api/chat",
+                method="POST",
+                value=body,
+                timeout=900,
+            )
+            try:
+                content = response["message"]["content"]
+            except (KeyError, TypeError) as exc:
+                raise BridgeError(f"Ollama 返回格式不完整：{response!r}") from exc
+            if not isinstance(content, str):
+                raise BridgeError("Ollama 返回的提示词不是文本")
+
+            raw_tags = clean_generated_prompt(content)
+            if use_cache:
+                _IDEA_TAG_MEM_CACHE[cache_key] = raw_tags
+                if cache_file is not None:
+                    try:
+                        cache_file.parent.mkdir(parents=True, exist_ok=True)
+                        existing_disk: dict[str, str] = {}
+                        if cache_file.is_file():
+                            loaded = json.loads(cache_file.read_text(encoding="utf-8"))
+                            if isinstance(loaded, dict):
+                                existing_disk = {str(k): str(v) for k, v in loaded.items() if isinstance(v, str)}
+                        existing_disk[cache_key] = raw_tags
+                        cache_file.write_text(
+                            json.dumps(existing_disk, ensure_ascii=False, indent=2),
+                            encoding="utf-8",
+                        )
+                    except OSError:
+                        pass
         emilia_flag = is_emilia_request(idea, self.config.emilia_aliases)
         framing, ipa_weight = self.infer_composition_hints(
             idea, raw_tags, ultra_mode=(highres_quality_mode and ultra_mode), outfit=outfit

@@ -450,3 +450,75 @@ def test_l3_blocked_quantization_and_ipadapter_kv_mask_caches() -> None:
     )
     assert fake_ipa.calls == 4  # Zero additional linear projections on step 2+!
     assert torch.equal(out_step1, out_step2)
+
+
+def test_compiler_prompt_cache_and_external_vae_injection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import emilia_studio.compiler as comp_mod
+
+    cfg = StudioConfig(root_dir=ROOT, temp_dir=tmp_path / "temp")
+    compiler = OllamaPromptCompiler(config=cfg)
+    calls: list[dict[str, Any]] = []
+
+    def fake_http_json(url: str, *, method: str = "GET", value: Any = None, timeout: float = 30) -> Any:
+        calls.append({"url": url, "body": value})
+        return {"message": {"content": "standing in rose garden, gentle smile, warm sunlight"}}
+
+    comp_mod._IDEA_TAG_MEM_CACHE.clear()
+    monkeypatch.setattr(comp_mod, "http_json", fake_http_json)
+    spec1 = compiler.compile_idea("爱蜜莉雅站在玫瑰花园微笑", style="anime", ultra_mode=True)
+    assert len(calls) == 1
+    assert calls[0]["body"]["options"]["num_gpu"] == 0
+    assert 2 <= calls[0]["body"]["options"]["num_thread"] <= 10
+
+    # Second call hits memory cache without HTTP roundtrip
+    spec2 = compiler.compile_idea("爱蜜莉雅站在玫瑰花园微笑", style="anime", ultra_mode=True)
+    assert len(calls) == 1
+    assert spec2.positive_prompt == spec1.positive_prompt
+
+    # Clear memory cache and verify disk cache reload
+    comp_mod._IDEA_TAG_MEM_CACHE.clear()
+    spec3 = compiler.compile_idea("爱蜜莉雅站在玫瑰花园微笑", style="anime", ultra_mode=True)
+    assert len(calls) == 1
+    assert spec3.scene_and_pose_tags == spec1.scene_and_pose_tags
+
+    builder = EmiliaWorkflowBuilder(load_config())
+    g = builder.build_highres_native(seed=20261027)
+    EmiliaWorkflowBuilder.inject_external_vae(g, "sdxl-vae-fp16-fix.safetensors")
+    assert g["90"]["class_type"] == "VAELoader"
+    assert g["90"]["inputs"]["vae_name"] == "sdxl-vae-fp16-fix.safetensors"
+    assert g["8"]["inputs"]["vae"] == ["90", 0]
+
+
+def test_sam_empty_segs_short_circuit_and_fast_tiled_vae_single_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    if not (ROOT / "app" / "comfy").is_dir() or importlib.util.find_spec("torch") is None:
+        pytest.skip("ComfyUI runtime app/ or torch not present in standalone CI")
+    import torch
+    import comfy.sd
+
+    # Verify single-pass EMILIA_FAST_TILED_VAE calls decode_fn for 1 pass instead of 3
+    call_counter = {"n": 0}
+
+    class _DummyFirstStage:
+        def decode(self, z: torch.Tensor) -> torch.Tensor:
+            call_counter["n"] += 1
+            return torch.ones((z.shape[0], 3, z.shape[2] * 8, z.shape[3] * 8), dtype=torch.float32)
+
+    dummy_vae = object.__new__(comfy.sd.VAE)
+    dummy_vae.first_stage_model = _DummyFirstStage()
+    dummy_vae.vae_dtype = torch.float32
+    dummy_vae.device = torch.device("cpu")
+    dummy_vae.output_device = torch.device("cpu")
+    dummy_vae.upscale_ratio = 8
+    dummy_vae.process_output = lambda t: t
+
+    samples = torch.zeros((1, 4, 96, 96), dtype=torch.float32)
+    monkeypatch.delenv("EMILIA_FAST_TILED_VAE", raising=False)
+    _ = dummy_vae.decode_tiled_(samples, tile_x=64, tile_y=64, overlap=16)
+    calls_3pass = call_counter["n"]
+
+    call_counter["n"] = 0
+    monkeypatch.setenv("EMILIA_FAST_TILED_VAE", "1")
+    out_fast = dummy_vae.decode_tiled_(samples, tile_x=64, tile_y=64, overlap=16)
+    calls_1pass = call_counter["n"]
+    assert calls_1pass < calls_3pass
+    assert tuple(out_fast.shape) == (1, 3, 768, 768)

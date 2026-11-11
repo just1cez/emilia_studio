@@ -1,5 +1,5 @@
 diff --git a/modules/impact/core.py b/modules/impact/core.py
-index a75a5bf..0e374b5 100644
+index a75a5bf..31e4b61 100644
 --- a/modules/impact/core.py
 +++ b/modules/impact/core.py
 @@ -619,6 +619,8 @@ class SAMWrapper:
@@ -37,6 +37,27 @@ index a75a5bf..0e374b5 100644
  class SAM2Wrapper:
      def __init__(self, config, modelname, is_auto_mode, safe_to_gpu=None, device_mode="AUTO"):
          self.config = config
+@@ -780,6 +788,9 @@ def make_sam_mask(sam, segs, image, detection_hint, dilation,
+     if not hasattr(sam, 'sam_wrapper') and not isinstance(sam, SAM2Wrapper):
+         raise Exception("[Impact Pack] Invalid SAMLoader is connected. Make sure 'SAMLoader (Impact)'.\nKnown issue: The ComfyUI-YOLO node overrides the SAMLoader (Impact), making it unusable. You need to uninstall ComfyUI-YOLO.\n\n\n")
+ 
++    if not segs[1]:
++        h, w = (segs[0][0], segs[0][1]) if segs and len(segs[0]) >= 2 else (image.shape[1], image.shape[2])
++        return utils.make_3d_mask(torch.zeros((h, w), dtype=torch.float32, device="cpu"))
+ 
+     if isinstance(sam, SAM2Wrapper):
+         sam_obj = sam
+@@ -1055,6 +1066,10 @@ def make_sam_mask_segmented(sam, segs, image, detection_hint, dilation,
+     if not hasattr(sam, 'sam_wrapper'):
+         raise Exception("[Impact Pack] Invalid SAMLoader is connected. Make sure 'SAMLoader (Impact)'.")
+ 
++    if not segs[1]:
++        h, w = (segs[0][0], segs[0][1]) if segs and len(segs[0]) >= 2 else (image.shape[1], image.shape[2])
++        empty = torch.zeros((h, w), dtype=torch.float32, device="cpu")
++        return (empty, None)
+     sam_obj = sam.sam_wrapper
+     sam_obj.prepare_device()
+ 
 diff --git a/modules/impact/impact_pack.py b/modules/impact/impact_pack.py
 index c776c03..9fb26f2 100644
 --- a/modules/impact/impact_pack.py

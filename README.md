@@ -147,7 +147,10 @@ emilia idea "爱蜜莉雅站在飘雪的月光庭院里微笑，双手轻捧冰�
 # 4. 多图同阶段进程池连抽（模型零重复加载）
 emilia batch --seeds 20261113 20261114 20261115 --profile ultra --preset rose-garden --auto-gate
 
-# 5. 固定种子像素一致性基准复现（或使用 PowerShell 快捷脚本）
+# 5. 开启极速 TensorCore 模式（FP16 超分 + FP16-Fix VAE + 单轮分块 VAE + 精简步数，单张 ~213s）
+emilia render --profile quality --seed 20261027 --fast
+
+# 6. 固定种子像素一致性基准复现（或使用 PowerShell 快捷脚本，支持 -Fast）
 .\render-emilia-quality.ps1 -Seed 20261027 -Profile quality
 ```
 
@@ -179,7 +182,7 @@ emilia clean --older-than-hours 1.0
 | `doctor` / `setup --sync` | 校验 Python、依赖、模型权重（`required` / `experimental`）、参考图与插件；将资产与补丁同步至 `app/` |
 | `pull --list / <key> / all` | 支持 HTTP Range 断点续传、`.part` 原子替换与 SHA-256 校验的模型下载器（未知源的 LoRA 打印手动指引） |
 | `presets [name]` / `outfits [name]` | 浏览 6 套免 Ollama 内置场景预设与 5 套专属服装模式（`royal` / `cloak` / `frozen-bond` / `sanctuary` / `nightgown`） |
-| `render` / `batch` / `idea` | 单张渲染、同阶段进程池批量连抽、中文自然语言编译渲染（均支持 `--garment-region`、`--hires-bridge` 等底层参数） |
+| `render` / `batch` / `idea` | 单张渲染、同阶段进程池批量连抽、中文编译渲染（支持 `--fast`、`--fp16-upscaler`、`--fp16-vae`、`--fast-tiled-vae`、`--steps` 等加速参数） |
 | `inspect` / `compare` | 纯 CPU 单图全面体检；双图分辨率、像素哈希与双瞳色相指标并排对比 |
 | `export` / `clean` | 打包导出完整交付物；安全清理已结束的隔离阶段临时目录 |
 | `ledger` / `benchmark` / `workflows` | 查询 SQLite 实验账本与跨轮次像素比对；汇总历史基准；审计并同步 27 个 API 与 10 个 GUI 工作流 |
@@ -215,12 +218,12 @@ emilia clean --older-than-hours 1.0
 │   ├── impact_pack.patch          # 针对 SAMLoader (meta+mmap+assign) 与 SAMWrapper 特征缓存的补丁
 │   └── impact_subpack.patch       # 针对 subcore.py 免冗余灰度拷贝与静默推理的补丁
 ├── packaging/                     # PyInstaller 独立 Windows 可执行文件构建脚本与规范 (emilia.spec)
-├── tests/                         # 10 个顶层单测模块 (154 项测试) 及 comfy_core/ 底层算子测试
+├── tests/                         # 10 个顶层单测模块 (158 项测试) 及 comfy_core/ 底层算子测试
 ├── AGENTS.md                      # 硬件红线、进程隔离规则与像素一致性工程规范
-├── PROGRESS.md                    # 15 阶段完整研发里程碑与实测数据台账
+├── PROGRESS.md                    # 16 阶段完整研发里程碑与实测数据台账
 ├── build_support.py               # Wheel 与 PyInstaller 构建期只读资源自动归集器
 ├── config.example.toml            # 可移植 TOML 配置模板
-├── models_manifest.json           # 13 个必需/可选模型权重、参考图与插件 Commit 清单
+├── models_manifest.json           # 14 个必需/可选模型权重、参考图与插件 Commit 清单
 ├── ollama_comfyui_bridge.py       # 轻量中文自然语言生图桥接脚本 (--mode quality / fast)
 ├── render-emilia-quality.ps1      # PowerShell 一键双阶段高画质渲染启动器
 └── start-comfyui.ps1              # PowerShell ComfyUI 网页端 GUI 启动器 (默认 127.0.0.1:8188)

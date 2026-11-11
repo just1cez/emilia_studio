@@ -3,7 +3,8 @@ param(
     [ValidateSet('quality', 'ultra')]
     [string]$Profile = 'quality',
     [switch]$Pag,
-    [switch]$AutoGate
+    [switch]$AutoGate,
+    [switch]$Fast
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,6 +26,9 @@ if ($Pag) {
 }
 if ($AutoGate) {
     $Arguments += '--auto-gate'
+}
+if ($Fast) {
+    $Arguments += '--fast'
 }
 & $Python @Arguments
 exit $LASTEXITCODE
