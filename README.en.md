@@ -103,10 +103,12 @@ flowchart LR
    - Stage 1 (`CLIP-ViT-H` + dual `IPAdapter`) and Stage 2 (`YOLOv8n` + `SAM ViT-B` + `RealESRGAN`) exceed 12 GB combined and never co-reside in memory. Stage 1 exits cleanly before Stage 2 reads the native render via zero-copy `[output]` references.
    - `emilia render` and `emilia batch` are one pipeline: every seed's Stage 1 (including gate retries) $\to$ CPU Quality Gate $\to$ every seed's Stage 2 (eye repair + finishing), so $N$ images always cost exactly $2$ cold model loads.
    - Each seed gets its `.run.json` receipt (beside its image) and ledger row the moment it is finished or rejected; a later seed crashing does not lose earlier results.
+   - Each graph has a separate total deadline (`stage_timeout_s=900`, including connection, submission, execution and history retrieval) and current-prompt event silence deadline (`stall_timeout_s=300`). Timeout unwinds and stops the owned ComfyUI child; an external server occupying the port is never stopped. Configure TOML `[services]` or `EMILIA_STAGE_TIMEOUT_S` / `EMILIA_STALL_TIMEOUT_S`; nonpositive values disable the corresponding limit.
+   - Headless `SaveImage` uses PNG compression level zero for intermediate filename prefixes `01_`, `02_`, and `eye_repair_`; other outputs retain their compression policy. File sizes change, decoded pixels do not. This is not a RAM disk or cross-process tensor transfer.
 3. **Zero-VRAM (CPU-Only) Anatomy, Pose & Violet-Iris Self-Healing Gate (`emilia_studio/inspector.py`)**
    - Enforces CPU-only inference across `face_yolov8n`, `hand_yolov8n`, and `yolov8n-pose` to reject multi-face hallucinations, missing faces, and kneeling/cropped-foot failures on `full_body` prompts (`reject_seed`).
    - **HSV Circular Hue Analysis**: Measures left/right iris circular mean hue to detect blue/pink heterochromia ($>32^\circ$) or non-violet drift outside $[250^\circ, 302^\circ]$, and runs a targeted eye-repair pass (`repair_eyes`, about `22s`) inside the Stage 2 process before finishing.
-   - **Known limitation**: eye regions are estimated as fixed fractions of the face box, without landmarks. An eye without enough iris pixels (closed, occluded, profile) is reported as unmeasured (`eye_color_verified=false`): neither counted as violet nor sent to repair.
+   - **Localization and limits**: reuse CPU YOLO COCO eye keypoints to constrain iris candidates, with an explicit face-geometry prior when landmarks are unreliable. Candidate extraction is bounded to a `384×384` working image; color is measured from original pixels. This is not a dedicated anime facial-landmark model or a labeled accuracy benchmark. Eye-sized ornaments, warm/red irises, occlusion and tiny eyes can remain ambiguous. Unmeasured eyes report `eye_color_verified=false`: neither verified violet nor repaired solely for missing evidence. Repairs are reinspected and cannot be upscaled after a failed gate.
 4. **12 Bit-Exact Hardware-Ceiling Memory & Latency Optimizations (`patches/` & `engine.py`)**
    - **GPU & PCIe Hot Paths**: Cross-step `(ip_k, ip_v)` linear projection cache in `IPAdapter` (eliminating **15,000+** redundant CUDA kernel launches), `[B, S, 1]` broadcast spatial attention mask cache (eliminating `1,960` `F.interpolate` calls and `1280×` `.repeat()` VRAM traffic), `CLIPVision` zero-image uncond embedding cache, per-step `sigma` scalar cache (eliminating **2,484** GPU$\to$CPU sync stalls), and `SAM ViT-B` `meta + mmap + assign` loading (**6.0×** faster, `-750 MiB` peak host commit) + ViT-B feature caching (`-50%` latency).
    - **CPU, Memory & Boot Hot Paths**: 256-row L3-cache-blocked multi-threaded `float32 <-> uint8` quantization (**3.3×** faster, eliminating `382.2 MiB` in `lanczos` and `91.1 MiB` in `SaveImage`), `VAE` destination-buffer writes & `tiled_scale_multidim` feather-mask caching (`-676.8 MiB`), per-tile GPU transfer in `ImageUpscaleWithModel` (`-382.21 MiB`), PyAV-free static PNG `LoadImage` fast path, stage-specific `--whitelist-custom-nodes` + headless `comfy_extras` fast boot (`-17.3s`), `<1ms` exclusive socket bind + log-driven zero-SYN-retry readiness, and background CPU YOLO pre-warming + teardown-overlapped inspection (eliminating the `8.8s` cold gate stall).
@@ -163,6 +165,19 @@ emilia render --profile quality --seed 20261027 --fast
 # 6. Reproducible fixed-seed baseline (or via the PowerShell launcher, supports -Fast)
 .\render-emilia-quality.ps1 -Seed 20261027 -Profile quality
 ```
+
+#### Optional: 8-step composition preview (not production output)
+
+```powershell
+emilia pull sdxl-lightning-8step-unet
+emilia setup --sync
+emilia render --profile ultra --preset rose-garden --preview
+# Also available for batch / idea; use -Preview in the PowerShell shortcut
+```
+
+Previews use the standalone [official ByteDance SDXL-Lightning](https://huggingface.co/ByteDance/SDXL-Lightning) 8-step UNet (about `5.14 GB`, downloaded into your configured workspace, not bundled), with fixed `Euler / sgm_uniform / CFG 1` and an `832×1216` default canvas. Only the production checkpoint's CLIP/VAE components are loaded, not its UNet. Hires, eye repair, finishing and upscaling are omitted. This is a **text-only composition draft**: outfit/angle affect text, without Emilia LoRA or IPAdapter, so identity or production composition for the same seed is not guaranteed. Negative prompts do not guide sampling at CFG 1.
+
+Missing weights fail with installation guidance; models and VAEs are never silently substituted. `--steps` must be `8`; `--fast`, `--pag`, `--reference-mode` and Stage 2/hires options conflict. VAE accelerations require explicit `--fp16-vae` / `--fast-tiled-vae`. `--auto-gate` can reject/retry a preview; eye repair requirements reject rather than secretly starting Stage 2. Previews do not certify image quality or character identity.
 
 ### 3. Inspection, Comparison, Export & Ledger
 
@@ -243,6 +258,21 @@ emilia clean --older-than-hours 1.0
 ```
 
 *Note: Local `app/` (ComfyUI runtime and custom nodes) is ignored in `.gitignore`. It is not a clean upstream checkout: `patches/*.patch` modify tracked source files in it, the base commits are recorded in `models_manifest.json`, and `emilia doctor` verifies both the commits and the patch state. Upgrading ComfyUI or a custom node requires regenerating its patch.*
+
+### Optional GPU scheduled task: elevated deployment and boundaries
+
+A SYSTEM task executing mutable checkout/Conda files is a local privilege-escalation path. The installer leaves developer directories writable and stages a protected, versioned Python/pynvml runtime under `%ProgramData%\EmiliaGPUProfile\versions\`, with fixed import paths and `-I -S`. Previous versions remain until uninstall so an active task keeps its interpreter.
+
+```powershell
+# Administrator PowerShell; -Audit can run unelevated
+.\install-gpu-profile-task.ps1 -Python D:\conda-data\envs\comfyui\python.exe
+.\install-gpu-profile-task.ps1 -Audit
+# Administrator uninstall; GPU reset is best effort if dependencies disappeared
+.\install-gpu-profile-task.ps1 -Remove
+```
+
+Audit inspects the actual registered task and dependencies, not merely the proposed source configuration. `-AllowUserWritable` is an insecure opt-out and still fails audit. Upgrades create a fresh copy; reinstall after modifying the repository script to update the SYSTEM runtime. This session's UAC request was canceled: **the workstation's old task has not been migrated**. Editing the source alone does not remove the existing exposure.
+
 
 ---
 

@@ -103,10 +103,12 @@ flowchart LR
    - Stage 1（`CLIP-ViT-H` + 双 `IPAdapter`）与 Stage 2（`YOLO` + `SAM ViT-B` + `RealESRGAN`）总权重超过 12 GB，严禁同进程驻留。Stage 1 落盘后子进程立即退出清空显存与 Windows 提交内存，Stage 2 通过 `[output]` 零拷贝引用直接接力。
    - 单张（`emilia render`）与批量（`emilia batch`）是同一条管线：全部种子的 Stage 1（含门禁重试）$\to$ CPU 质检门禁 $\to$ 全部种子的 Stage 2（修眼 + 精修），$N$ 张图始终只有 $2$ 次模型冷启动。
    - 每个种子在完成或被拒绝的那一刻就写出 `.run.json` 回执（与图片同目录）并入账本；后续种子崩溃不会丢掉已有结果。
+   - 每张图有独立执行期限（`stage_timeout_s=900`，覆盖连接、提交、执行和历史结果读取）与当前任务事件静默期限（`stall_timeout_s=300`）。超时会退出并回收所启动的 ComfyUI 子进程；不会停止已占用端口上的外部服务。可在 TOML `[services]` 或环境变量 `EMILIA_STAGE_TIMEOUT_S` / `EMILIA_STALL_TIMEOUT_S` 中设置；非正数禁用对应期限。
+   - 无界面 `SaveImage` 对文件名前缀为 `01_`、`02_`、`eye_repair_` 的中间 PNG 使用零压缩，其余保留原压缩策略；只改变文件大小，不改变解码像素。并非内存盘或跨进程张量直传。
 3. **零显存（纯 CPU）解剖学、站姿与紫罗兰虹膜自愈门禁（`emilia_studio/inspector.py`）**
    - 强制在 CPU 上运行 `face_yolov8n`、`hand_yolov8n` 与 `yolov8n-pose`：自动拦截单人多脸幻觉、缺脸，以及全身构图（`full_body`）下的跪坐/裁脚缺陷（`reject_seed`）。
    - **HSV 虹膜环形色相分析**：计算双瞳环形均值色相角，捕捉“一蓝一粉异色瞳”（色差 $>32^\circ$）或偏离紫罗兰色带（$[250^\circ, 302^\circ]$）的漂移，并在 Stage 2 进程内先执行修眼（`repair_eyes`，约 `22 秒`）再精修。
-   - **已知局限**：眼部区域按人脸框的固定比例估计，没有关键点定位；取不到足够虹膜像素的眼睛（闭眼、遮挡、侧脸）记为“未测量”（`eye_color_verified=false`），既不算紫瞳也不触发修眼。
+   - **定位与局限**：复用 CPU YOLO 的 COCO 眼部关键点约束候选虹膜区域；关键点不可靠时退回显式人脸几何先验。候选提取限制在至多 `384×384` 工作图；色彩仍在原图像素上测量。它不是专用动漫五官模型，也没有经过标注数据集精度评估；小型发饰、暖红色虹膜、遮挡或微小眼睛仍可能无法可靠辨认。未测量眼睛记为 `eye_color_verified=false`，既不算紫瞳也不因缺测触发修眼。修眼后仍须重新质检，不通过则禁止放大。
 4. **12 项 Bit-Exact 像素级零漂移底层硬件榨取补丁（`patches/` & `engine.py`）**
    - **GPU/PCIe 热路径**：IPAdapter 跨步 `(ip_k, ip_v)` 线性投影缓存（消除 **15,000+** 次冗余 CUDA 核启动）、空间注意力掩码 `[B, S, 1]` 广播缓存（消除 `1,960` 次 `F.interpolate` 与 `1280×` `.repeat()` 显存膨胀）、`CLIPVision` 零图像负向特征缓存、每步 `sigma` 标量缓存（消除 **2,484 次** GPU$\to$CPU 同步停顿）、`SAM ViT-B` `meta + mmap + assign` 零初始化加载（提速 **6.0×**，省 `750 MiB` 峰值内存）及特征缓存（提速 50%）。
    - **CPU/内存/启动热路径**：256 行 L3 缓存分块多线程 `float32 <-> uint8` 量化（提速 **3.3×**，消除 `lanczos` `382.2 MiB` 与 `SaveImage` `91.1 MiB` 临时浮点拷贝）、`VAE` 目标缓冲区直写与 `tiled_scale_multidim` 掩码复用（省 `676.8 MiB`）、`ImageUpscaleWithModel` 按分块上 GPU（省 `382.21 MiB`）、静态 PNG 免 PyAV 直读、分阶段插件白名单与精简 `comfy_extras` 冷启动（省 `17.3s`）、`<1ms` 独占端口检测 + 日志驱动零重试就绪握手、Stage 1 期间后台异步预热 CPU YOLO 与进程回收并行质检（消除 `8.8s` 门禁冷启动等待）。
@@ -163,6 +165,19 @@ emilia render --profile quality --seed 20261027 --fast
 # 6. 固定种子像素一致性基准复现（或使用 PowerShell 快捷脚本，支持 -Fast）
 .\render-emilia-quality.ps1 -Seed 20261027 -Profile quality
 ```
+
+#### 可选：8 步构图预览（非生产成片）
+
+```powershell
+emilia pull sdxl-lightning-8step-unet
+emilia setup --sync
+emilia render --profile ultra --preset rose-garden --preview
+# 同样支持 batch / idea；PowerShell 快捷脚本使用 -Preview
+```
+
+预览使用 [ByteDance 官方 SDXL-Lightning](https://huggingface.co/ByteDance/SDXL-Lightning) 独立 8 步 UNet（约 `5.14 GB`，在 D: 工作区时下载到该工作区，不随发行包携带），固定 `Euler / sgm_uniform / CFG 1`，默认输出 `832×1216`。只加载生产检查点的 CLIP/VAE，不实例化它的 UNet；跳过 hires、修眼、精修与超分。它是**纯文本构图草稿**：服装/视角是文本提示，不加载 Emilia LoRA 或 IPAdapter，因此不保证人物身份或与生产档同种子同构图。CFG 1 下负面提示不参与引导。
+
+缺少模型会提示安装，不会悄悄换模型或 VAE。`--steps` 只能是 `8`；不兼容 `--fast`、`--pag`、`--reference-mode` 和 Stage 2/hires 参数。`--fp16-vae` / `--fast-tiled-vae` 须显式选择。`--auto-gate` 可以拒绝或重抽有问题的预览；需要修眼时报告拒绝，不会在单阶段预览里偷偷启动 Stage 2。不要把预览当成画质或身份一致性验收。
 
 ### 3. 质检对比、成品导出与实验账本
 
@@ -243,6 +258,21 @@ emilia clean --older-than-hours 1.0
 ```
 
 *注：本地 `app/`（ComfyUI 运行时与自定义节点）在 `.gitignore` 中整目录忽略。它不是干净的上游检出：`patches/*.patch` 修改了其中已跟踪的源码，基线 commit 记录在 `models_manifest.json`，`emilia doctor` 会校验 commit 与补丁状态；升级 ComfyUI 或自定义节点后必须重新生成对应补丁。*
+
+### 可选 GPU 计划任务：管理员安装与安全边界
+
+旧的 SYSTEM 任务若直接执行可写的仓库脚本/Conda 解释器，存在本地提权风险。新版安装器不锁死开发目录，而是在 `%ProgramData%\EmiliaGPUProfile\versions\` 下创建受保护的版本化 Python/pynvml 副本，固定导入路径并使用 `-I -S`。旧版本保留至卸载，以免破坏仍在运行的任务。
+
+```powershell
+# 在管理员 PowerShell 中执行；普通终端可以执行 -Audit
+.\install-gpu-profile-task.ps1 -Python D:\conda-data\envs\comfyui\python.exe
+.\install-gpu-profile-task.ps1 -Audit
+# 卸载（管理员）；GPU 参数复位为尽力而为，不要求依赖仍然完整
+.\install-gpu-profile-task.ps1 -Remove
+```
+
+`-Audit` 检查实际注册的任务及依赖，不只是源码中的计划配置。`-AllowUserWritable` 是不安全的显式绕过，审计仍会失败。升级会创建新副本；修改仓库脚本后必须重新安装才能更新 SYSTEM 执行的副本。当前会话的 UAC 请求被取消，**本机旧任务尚未迁移**；源码修改本身不会消除已有风险。
+
 
 ---
 
