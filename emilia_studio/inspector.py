@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-import hashlib
 import atexit
 import base64
+import contextlib
+import hashlib
 import io
 import json
+import queue
 import shutil
 import subprocess
 import sys
 import threading
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -18,36 +21,112 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from . import inspection_worker
 
-def _resolve_default_app_dir() -> Path:
-    root = Path("D:/comfyui")
-    if (root / "app").exists():
-        return root / "app"
-    return Path(__file__).resolve().parents[1] / "app"
+# Fewer saturated pixels than this is noise, not an iris: its color is reported as unmeasured.
+_MIN_IRIS_PIXELS = 8
 
-
-_YOLO_MODEL_CACHE: dict[str, Any] = {}
-_WARMED_MODEL_KEYS: set[str] = set()
+# Serializes in-process YOLO inference; the detectors are shared, non-reentrant CPU models.
 _YOLO_LOCK = threading.Lock()
-_EXTERNAL_WORKERS: dict[str, subprocess.Popen[str]] = {}
+
+
+class InspectionRuntimeError(RuntimeError):
+    """Required CPU detection could not run in the configured environment."""
+
+
+class _ExternalWorker:
+    """Persistent JSON-lines CPU YOLO worker process with bounded request time.
+
+    Both pipes are drained on daemon threads: an unread stderr pipe blocks the
+    worker once it fills, and a blocking stdout read could never time out.
+    """
+
+    def __init__(self, command: list[str]) -> None:
+        try:
+            self._proc = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+            )
+        except OSError as exc:
+            raise InspectionRuntimeError(f"Cannot launch CPU YOLO interpreter {command[0]}: {exc}") from exc
+        self._responses: queue.Queue[str | None] = queue.Queue()
+        self._stderr_tail: deque[str] = deque(maxlen=40)
+        self._lock = threading.Lock()
+        self._stderr_pump = threading.Thread(target=self._pump_stderr, daemon=True)
+        self._stderr_pump.start()
+        threading.Thread(target=self._pump_stdout, daemon=True).start()
+
+    def _pump_stdout(self) -> None:
+        assert self._proc.stdout is not None
+        for line in self._proc.stdout:
+            self._responses.put(line)
+        self._responses.put(None)
+
+    def _pump_stderr(self) -> None:
+        assert self._proc.stderr is not None
+        for line in self._proc.stderr:
+            self._stderr_tail.append(line.rstrip())
+
+    @property
+    def alive(self) -> bool:
+        return self._proc.poll() is None
+
+    def close(self) -> None:
+        if self._proc.poll() is None:
+            self._proc.kill()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            self._proc.wait(timeout=5)
+
+    def _fail(self, message: str) -> InspectionRuntimeError:
+        """Stop the worker (no stale answer may reach a later request) and attach its last stderr lines."""
+        self.close()
+        self._stderr_pump.join(timeout=2)
+        tail = "\n".join(self._stderr_tail)
+        return InspectionRuntimeError(f"{message}\n{tail}" if tail else message)
+
+    def request(self, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        """Send one request and return its JSON object answer, or raise InspectionRuntimeError."""
+        assert self._proc.stdin is not None
+        with self._lock:
+            try:
+                self._proc.stdin.write(json.dumps(payload) + "\n")
+                self._proc.stdin.flush()
+                line = self._responses.get(timeout=timeout)
+            except queue.Empty:
+                raise self._fail(f"CPU YOLO worker did not answer within {timeout:.0f}s.") from None
+            except (OSError, ValueError) as exc:
+                raise self._fail(f"CPU YOLO worker communication failed: {exc}") from exc
+            if line is None:
+                raise self._fail("CPU YOLO worker exited before answering.")
+        try:
+            response = json.loads(line)
+        except ValueError as exc:
+            raise InspectionRuntimeError("CPU YOLO worker returned invalid JSON.") from exc
+        if not isinstance(response, dict):
+            raise InspectionRuntimeError("CPU YOLO worker returned an invalid response.")
+        return response
+
+
+_EXTERNAL_WORKERS: dict[str, _ExternalWorker] = {}
 _EXTERNAL_WORKER_LOCK = threading.Lock()
 
 
 def _cleanup_external_workers() -> None:
     with _EXTERNAL_WORKER_LOCK:
-        for proc in _EXTERNAL_WORKERS.values():
-            try:
-                if proc.poll() is None:
-                    proc.terminate()
-            except Exception:
-                pass
+        for worker in _EXTERNAL_WORKERS.values():
+            worker.close()
         _EXTERNAL_WORKERS.clear()
 
 
 atexit.register(_cleanup_external_workers)
 
-class InspectionRuntimeError(RuntimeError):
-    """Required CPU detection could not run in the configured environment."""
+
 
 def _rgb_to_hsv_deg(rgb_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Convert uint8 RGB array (H, W, 3) to (H_deg [0..360), S [0..1], V [0..1])."""
@@ -60,9 +139,7 @@ def _rgb_to_hsv_deg(rgb_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.nda
 
 
 def _circular_mean_deg(angles_deg: np.ndarray) -> float:
-    """Compute circular mean of angles in degrees [0, 360)."""
-    if angles_deg.size == 0:
-        return 270.0
+    """Compute circular mean of a non-empty array of angles in degrees [0, 360)."""
     rads = np.deg2rad(angles_deg)
     mean_rad = np.arctan2(float(np.mean(np.sin(rads))), float(np.mean(np.cos(rads))))
     return float(np.rad2deg(mean_rad) % 360.0)
@@ -76,6 +153,41 @@ def _circular_diff_deg(angle_a: float, angle_b: float) -> float:
 def _is_violet_hue(hue_deg: float, min_deg: float = 250.0, max_deg: float = 302.0) -> bool:
     """Check whether hue (in degrees) is within Emilia's canonical violet/purple range."""
     return min_deg <= (hue_deg % 360.0) <= max_deg
+
+
+@dataclass
+class Detections:
+    """Anatomy detections of one image, in that image's pixel coordinates."""
+
+    face_boxes: list[tuple[float, float, float, float]] = field(default_factory=list)
+    face_confidences: list[float] = field(default_factory=list)
+    hand_boxes: list[tuple[float, float, float, float]] = field(default_factory=list)
+    hand_confidences: list[float] = field(default_factory=list)
+    source: str = "yolo_cpu"
+    pose_boxes: list[tuple[float, float, float, float]] = field(default_factory=list)
+    pose_keypoints: list[list[list[float]]] = field(default_factory=list)
+
+
+def _detections_from_worker(data: Any, sx: float, sy: float) -> Detections:
+    """Scale raw detector output (detection-image pixels) back to the original image."""
+
+    def boxes(raw: list[list[float]]) -> list[tuple[float, float, float, float]]:
+        return [(float(b[0]) * sx, float(b[1]) * sy, float(b[2]) * sx, float(b[3]) * sy) for b in raw]
+
+    try:
+        return Detections(
+            face_boxes=boxes(data["face_boxes"]),
+            face_confidences=[float(value) for value in data["face_confidences"]],
+            hand_boxes=boxes(data["hand_boxes"]),
+            hand_confidences=[float(value) for value in data["hand_confidences"]],
+            pose_boxes=boxes(data.get("pose_boxes", [])),
+            pose_keypoints=[
+                [[float(k[0]) * sx, float(k[1]) * sy, *(float(v) for v in k[2:])] for k in person]
+                for person in data.get("pose_keypoints", [])
+            ],
+        )
+    except (ValueError, KeyError, TypeError, AttributeError, IndexError) as exc:
+        raise InspectionRuntimeError("CPU YOLO detector returned an invalid detection response.") from exc
 
 
 @dataclass
@@ -104,11 +216,13 @@ class InspectionReport:
     hand_count: int = 0
     hand_boxes: list[tuple[float, float, float, float]] = field(default_factory=list)
     hand_confidences: list[float] = field(default_factory=list)
-    left_eye_hue_deg: float = 270.0
-    right_eye_hue_deg: float = 270.0
-    heterochromia_score: float = 0.0
-    left_eye_in_violet_range: bool = True
-    right_eye_in_violet_range: bool = True
+    # None means "not measured" (no usable iris pixels), never a fabricated default.
+    left_eye_hue_deg: float | None = None
+    right_eye_hue_deg: float | None = None
+    heterochromia_score: float | None = None
+    left_eye_in_violet_range: bool | None = None
+    right_eye_in_violet_range: bool | None = None
+    eye_color_verified: bool = False
     eye_drift_detected: bool = False
     iris_analysis: dict[str, Any] = field(default_factory=dict)
     garment_analysis: dict[str, Any] = field(default_factory=lambda: {
@@ -169,228 +283,86 @@ class QualityInspector:
         heterochromia_threshold_deg: float = 32.0,
         violet_hue_range_deg: tuple[float, float] = (250.0, 302.0),
         python_executable: str | Path | None = None,
+        worker_timeout_s: float = 180.0,
     ) -> None:
-        self.app_dir = Path(app_dir) if app_dir is not None else _resolve_default_app_dir()
+        if app_dir is None:
+            from .config import load_config
+
+            app_dir = load_config().app_dir
+        self.app_dir = Path(app_dir)
         self.use_yolo = use_yolo
         self.face_conf_threshold = face_conf_threshold
         self.hand_conf_threshold = hand_conf_threshold
         self.heterochromia_threshold_deg = heterochromia_threshold_deg
         self.violet_hue_range_deg = violet_hue_range_deg
         self.python_executable = str(python_executable) if python_executable is not None else None
+        # Covers a cold torch/ultralytics import from a spinning disk as well as one detection.
+        self.worker_timeout_s = worker_timeout_s
 
         self.face_model_path = self.app_dir / "models" / "ultralytics" / "bbox" / "face_yolov8n.pt"
         self.hand_model_path = self.app_dir / "models" / "ultralytics" / "bbox" / "hand_yolov8n.pt"
         self.pose_model_path = self.app_dir / "models" / "ultralytics" / "pose" / "yolov8n-pose.pt"
 
-        self._face_model: Any = None
-        self._hand_model: Any = None
-        self._pose_model: Any = None
-        self._last_pose_detections: tuple[list[list[float]], list[float], list[list[list[float]]]] = ([], [], [])
-        self._yolo_load_attempted: bool = False
-    def _ensure_yolo_models(self) -> bool:
-        """Load local CPU detectors, or select the configured external interpreter."""
-        if not self.use_yolo:
-            return False
-        if self._yolo_load_attempted:
-            return self._face_model is not None and self._hand_model is not None
-        for path in (self.face_model_path, self.hand_model_path):
-            if not path.is_file():
-                raise InspectionRuntimeError(f"Required YOLO model is missing: {path}")
-        with _YOLO_LOCK:
-            if self._yolo_load_attempted:
-                return self._face_model is not None and self._hand_model is not None
-            try:
-                if getattr(sys, "frozen", False):
-                    raise ImportError("Frozen Emilia uses an external CPU inference environment")
-                from ultralytics import YOLO
+        # None until first use: True runs YOLO in this interpreter, False in the external worker.
+        self._local_yolo: bool | None = None
 
-                for path in (self.face_model_path, self.hand_model_path):
-                    key = str(path.resolve())
-                    if key not in _YOLO_MODEL_CACHE:
-                        _YOLO_MODEL_CACHE[key] = YOLO(key)
-                self._face_model = _YOLO_MODEL_CACHE[str(self.face_model_path.resolve())]
-                self._hand_model = _YOLO_MODEL_CACHE[str(self.hand_model_path.resolve())]
-                if self.pose_model_path.is_file():
-                    p_key = str(self.pose_model_path.resolve())
-                    if p_key not in _YOLO_MODEL_CACHE:
-                        _YOLO_MODEL_CACHE[p_key] = YOLO(p_key)
-                    self._pose_model = _YOLO_MODEL_CACHE[p_key]
-            except Exception as exc:
-                self._face_model = None
-                self._hand_model = None
-                self._pose_model = None
-                if self.python_executable is None:
-                    raise InspectionRuntimeError(
-                        "CPU YOLO is unavailable; configure conda_python with torch and ultralytics installed."
-                    ) from exc
-            self._yolo_load_attempted = True
-            return self._face_model is not None and self._hand_model is not None
-
-    def warmup(self, *, run_pose: bool = True) -> bool:
-        """Pre-load and fuse CPU YOLO detectors off the critical path."""
-        if not self.use_yolo:
-            return False
-        if not self.face_model_path.is_file() or not self.hand_model_path.is_file():
-            return False
-        if self._ensure_yolo_models():
-            dummy = Image.new("RGB", (64, 64), (0, 0, 0))
-            with _YOLO_LOCK:
-                pairs: list[tuple[Path, Any]] = [
-                    (self.face_model_path, self._face_model),
-                    (self.hand_model_path, self._hand_model),
-                ]
-                if run_pose and self._pose_model is not None:
-                    pairs.append((self.pose_model_path, self._pose_model))
-                for path, model in pairs:
-                    if model is None:
-                        continue
-                    key = str(path.resolve())
-                    if key not in _WARMED_MODEL_KEYS:
-                        model.predict(dummy, imgsz=64, device="cpu", verbose=False)
-                        _WARMED_MODEL_KEYS.add(key)
-            return True
-        if self.python_executable is not None:
-            executable = self.python_executable
-            resolved_executable = shutil.which(executable) or executable
-            worker = Path(__file__).with_name("inspection_worker.py")
-            if not worker.is_file():
-                return False
-            req = {
-                "cmd": "warmup",
-                "face_path": str(self.face_model_path.resolve()),
-                "hand_path": str(self.hand_model_path.resolve()),
-                "pose_path": str(self.pose_model_path.resolve()) if (run_pose and self.pose_model_path.is_file()) else "",
-            }
-            worker_key = f"{Path(resolved_executable).resolve()}::{worker.resolve()}"
-            with _EXTERNAL_WORKER_LOCK:
-                proc = _EXTERNAL_WORKERS.get(worker_key)
-                if proc is None or proc.poll() is not None:
-                    proc = subprocess.Popen(
-                        [executable, "-u", str(worker), "--server"],
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        encoding="utf-8",
-                        bufsize=1,
-                    )
-                    _EXTERNAL_WORKERS[worker_key] = proc
-                if proc.stdin is not None and proc.stdout is not None:
-                    proc.stdin.write(json.dumps(req) + "\n")
-                    proc.stdin.flush()
-                    resp_line = proc.stdout.readline()
-                    if resp_line:
-                        return bool(json.loads(resp_line).get("ok"))
-        return False
-    def _detect_anatomy_external(
-        self,
-        image: Image.Image,
-        *,
-        run_pose: bool = True,
-        image_path: Path | None = None,
-    ) -> tuple[
-        list[tuple[float, float, float, float]], list[float],
-        list[tuple[float, float, float, float]], list[float], str,
-    ]:
-        """Run the bundled standalone worker via a persistent JSON-lines server process."""
+    def _external_worker(self) -> _ExternalWorker:
+        """Return the live worker for the configured interpreter, starting it when needed."""
         executable = self.python_executable
         if executable is None:
             raise InspectionRuntimeError("Configure conda_python for CPU YOLO inspection.")
         resolved_executable = shutil.which(executable) or executable
         if getattr(sys, "frozen", False) and Path(resolved_executable).resolve() == Path(sys.executable).resolve():
             raise InspectionRuntimeError("conda_python must be an external Python interpreter, not Emilia.")
-        worker = Path(__file__).with_name("inspection_worker.py")
-        if not worker.is_file():
-            raise InspectionRuntimeError(f"Bundled inspection worker is missing: {worker}")
-        pose_arg = (
-            str(self.pose_model_path.resolve())
-            if (run_pose and self.pose_model_path.is_file())
-            else ""
-        )
-        req: dict[str, Any] = {
+        script = Path(__file__).with_name("inspection_worker.py")
+        if not script.is_file():
+            raise InspectionRuntimeError(f"Bundled inspection worker is missing: {script}")
+        key = f"{Path(resolved_executable).resolve()}::{script.resolve()}"
+        with _EXTERNAL_WORKER_LOCK:
+            worker = _EXTERNAL_WORKERS.get(key)
+            if worker is None or not worker.alive:
+                worker = _ExternalWorker([executable, "-u", str(script)])
+                _EXTERNAL_WORKERS[key] = worker
+            return worker
+
+    def _runs_locally(self) -> bool:
+        """Whether YOLO runs in this interpreter (True) or in the configured external one (False)."""
+        for path in (self.face_model_path, self.hand_model_path):
+            if not path.is_file():
+                raise InspectionRuntimeError(f"Required YOLO model is missing: {path}")
+        if self._local_yolo is None:
+            try:
+                if getattr(sys, "frozen", False):
+                    raise ImportError("Frozen Emilia uses an external CPU inference environment")
+                import ultralytics  # noqa: F401
+
+                self._local_yolo = True
+            except Exception as exc:
+                if self.python_executable is None:
+                    raise InspectionRuntimeError(
+                        "CPU YOLO is unavailable; configure conda_python with torch and ultralytics installed."
+                    ) from exc
+                self._local_yolo = False
+        return self._local_yolo
+
+    def _model_paths(self, run_pose: bool) -> dict[str, str]:
+        return {
             "face_path": str(self.face_model_path.resolve()),
             "hand_path": str(self.hand_model_path.resolve()),
-            "face_threshold": float(self.face_conf_threshold),
-            "hand_threshold": float(self.hand_conf_threshold),
-            "pose_path": pose_arg,
+            "pose_path": str(self.pose_model_path.resolve()) if (run_pose and self.pose_model_path.is_file()) else "",
         }
-        w_orig, h_orig = image.size
-        max_dim = max(w_orig, h_orig)
-        if max_dim > 960:
-            scale_down = 640.0 / float(max_dim)
-            small_w = max(32, int(round(w_orig * scale_down)))
-            small_h = max(32, int(round(h_orig * scale_down)))
-            small_img = image.resize((small_w, small_h), Image.Resampling.BILINEAR)
-            sx = float(w_orig) / float(small_w)
-            sy = float(h_orig) / float(small_h)
-            with io.BytesIO() as encoded:
-                small_img.save(encoded, format="PNG", compress_level=1)
-                req["image_b64"] = base64.b64encode(encoded.getvalue()).decode("ascii")
-        elif image_path is not None and image_path.is_file():
-            req["image_path"] = str(image_path.resolve())
-            sx, sy = 1.0, 1.0
-        else:
-            with io.BytesIO() as encoded:
-                image.save(encoded, format="PNG", compress_level=1)
-                req["image_b64"] = base64.b64encode(encoded.getvalue()).decode("ascii")
-            sx, sy = 1.0, 1.0
-        worker_key = f"{Path(resolved_executable).resolve()}::{worker.resolve()}"
-        with _EXTERNAL_WORKER_LOCK:
-            proc = _EXTERNAL_WORKERS.get(worker_key)
-            if proc is None or proc.poll() is not None:
-                try:
-                    proc = subprocess.Popen(
-                        [executable, "-u", str(worker), "--server"],
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        encoding="utf-8",
-                        bufsize=1,
-                    )
-                    _EXTERNAL_WORKERS[worker_key] = proc
-                except OSError as exc:
-                    raise InspectionRuntimeError(f"Cannot launch CPU YOLO interpreter {executable}: {exc}") from exc
-            assert proc.stdin is not None and proc.stdout is not None
-            try:
-                proc.stdin.write(json.dumps(req) + "\n")
-                proc.stdin.flush()
-                resp_line = proc.stdout.readline()
-            except OSError as exc:
-                _EXTERNAL_WORKERS.pop(worker_key, None)
-                raise InspectionRuntimeError(f"CPU YOLO worker communication failed: {exc}") from exc
-            if not resp_line:
-                err_out = proc.stderr.read() if proc.stderr is not None else ""
-                _EXTERNAL_WORKERS.pop(worker_key, None)
-                raise InspectionRuntimeError(f"CPU YOLO inspection failed using {executable}: {err_out.strip()}")
-        try:
-            resp = json.loads(resp_line)
-        except ValueError as exc:
-            raise InspectionRuntimeError("CPU YOLO worker returned invalid JSON.") from exc
-        if not resp.get("ok"):
-            raise InspectionRuntimeError(f"CPU YOLO inspection failed using {executable}: {resp.get('error')}")
-        try:
-            data = resp["data"]
-            self._last_pose_detections = (
-                [[float(b[0]) * sx, float(b[1]) * sy, float(b[2]) * sx, float(b[3]) * sy] for b in data.get("pose_boxes", [])],
-                [float(v) for v in data.get("pose_confidences", [])],
-                [
-                    [
-                        [float(k[0]) * sx, float(k[1]) * sy, *(float(v) for v in k[2:])]
-                        for k in person
-                    ]
-                    for person in data.get("pose_keypoints", [])
-                ],
-            )
-            return (
-                [(float(b[0]) * sx, float(b[1]) * sy, float(b[2]) * sx, float(b[3]) * sy) for b in data["face_boxes"]],
-                [float(value) for value in data["face_confidences"]],
-                [(float(b[0]) * sx, float(b[1]) * sy, float(b[2]) * sx, float(b[3]) * sy) for b in data["hand_boxes"]],
-                [float(value) for value in data["hand_confidences"]],
-                "yolo_cpu",
-            )
-        except (ValueError, KeyError, TypeError) as exc:
-            raise InspectionRuntimeError("CPU YOLO worker returned an invalid detection response.") from exc
+
+    def warmup(self, *, run_pose: bool = True) -> bool:
+        """Pre-load and fuse CPU YOLO detectors off the critical path."""
+        if not self.use_yolo or not self.face_model_path.is_file() or not self.hand_model_path.is_file():
+            return False
+        paths = self._model_paths(run_pose)
+        if self._runs_locally():
+            with _YOLO_LOCK:
+                inspection_worker.warmup_models(**paths)
+            return True
+        response = self._external_worker().request({"cmd": "warmup", **paths}, self.worker_timeout_s)
+        return bool(response.get("ok"))
 
     def detect_anatomy(
         self,
@@ -398,90 +370,52 @@ class QualityInspector:
         *,
         run_pose: bool = True,
         image_path: Path | None = None,
-    ) -> tuple[
-        list[tuple[float, float, float, float]],
-        list[float],
-        list[tuple[float, float, float, float]],
-        list[float],
-        str,
-    ]:
-        """Run real CPU YOLO; heuristics are available only when explicitly disabled."""
+    ) -> Detections:
+        """Run real CPU YOLO; heuristics are available only when explicitly disabled.
+
+        The same detector code (``inspection_worker.run_detection``) serves both the
+        in-process and the external-interpreter path, on the same downscaled pixels.
+        """
         rgb = image.convert("RGB") if image.mode != "RGB" else image
-        if self._ensure_yolo_models():
-            w_orig, h_orig = rgb.size
-            max_dim = max(w_orig, h_orig)
-            if max_dim > 960:
-                scale_down = 640.0 / float(max_dim)
-                small_w = max(32, int(round(w_orig * scale_down)))
-                small_h = max(32, int(round(h_orig * scale_down)))
-                det_img = rgb.resize((small_w, small_h), Image.Resampling.BILINEAR)
-                sx = float(w_orig) / float(small_w)
-                sy = float(h_orig) / float(small_h)
-            else:
-                det_img = rgb
-                sx, sy = 1.0, 1.0
+        if not self.use_yolo:
+            # Explicitly disabled detection retains the heuristic inspection mode.
+            w, h = rgb.size
+            return Detections(
+                face_boxes=[(0.30 * w, 0.08 * h, 0.70 * w, 0.34 * h)], face_confidences=[1.0], source="heuristic_cpu"
+            )
+        local = self._runs_locally()
+        request: dict[str, Any] = {
+            **self._model_paths(run_pose),
+            "face_threshold": float(self.face_conf_threshold),
+            "hand_threshold": float(self.hand_conf_threshold),
+        }
+        w_orig, h_orig = rgb.size
+        det_img, sx, sy = rgb, 1.0, 1.0
+        if max(w_orig, h_orig) > 960:
+            scale_down = 640.0 / float(max(w_orig, h_orig))
+            small_w = max(32, int(round(w_orig * scale_down)))
+            small_h = max(32, int(round(h_orig * scale_down)))
+            det_img = rgb.resize((small_w, small_h), Image.Resampling.BILINEAR)
+            sx = float(w_orig) / float(small_w)
+            sy = float(h_orig) / float(small_h)
 
-            face_boxes: list[tuple[float, float, float, float]] = []
-            face_confs: list[float] = []
-            hand_boxes: list[tuple[float, float, float, float]] = []
-            hand_confs: list[float] = []
-
+        if local:
             with _YOLO_LOCK:
-                if self._face_model is not None:
-                    f_res = self._face_model.predict(
-                        det_img, device="cpu", verbose=False, conf=self.face_conf_threshold
-                    )[0]
-                    for box in f_res.boxes:
-                        coords = box.xyxy[0].tolist()
-                        face_boxes.append(
-                            (float(coords[0]) * sx, float(coords[1]) * sy, float(coords[2]) * sx, float(coords[3]) * sy)
-                        )
-                        face_confs.append(float(box.conf[0]))
-
-                if self._hand_model is not None:
-                    h_res = self._hand_model.predict(
-                        det_img, device="cpu", verbose=False, conf=self.hand_conf_threshold
-                    )[0]
-                    for box in h_res.boxes:
-                        coords = box.xyxy[0].tolist()
-                        hand_boxes.append(
-                            (float(coords[0]) * sx, float(coords[1]) * sy, float(coords[2]) * sx, float(coords[3]) * sy)
-                        )
-                        hand_confs.append(float(box.conf[0]))
-
-                if run_pose and self._pose_model is not None:
-                    p_res = self._pose_model.predict(
-                        det_img, device="cpu", verbose=False, conf=0.005
-                    )[0]
-                    p_boxes = [
-                        [float(c[0]) * sx, float(c[1]) * sy, float(c[2]) * sx, float(c[3]) * sy]
-                        for box in p_res.boxes
-                        for c in (box.xyxy[0].tolist(),)
-                    ]
-                    p_confs = [float(box.conf[0]) for box in p_res.boxes]
-                    raw_kpts = (
-                        p_res.keypoints.data.tolist()
-                        if p_res.keypoints is not None and len(p_res.boxes) > 0
-                        else []
-                    )
-                    p_kpts = [
-                        [[float(k[0]) * sx, float(k[1]) * sy, *(float(v) for v in k[2:])] for k in person]
-                        for person in raw_kpts
-                    ]
-                    self._last_pose_detections = (p_boxes, p_confs, p_kpts)
-                else:
-                    self._last_pose_detections = ([], [], [])
-
-            return face_boxes, face_confs, hand_boxes, hand_confs, "yolo_cpu"
-
-        if self.use_yolo:
-            return self._detect_anatomy_external(rgb, run_pose=run_pose, image_path=image_path)
-
-        # Explicitly disabled detection retains the existing heuristic inspection mode.
-        w, h = rgb.size
-        heuristic_box = (0.30 * w, 0.08 * h, 0.70 * w, 0.34 * h)
-        self._last_pose_detections = ([], [], [])
-        return [heuristic_box], [1.0], [], [], "heuristic_cpu"
+                data: Any = inspection_worker.run_detection(det_img, **request)
+        else:
+            if det_img is rgb and image_path is not None and image_path.is_file():
+                request["image_path"] = str(image_path.resolve())
+            else:
+                with io.BytesIO() as encoded:
+                    det_img.save(encoded, format="PNG", compress_level=1)
+                    request["image_b64"] = base64.b64encode(encoded.getvalue()).decode("ascii")
+            response = self._external_worker().request(request, self.worker_timeout_s)
+            if not response.get("ok"):
+                raise InspectionRuntimeError(
+                    f"CPU YOLO inspection failed using {self.python_executable}: {response.get('error')}"
+                )
+            data = response.get("data")
+        return _detections_from_worker(data, sx, sy)
 
     def analyze_iris_color(
         self,
@@ -503,9 +437,10 @@ class QualityInspector:
         detector_source = "provided_bbox"
         if face_bbox is None:
             if _detect_if_missing:
-                f_boxes, _, _, _, detector_source = self.detect_anatomy(rgb, run_pose=False)
-                if f_boxes:
-                    face_bbox = f_boxes[0]
+                detections = self.detect_anatomy(rgb, run_pose=False)
+                detector_source = detections.source
+                if detections.face_boxes:
+                    face_bbox = detections.face_boxes[0]
             if face_bbox is None:
                 face_bbox = (0.30 * w, 0.08 * h, 0.70 * w, 0.34 * h)
                 detector_source = "fallback_upper_body"
@@ -537,35 +472,44 @@ class QualityInspector:
         l_hues = _extract_iris_hues(left_crop)
         r_hues = _extract_iris_hues(right_crop)
 
-        l_mean = _circular_mean_deg(l_hues)
-        r_mean = _circular_mean_deg(r_hues)
+        # An eye without enough iris pixels (closed, occluded, profile view) is unmeasured:
+        # it neither proves nor disproves the violet color and never triggers a repair.
+        left_measured = l_hues.size >= _MIN_IRIS_PIXELS
+        right_measured = r_hues.size >= _MIN_IRIS_PIXELS
+        l_mean = _circular_mean_deg(l_hues) if left_measured else None
+        r_mean = _circular_mean_deg(r_hues) if right_measured else None
         heterochromia_score = (
-            _circular_diff_deg(l_mean, r_mean)
-            if (l_hues.size > 0 and r_hues.size > 0)
-            else 0.0
+            _circular_diff_deg(l_mean, r_mean) if l_mean is not None and r_mean is not None else None
         )
 
         v_min, v_max = self.violet_hue_range_deg
-        l_in_violet = _is_violet_hue(l_mean, v_min, v_max) if l_hues.size > 0 else True
-        r_in_violet = _is_violet_hue(r_mean, v_min, v_max) if r_hues.size > 0 else True
+        l_in_violet = _is_violet_hue(l_mean, v_min, v_max) if l_mean is not None else None
+        r_in_violet = _is_violet_hue(r_mean, v_min, v_max) if r_mean is not None else None
 
-        hue_out_of_range = not (l_in_violet and r_in_violet)
-        heterochromia_drift = heterochromia_score > self.heterochromia_threshold_deg
-        eye_drift_detected = bool(hue_out_of_range or heterochromia_drift)
+        heterochromia_drift = heterochromia_score is not None and heterochromia_score > self.heterochromia_threshold_deg
+        eye_drift_detected = bool(l_in_violet is False or r_in_violet is False or heterochromia_drift)
 
         drift_reasons: list[str] = []
         if heterochromia_drift:
             drift_reasons.append(
                 f"heterochromia_score={heterochromia_score:.2f} deg exceeds {self.heterochromia_threshold_deg:.1f} deg"
             )
-        if not l_in_violet:
+        if l_in_violet is False:
             drift_reasons.append(
                 f"left_eye_hue={l_mean:.1f} deg outside violet range [{v_min:.0f}, {v_max:.0f}]"
             )
-        if not r_in_violet:
+        if r_in_violet is False:
             drift_reasons.append(
                 f"right_eye_hue={r_mean:.1f} deg outside violet range [{v_min:.0f}, {v_max:.0f}]"
             )
+        unmeasured_eyes = [
+            f"{side} eye: {count} iris pixels (< {_MIN_IRIS_PIXELS}); color not measured"
+            for side, count, measured in (
+                ("left", int(l_hues.size), left_measured),
+                ("right", int(r_hues.size), right_measured),
+            )
+            if not measured
+        ]
 
         return {
             "detector_source": detector_source,
@@ -574,11 +518,13 @@ class QualityInspector:
             "right_eye_box": [rx1, ey1, rx2, ey2],
             "left_iris_pixel_count": int(l_hues.size),
             "right_iris_pixel_count": int(r_hues.size),
-            "left_eye_hue_deg": round(l_mean, 2),
-            "right_eye_hue_deg": round(r_mean, 2),
-            "heterochromia_score": round(heterochromia_score, 2),
+            "left_eye_hue_deg": round(l_mean, 2) if l_mean is not None else None,
+            "right_eye_hue_deg": round(r_mean, 2) if r_mean is not None else None,
+            "heterochromia_score": round(heterochromia_score, 2) if heterochromia_score is not None else None,
             "left_eye_in_violet_range": l_in_violet,
             "right_eye_in_violet_range": r_in_violet,
+            "eye_color_verified": left_measured and right_measured,
+            "unmeasured_eyes": unmeasured_eyes,
             "eye_drift_detected": eye_drift_detected,
             "drift_reasons": drift_reasons,
         }
@@ -658,12 +604,12 @@ class QualityInspector:
     def analyze_pose_completeness(
         self,
         image: Image.Image,
-        face_boxes: list[tuple[float, float, float, float]],
+        detections: Detections,
         *,
         framing: str = "full_body",
-        detector_source: str = "yolo_cpu",
     ) -> dict[str, Any]:
         """Evaluate full-body standing and ankle completeness using face-height ratio and CPU YOLO pose keypoints."""
+        face_boxes, detector_source = detections.face_boxes, detections.source
         w, h = image.size
         result: dict[str, Any] = {
             "available": False,
@@ -685,9 +631,8 @@ class QualityInspector:
         fh_ratio = fh / float(h)
         result["face_height_ratio"] = round(fh_ratio, 4)
 
-        p_boxes, _, p_kpts = self._last_pose_detections
         matched_kpts: list[list[float]] | None = None
-        for box, kpts in zip(p_boxes, p_kpts):
+        for box, kpts in zip(detections.pose_boxes, detections.pose_keypoints):
             if len(box) >= 4 and len(kpts) >= 17:
                 if box[0] <= fcx <= box[2] and box[1] <= fcy <= box[3] and (box[2] - box[0]) >= 0.20 * w:
                     matched_kpts = kpts
@@ -856,11 +801,12 @@ class QualityInspector:
                         f"Image appears blank or flat (std={std_rgb:.2f}, range={dynamic_range:.1f})"
                     )
 
-                face_boxes, face_confs, hand_boxes, hand_confs, detector_source = (
-                    self.detect_anatomy(
-                        rgb_im, run_pose=(framing == "full_body"), image_path=path
-                    )
+                detections = self.detect_anatomy(
+                    rgb_im, run_pose=(framing == "full_body"), image_path=path
                 )
+                face_boxes, face_confs = detections.face_boxes, detections.face_confidences
+                hand_boxes, hand_confs = detections.hand_boxes, detections.hand_confidences
+                detector_source = detections.source
                 face_count = len(face_boxes)
                 hand_count = len(hand_boxes)
                 multiple_subjects = bool(solo_prompt and face_count > 1)
@@ -882,9 +828,7 @@ class QualityInspector:
                         "reason": f"Color diagnostics unavailable: {type(exc).__name__}",
                         "brooch": {"available": False}, "garment": {"available": False},
                     }
-                pose_info = self.analyze_pose_completeness(
-                    rgb_im, face_boxes, framing=framing, detector_source=detector_source
-                )
+                pose_info = self.analyze_pose_completeness(rgb_im, detections, framing=framing)
                 corner_info = self.analyze_corner_artifacts(arr)
         except InspectionRuntimeError:
             raise
@@ -948,6 +892,7 @@ class QualityInspector:
             heterochromia_score=iris["heterochromia_score"],
             left_eye_in_violet_range=iris["left_eye_in_violet_range"],
             right_eye_in_violet_range=iris["right_eye_in_violet_range"],
+            eye_color_verified=iris["eye_color_verified"],
             eye_drift_detected=iris["eye_drift_detected"],
             iris_analysis=iris,
             garment_analysis=garment,
