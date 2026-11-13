@@ -4,7 +4,7 @@ This document tracks the end-to-end engineering progression of **Emilia Studio**
 
 ---
 
-## Executive Status Summary (Current: v2.0.0 — 2026-11-06)
+## Executive Status Summary (Current: v2.1.0 — 2026-11-13)
 
 | Subsystem | Current Production Baseline | Verification Status |
 | :--- | :--- | :--- |
@@ -13,8 +13,8 @@ This document tracks the end-to-end engineering progression of **Emilia Studio**
 | **Intermediate Quality Gate** | CPU-only YOLOv8n (`face`/`hand`) + HSV circular iris hue analyzer (`[250°, 302°]` violet band, `32°` heterochromia threshold) | ✅ Verified on 108+ runs |
 | **Stage 2: Refinement & 2× Delivery** | `FaceDetailer` (guide 640, max 896, 20 steps, denoise 0.22) $\rightarrow$ `DetailerForEach` (`hand_yolov8n` + `sam_vit_b_01ec64`, guide 512, max 768, 20 steps, denoise 0.24) $\rightarrow$ `RealESRGAN_x4plus_anime_6B` (4×) $\rightarrow$ Lanczos 0.5× (`2304×3456`) | ✅ Verified Bit-Exact |
 | **Ollama Bridge & Compiler** | `qwen3.5:9b` (`num_gpu=0, keep_alive=0`), dynamic framing & IPAdapter weight routing, integrated into 2-stage HighRes Quality pipeline | ✅ Verified |
-| **Unit Test Suite** | 147 unit tests in `app/tests-unit/comfy_test/` (including 8 `test_emilia_studio.py` architecture tests and 22 memory/tile/hash regression tests) | ✅ 147 / 147 Passing (24.4s) |
-| **SQLite Experiment Ledger** | `app/emilia/studio_ledger.sqlite3` indexing 108 historical `.run.json` receipts and 50 ten-seed benchmark records | ✅ Indexed & Queryable |
+| **Unit Test Suite** | `tests/` (top-level, GPU-free, also run in CI on Windows and Linux) and `app/tests-unit/comfy_test/` (runtime suite, after `setup --sync`) | ✅ Passing (counts recorded per phase below) |
+| **SQLite Experiment Ledger** | `workflows/studio_ledger.sqlite3` indexing every `.run.json` receipt under the output directory and the ten-seed benchmark records | ✅ Indexed & Queryable |
 
 ---
 
@@ -267,3 +267,30 @@ Conducted a direct pixel-by-pixel audit against official Re:Zero TV anime charac
     - **100% bit-exact decoded PNG SHA-256**: Native `3b58d9daf2770d0ad7e87b971912b854e1e7495f9e99a09f348af9bf258c9425`, Final `d7fe10c200535d8656ab633248ca7cc651ee6d2e60bd309c23c43fa1ce5af63e`.
   - **`--fast` Preset `quality` (`03_finished_2x_00076_.run.json`, 32 native / 16 hand steps + FP16 upscaler + FP16-fix VAE + 1-pass tiled VAE)**:
     - **Total wall time `213.686s` (`-57.85s` / `-21.3%` vs warm baseline; `-127.82s` / `-37.4%` vs cold run)**: Stage 1 `167.326s -> 137.168s` (`-30.16s`), Stage 2 `63.374s -> 35.624s` (`-27.75s`, **`1.78×` faster Stage 2**), quality gate `PASS` (`2304×3456`, violet irises `287.48° / 282.96°`).
+
+### Phase 17: Review-Driven Correctness & Maintainability Pass (2026-11-13)
+
+No sampler, prompt or model setting changed; both pinned pipelines still reproduce their decoded pixel hashes.
+
+- **1. Review findings fixed**
+  - **Reproducible checkout**: `render-emilia-quality.ps1` now runs the tracked `emilia render` instead of an untracked `app/script_examples/render_emilia_quality.py`; the benchmark round runner and evaluator moved to tracked `scripts/`. `models_manifest.json` pins ComfyUI (`0a33ed6c28f926d14536235771c222f9e6d1026b`) and the three custom nodes with their patch files, and `emilia doctor` verifies commit and patch state of each checkout.
+  - **One pipeline (`engine.py`, `cli.py`)**: `render_quality_pipeline` is the single-seed form of `render_batch_pipeline`; `render` / `batch` / `idea` share one request builder. `engine.py` shrank from 1290 to about 990 lines and `cli.py` from 688 to about 510 with the duplicated halves gone. The engine no longer passes work between methods through instance fields.
+  - **Receipts**: always written beside the image they describe, also for rejected seeds (previously `temp/<run>/rejected.run.json`, invisible to the ledger scan and removed by `emilia clean`), and written as soon as a seed is finished or rejected even if a later seed crashes.
+  - **No silent substitution (`workflows.py`)**: the ultra LoRA is a configuration value and the skirt IPAdapter branch no longer depends on which files are installed; a missing model fails ComfyUI validation.
+  - **Inspector**: the external YOLO worker cannot hang on a full stderr pipe and every request has a timeout; an eye without usable iris pixels is reported as unmeasured (`eye_color_verified=false`) instead of violet `270.0°`.
+  - **Runtime plugin**: unreadable source is never counted as patched; inactive patch groups are logged when ComfyUI boots.
+  - **GPU profile**: `gpu_profile.py` verifies the undocumented NvAPI buffer layout before reading or writing offsets. `install-gpu-profile-task.ps1` takes `-Python`, audits the ACLs of everything the SYSTEM task executes and refuses user-writable paths unless `-AllowUserWritable` is passed.
+    - **Open risk on this workstation**: `install-gpu-profile-task.ps1 -Audit` reports that `NT AUTHORITY\Authenticated Users` have Modify on `D:\comfyui\gpu_profile.py`, `D:\comfyui`, `D:\conda-data\envs\comfyui\python.exe` and its directory. The already registered `EmiliaGPUProfile` task therefore lets any local account run code as SYSTEM. Changing ACLs or the task needs elevation and was not done.
+  - **Documentation**: removed stale test and file counts, corrected README examples that used nonexistent choices (`--preset library`, `--magic frost|snow`), documented the patch-application steps, and replaced "eliminates" claims with what the gate actually enforces.
+- **2. Three follow-up iterations**
+  - **Ledger correctness**: benchmark `peak_rss_gib` / `min_avail_ram_gib` were never populated because the ledger read keys the benchmark script never wrote; all 50 benchmark rows are now filled (max sampled RSS `3.525 GiB`, min available RAM `7.321 GiB`). Ingestion upserts in place (row ids and live-only fields survive) and `emilia ledger ingest --refresh` re-reads indexed receipts; the refresh also corrected 59 rows without a gate action, 2 ultra rows recorded as `quality` and 2 totals that omitted eye-repair time.
+  - **Remaining duplication**: `ollama_comfyui_bridge.py --mode ultra|quality` delegates to `emilia idea`; the package version has one source (`emilia_studio/_version.py`); in-process and external-interpreter YOLO detection share `inspection_worker.run_detection`.
+  - **Robustness**: a running render holds an OS lock on its `temp/<run>` directory and `emilia clean` skips it (`skipped_active`); `emilia workflows` really verifies builder parity with the five canonical graphs and exits `2` on drift.
+- **3. Verification**
+  - Top-level suite `165 passed` (`36.9s`, previously `158` in `49s`); runtime suite `157 passed`; a clean copy of the tracked files without `app/` and with an empty user config: `135 passed, 8 skipped`. `doctor`, `workflows` and `ledger stats` exit `0`. The CI workflow now targets `windows-latest` and `ubuntu-24.04` with CPU torch and OpenCV; it has not run yet.
+  - Offline parity against the code before this phase: 13 builder graphs, 23 CLI invocations (engine arguments) and 5 bridge invocations are identical; 16 inspection reports on 8 real renders are identical in-process and through the external worker.
+  - **`quality` (`.\render-emilia-quality.ps1 -Seed 20261027 -Profile quality`, `03_finished_2x_00078_.run.json`)**: Native `3b58d9daf2770d0ad7e87b971912b854e1e7495f9e99a09f348af9bf258c9425`, Final `d7fe10c200535d8656ab633248ca7cc651ee6d2e60bd309c23c43fa1ce5af63e`, both identical to baseline. Stage 1 `236.8s`, Stage 2 `63.8s`, wall `354.2s`; a CPU test run shared the machine during this render, so it is not a timing reference.
+  - **`ultra` (`emilia render --profile ultra --preset rose-garden --auto-gate`, `03_finished_2x_00022_.run.json`)**: Native `ba5a5412fd5af1cd5d7a679a62bae5404e62bbfc5e145a285fc01e73376f4238`, Final `71f1e7deaea0c2f5e475e3e79886e8979d85ba7c8ef31405f6a2247787412e62`, both identical to `03_finished_2x_00016_`. Stage 1 `172.5s`, Stage 2 `81.9s`, wall `296.5s` (Phase 15: `299.0s`). `emilia clean --older-than-hours 0 --dry-run` issued during this render listed its directory under `skipped_active`.
+  - **Multi-seed batch + live auto-gate retry (`emilia batch --profile quality --seeds 20261030 20261027 --auto-gate --fast`)**: item 1 (`03_finished_2x_00079_.run.json`) rejected seed `20261030` (`face_count=2`) inside the same Stage 1 process, retried with seed `20262030` (`121.4s`, accepted) and finished in `44.2s`; item 2 (`03_finished_2x_00080_.run.json`, seed `20261027`) ran in the warm session (`native 121.3s`, `finish 26.1s`, total `147.4s`) with final decoded PNG SHA-256 `a97a5cbff467816b53049c710b88c1f25ce7ed58b49c0d5c342b572fd6db3f9d` (100% bit-exact with Phase 16 `--fast` `03_finished_2x_00076_`).
+  - **Packaging**: rebuilt `dist/emilia.exe` (`40 MiB`), `dist/emilia_studio-2.1.0-py3-none-any.whl` and `dist/emilia_studio-2.1.0.tar.gz` (with `scripts/` included in `MANIFEST.in` and `[build-system]` relaxed to `setuptools>=75`, `wheel>=0.44`); verified standalone `dist/emilia.exe` from `D:\` (`--version`, `workflows`, `doctor`, `inspect`).
+  - Not exercised live on GPU: an eye-repair pass (covered by pipeline tests with ComfyUI processes mocked), the external-worker timeout against a real hung detector, and the elevated paths of `install-gpu-profile-task.ps1`.

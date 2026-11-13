@@ -45,7 +45,7 @@ flowchart TB
         direction LR
         GATE{"YOLOv8n (Face / Hand / Pose)<br/>+ HSV 紫罗兰虹膜环形色相分析"}
         REJ["多主体幻觉 / 无脸 / 全身构图跪坐裁脚<br/>判定 reject_seed -> 种子 +1000 重跑阶段一"]
-        EYE["蓝粉异色瞳 (>32°) / 色相偏离 [250°, 302°]<br/>判定 repair_eyes -> 22 秒轻量修眼子进程"]
+        EYE["蓝粉异色瞳 (>32°) / 色相偏离 [250°, 302°]<br/>判定 repair_eyes -> 阶段二进程内先修眼 (~22 秒) 再精修"]
         GATE -- "reject_seed" --> REJ
         GATE -- "repair_eyes" --> EYE
     end
@@ -79,7 +79,7 @@ flowchart LR
 
     subgraph Ext["外部重型推理运行时 (本地隔离，不打入安装包)"]
         OLL["Ollama 服务 (11434)<br/>纯 CPU 运行时"]
-        WKR["常驻 CPU 质检子进程<br/>(inspection_worker.py --server)"]
+        WKR["常驻 CPU 质检子进程<br/>(inspection_worker.py)"]
         APP["ComfyUI 推理引擎 (app/)<br/>8GB VRAM + 底层零漂移内存补丁"]
     end
 
@@ -95,15 +95,18 @@ flowchart LR
 ## 核心技术特性
 
 1. **三段式 Ultra 多尺度架构与服饰空间解耦（`emilia_studio/workflows.py`）**
-   - **`832×1216`（锁骨骼与设定）$\to$ `1152×1728`（纯底模 + `RescaleCFG` 锁光影）$\to$ `2304×3456`（分部位精修 + 4× 超分 0.5× 抗锯齿降采样）**：彻底根除 SDXL 直接生成高分辨率全身图常见的“长腿畸变”与“多肢体幻觉”。
-   - **躯干软边空间掩码（`0.42W × 0.34H`）**：精准锁定王选礼服的“六道紫纹束腰 + 三层花瓣裙”，杜绝袖口金鹰纹章串色到下摆燕尾。
-   - **非官设服装零串色路由（`--outfit frozen-bond / nightgown`）**：Stage 1 自动将 `lora_strength_base` 降至 `0.0` 并切换双角度正面/3/4侧面 `IPAdapter Plus Face` 锁脸，仅在 Stage 2 修脸时恢复 `lora_strength_finish=0.28`，彻底消除默认礼服束腰残留。
+   - **`832×1216`（锁骨骼与设定）$\to$ `1152×1728`（纯底模 + `RescaleCFG` 锁光影）$\to$ `2304×3456`（分部位精修 + 4× 超分 0.5× 抗锯齿降采样）**：显著减少 SDXL 直接生成高分辨率全身图常见的“长腿畸变”与“多肢体幻觉”；残余缺陷由 `--auto-gate` 质检门禁拦截。
+   - **躯干软边空间掩码（`0.42W × 0.34H`）**：把王选礼服的“六道紫纹束腰 + 三层花瓣裙”参考限制在躯干区域，抑制袖口金鹰纹章串色到下摆燕尾。
+   - **非官设服装路由（`--outfit frozen-bond / nightgown`）**：Stage 1 自动将 `lora_strength_base` 降至 `0.0` 并切换双角度正面/3/4侧面 `IPAdapter Plus Face` 锁脸，仅在 Stage 2 修脸时恢复 `lora_strength_finish=0.28`，抑制默认礼服束腰残留。
+   - **图只由参数与配置决定**：构建器从不根据本机装了哪些模型改写工作流；缺少 LoRA、IPAdapter 或参考图时由 ComfyUI 校验直接报错，而不是悄悄换一张图。
 2. **面向 8 GiB 显存的双阶段进程物理隔离与批量复用池（`emilia_studio/engine.py`）**
    - Stage 1（`CLIP-ViT-H` + 双 `IPAdapter`）与 Stage 2（`YOLO` + `SAM ViT-B` + `RealESRGAN`）总权重超过 12 GB，严禁同进程驻留。Stage 1 落盘后子进程立即退出清空显存与 Windows 提交内存，Stage 2 通过 `[output]` 零拷贝引用直接接力。
-   - 批量连抽（`emilia batch`）采用“全批次 Stage 1 波次 $\to$ 全批次 CPU 质检门禁 $\to$ 全批次 Stage 2 波次”，将 $2N$ 次冷启动压缩为 $2$ 次。
+   - 单张（`emilia render`）与批量（`emilia batch`）是同一条管线：全部种子的 Stage 1（含门禁重试）$\to$ CPU 质检门禁 $\to$ 全部种子的 Stage 2（修眼 + 精修），$N$ 张图始终只有 $2$ 次模型冷启动。
+   - 每个种子在完成或被拒绝的那一刻就写出 `.run.json` 回执（与图片同目录）并入账本；后续种子崩溃不会丢掉已有结果。
 3. **零显存（纯 CPU）解剖学、站姿与紫罗兰虹膜自愈门禁（`emilia_studio/inspector.py`）**
    - 强制在 CPU 上运行 `face_yolov8n`、`hand_yolov8n` 与 `yolov8n-pose`：自动拦截单人多脸幻觉、缺脸，以及全身构图（`full_body`）下的跪坐/裁脚缺陷（`reject_seed`）。
-   - **HSV 虹膜环形色相分析**：计算双瞳环形均值色相角，精准捕捉“一蓝一粉异色瞳”（色差 $>32^\circ$）或偏离紫罗兰色带（$[250^\circ, 302^\circ]$）的漂移，自动路由至仅需 `22 秒` 的修眼分支（`repair_eyes`）完成自愈。
+   - **HSV 虹膜环形色相分析**：计算双瞳环形均值色相角，捕捉“一蓝一粉异色瞳”（色差 $>32^\circ$）或偏离紫罗兰色带（$[250^\circ, 302^\circ]$）的漂移，并在 Stage 2 进程内先执行修眼（`repair_eyes`，约 `22 秒`）再精修。
+   - **已知局限**：眼部区域按人脸框的固定比例估计，没有关键点定位；取不到足够虹膜像素的眼睛（闭眼、遮挡、侧脸）记为“未测量”（`eye_color_verified=false`），既不算紫瞳也不触发修眼。
 4. **12 项 Bit-Exact 像素级零漂移底层硬件榨取补丁（`patches/` & `engine.py`）**
    - **GPU/PCIe 热路径**：IPAdapter 跨步 `(ip_k, ip_v)` 线性投影缓存（消除 **15,000+** 次冗余 CUDA 核启动）、空间注意力掩码 `[B, S, 1]` 广播缓存（消除 `1,960` 次 `F.interpolate` 与 `1280×` `.repeat()` 显存膨胀）、`CLIPVision` 零图像负向特征缓存、每步 `sigma` 标量缓存（消除 **2,484 次** GPU$\to$CPU 同步停顿）、`SAM ViT-B` `meta + mmap + assign` 零初始化加载（提速 **6.0×**，省 `750 MiB` 峰值内存）及特征缓存（提速 50%）。
    - **CPU/内存/启动热路径**：256 行 L3 缓存分块多线程 `float32 <-> uint8` 量化（提速 **3.3×**，消除 `lanczos` `382.2 MiB` 与 `SaveImage` `91.1 MiB` 临时浮点拷贝）、`VAE` 目标缓冲区直写与 `tiled_scale_multidim` 掩码复用（省 `676.8 MiB`）、`ImageUpscaleWithModel` 按分块上 GPU（省 `382.21 MiB`）、静态 PNG 免 PyAV 直读、分阶段插件白名单与精简 `comfy_extras` 冷启动（省 `17.3s`）、`<1ms` 独占端口检测 + 日志驱动零重试就绪握手、Stage 1 期间后台异步预热 CPU YOLO 与进程回收并行质检（消除 `8.8s` 门禁冷启动等待）。
@@ -120,9 +123,16 @@ flowchart LR
 python -m pip install -e .
 
 # 初始化用户配置（保存至 %APPDATA%\EmiliaStudio\config.toml）
-emilia config init --root-dir D:/comfyui --app-dir D:/comfyui/app --python D:/conda-data/envs/comfyui/python.exe
+emilia config init --root-dir <工作区> --app-dir <工作区>/app --python <推理环境>/python.exe
 
-# 将顶层参考图、补丁插件与可视化工作流同步至 app/，并执行 22 项环境体检
+# 首次部署：把 ComfyUI 与三个自定义节点检出到 models_manifest.json 记录的 commit，再应用源码补丁
+git -C app checkout 0a33ed6c28f926d14536235771c222f9e6d1026b
+git -C app apply ../patches/comfyui_core.patch
+git -C app/custom_nodes/comfyui-ipadapter-plus apply ../../../patches/ipadapter_plus.patch
+git -C app/custom_nodes/comfyui-impact-pack apply ../../../patches/impact_pack.patch
+git -C app/custom_nodes/comfyui-impact-subpack apply ../../../patches/impact_subpack.patch
+
+# 将顶层参考图、补丁插件与可视化工作流同步至 app/，再体检（含各检出的 commit 与补丁是否已应用）
 emilia setup --sync
 emilia doctor
 
@@ -139,10 +149,10 @@ emilia pull --list
 emilia render --profile ultra --preset rose-garden --auto-gate
 
 # 2. 组合创意参数：5 套专属服装 / 视角锁定 / 帕克伴随 / 冰魔法特效
-emilia render --profile ultra --preset library --outfit nightgown --angle three-quarter --puck --magic frost --auto-gate
+emilia render --profile ultra --preset moonlit-balcony --outfit nightgown --angle three-quarter --puck --magic ice --auto-gate
 
 # 3. 中文自然语言一键编译并直通双阶段高分管线（Ollama 纯 CPU 编译）
-emilia idea "爱蜜莉雅站在飘雪的月光庭院里微笑，双手轻捧冰晶花" --outfit cloak --magic snow --auto-gate
+emilia idea "爱蜜莉雅站在飘雪的月光庭院里微笑，双手轻捧冰晶花" --outfit cloak --magic blizzard --auto-gate
 
 # 4. 多图同阶段进程池连抽（模型零重复加载）
 emilia batch --seeds 20261113 20261114 20261115 --profile ultra --preset rose-garden --auto-gate
@@ -179,13 +189,13 @@ emilia clean --older-than-hours 1.0
 | 子命令 | 功能说明 |
 | :--- | :--- |
 | `config init / show / set / path` | 初始化、查看或修改 TOML 配置（优先级：`EMILIA_*` 环境变量 > `--config` > 用户全局配置 > 源码目录配置） |
-| `doctor` / `setup --sync` | 校验 Python、依赖、模型权重（`required` / `experimental`）、参考图与插件；将资产与补丁同步至 `app/` |
+| `doctor` / `setup --sync` | 校验 Python、依赖、模型权重（`required` / `experimental`）、参考图、插件，以及 ComfyUI 与自定义节点的 commit 和补丁状态；将资产与补丁插件同步至 `app/` |
 | `pull --list / <key> / all` | 支持 HTTP Range 断点续传、`.part` 原子替换与 SHA-256 校验的模型下载器（未知源的 LoRA 打印手动指引） |
 | `presets [name]` / `outfits [name]` | 浏览 6 套免 Ollama 内置场景预设与 5 套专属服装模式（`royal` / `cloak` / `frozen-bond` / `sanctuary` / `nightgown`） |
-| `render` / `batch` / `idea` | 单张渲染、同阶段进程池批量连抽、中文编译渲染（支持 `--fast`、`--fp16-upscaler`、`--fp16-vae`、`--fast-tiled-vae`、`--steps` 等加速参数） |
+| `render` / `batch` / `idea` | 单张渲染、同阶段进程池批量连抽、中文编译渲染（支持 `--fast`、`--fp16-upscaler`、`--fp16-vae`、`--fast-tiled-vae`、`--steps` 等加速参数）。退出码：`0` 成功，`2` 被质检门禁拒绝，`1` 执行失败 |
 | `inspect` / `compare` | 纯 CPU 单图全面体检；双图分辨率、像素哈希与双瞳色相指标并排对比 |
 | `export` / `clean` | 打包导出完整交付物；安全清理已结束的隔离阶段临时目录 |
-| `ledger` / `benchmark` / `workflows` | 查询 SQLite 实验账本与跨轮次像素比对；汇总历史基准；审计并同步 27 个 API 与 10 个 GUI 工作流 |
+| `ledger` / `benchmark` / `workflows` | 查询 SQLite 实验账本与跨轮次像素比对；汇总历史基准；审计 API 工作流目录并从构建器重新同步 GUI 工作流 |
 | `shell` / `banner` / `--version` | 启动交互式 REPL 命令行、打印终端标志或查看版本号 |
 
 ---
@@ -204,11 +214,11 @@ emilia clean --older-than-hours 1.0
 │   ├── inspection_worker.py       # 供独立 exe 调用的常驻 JSON-lines 外部 CPU YOLO 服务进程
 │   ├── ledger.py                  # WAL 模式 SQLite 实验与基准账本管理
 │   ├── tui.py                     # 渐变 ASCII 标志、CJK 宽字符对齐表格与实时进度条
-│   └── workflows.py               # 声明式 API 图构建器与 GUI 工作流零漂移同步器
-├── assets/                        # 官方设定条件控制参考图（正面/3/4脸、胸衣裙摆、领口胸针等 12 张）
-├── workflows/                     # 单一事实来源工作流与实验档案
-│   ├── api/                       # 27 个标准 .api.json 执行图定义
-│   ├── visual/                    # 10 个同步后的 ComfyUI 网页端可视化工作流 (Emilia_01..10)
+│   └── workflows.py               # API 图构建器（quality 图基于 JSON 模板，ultra 图由代码生成）与 GUI 工作流同步器
+├── assets/                        # 官方设定条件控制参考图（正面/3/4脸、胸衣裙摆、领口胸针等）
+├── workflows/                     # 工作流与实验档案
+│   ├── api/                       # 构建器加载的 4 个模板、ultra 规范快照，以及历史实验 .api.json
+│   ├── visual/                    # 同步后的 ComfyUI 网页端可视化工作流 (Emilia_01..10)
 │   ├── reports/                   # 历史架构消融、画质评估与硬件解锁实验报告 JSON
 │   └── WORKFLOW_DECISIONS.txt     # 完整工程决策与像素哈希演进档案
 ├── patches/                       # 底层零漂移内存与硬件极限加速补丁
@@ -218,18 +228,21 @@ emilia clean --older-than-hours 1.0
 │   ├── impact_pack.patch          # 针对 SAMLoader (meta+mmap+assign) 与 SAMWrapper 特征缓存的补丁
 │   └── impact_subpack.patch       # 针对 subcore.py 免冗余灰度拷贝与静默推理的补丁
 ├── packaging/                     # PyInstaller 独立 Windows 可执行文件构建脚本与规范 (emilia.spec)
-├── tests/                         # 10 个顶层单测模块 (158 项测试) 及 comfy_core/ 底层算子测试
+├── scripts/                       # 10 种子基准轮次的运行与评估脚本、启动器共用的 Python 解析函数
+├── tests/                         # 顶层单测模块及 comfy_core/ 底层算子测试
 ├── AGENTS.md                      # 硬件红线、进程隔离规则与像素一致性工程规范
-├── PROGRESS.md                    # 16 阶段完整研发里程碑与实测数据台账
+├── PROGRESS.md                    # 完整研发里程碑与实测数据台账
 ├── build_support.py               # Wheel 与 PyInstaller 构建期只读资源自动归集器
 ├── config.example.toml            # 可移植 TOML 配置模板
-├── models_manifest.json           # 14 个必需/可选模型权重、参考图与插件 Commit 清单
-├── ollama_comfyui_bridge.py       # 轻量中文自然语言生图桥接脚本 (--mode quality / fast)
-├── render-emilia-quality.ps1      # PowerShell 一键双阶段高画质渲染启动器
+├── models_manifest.json           # 模型权重、参考图清单，以及 ComfyUI 与自定义节点的 commit 和补丁
+├── gpu_profile.py                 # CMP 40HX 功耗/风扇/时钟偏移配置（可选；超频会影响可复现性的排查）
+├── install-gpu-profile-task.ps1   # 以 SYSTEM 计划任务常驻上述配置；注册前审计被执行路径的 ACL
+├── ollama_comfyui_bridge.py       # 轻量中文自然语言生图桥接脚本 (--mode ultra / quality / fast)
+├── render-emilia-quality.ps1      # `emilia render` 的 PowerShell 快捷启动器
 └── start-comfyui.ps1              # PowerShell ComfyUI 网页端 GUI 启动器 (默认 127.0.0.1:8188)
 ```
 
-*注：本地 `app/`（ComfyUI 运行时与自定义节点）在 `.gitignore` 中整目录忽略，确保上游 `app/.git` 始终保持干净可升级。*
+*注：本地 `app/`（ComfyUI 运行时与自定义节点）在 `.gitignore` 中整目录忽略。它不是干净的上游检出：`patches/*.patch` 修改了其中已跟踪的源码，基线 commit 记录在 `models_manifest.json`，`emilia doctor` 会校验 commit 与补丁状态；升级 ComfyUI 或自定义节点后必须重新生成对应补丁。*
 
 ---
 
@@ -238,13 +251,13 @@ emilia clean --older-than-hours 1.0
 ```powershell
 # 构建跨目录可移植 Wheel 包与独立 Windows 控制台程序 (dist/emilia.exe)
 python -m pip install ".[build]"
-powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build_windows.ps1 -Python D:/conda-data/envs/comfyui/python.exe
+powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build_windows.ps1 -Python <推理环境>/python.exe
 
-# 运行顶层 Emilia Studio 全量单元测试 (151 passed)
-D:\conda-data\envs\comfyui\python.exe -m pytest tests/
+# 运行顶层 Emilia Studio 单元测试（不需要 GPU；缺少 app/ 或 torch 时相关用例自动跳过）
+python -m pytest tests/
 
-# 运行 ComfyUI 运行时底层算子与全量单元测试 (151 passed)
-D:\conda-data\envs\comfyui\python.exe -m pytest app/tests-unit/comfy_test/
+# 运行 ComfyUI 运行时底层算子与全量单元测试（需要推理环境与 app/）
+python -m pytest app/tests-unit/comfy_test/
 ```
 
 ---

@@ -45,7 +45,7 @@ flowchart TB
         direction LR
         GATE{"YOLOv8n (Face / Hand / Pose)<br/>+ HSV Circular Violet-Iris Hue Analyzer"}
         REJ["Multi-Subject / Missing Face / Cropped Legs<br/>Action: reject_seed -> Retry Stage 1 (seed + 1000)"]
-        EYE["Heterochromia (>32°) / Hue Outside [250°, 302°]<br/>Action: repair_eyes -> 22s Fast Eye-Repair Subprocess"]
+        EYE["Heterochromia (>32°) / Hue Outside [250°, 302°]<br/>Action: repair_eyes -> Eye Repair (~22s) Inside the Stage 2 Process, Then Finish"]
         GATE -- "reject_seed" --> REJ
         GATE -- "repair_eyes" --> EYE
     end
@@ -79,7 +79,7 @@ flowchart LR
 
     subgraph Ext["External Heavy Inference Runtime (Isolated Locally)"]
         OLL["Ollama Server (11434)<br/>CPU-Only Execution"]
-        WKR["Persistent CPU YOLO Worker<br/>(inspection_worker.py --server)"]
+        WKR["Persistent CPU YOLO Worker<br/>(inspection_worker.py)"]
         APP["ComfyUI Runtime (app/)<br/>8GB VRAM + Bit-Exact Memory Patches"]
     end
 
@@ -95,15 +95,18 @@ flowchart LR
 ## Key Technical Highlights
 
 1. **Three-Tier Ultra Multi-Scale Hires.fix & Spatial Garment Decoupling (`emilia_studio/workflows.py`)**
-   - **`832×1216` (proportion & anatomy lock) $\to$ `1152×1728` (pure base model + `RescaleCFG` lighting polish) $\to$ `2304×3456` (part-specific detailers + 4× upscale / 0.5× supersampled downsample)**: Eliminates elongated-limb distortion and multi-subject hallucinations inherent to direct high-res SDXL sampling.
-   - **Soft-Feathered Torso Mask (`0.42W × 0.34H`)**: Locks the canonical 6-stripe purple bodice and 3-layered petal skirt while preventing sleeve hawk emblems from bleeding onto lower coattails.
-   - **Zero-LoRA-Bleed Alternate Costume Routing (`--outfit frozen-bond / nightgown`)**: Automatically sets Stage 1 `lora_strength_base = 0.0` with paired front + 3/4 `IPAdapter Plus Face` conditioning, restoring `lora_strength_finish = 0.28` only in Stage 2 `FaceDetailer` so alternate dresses stay 100% free of default corset bleed.
+   - **`832×1216` (proportion & anatomy lock) $\to$ `1152×1728` (pure base model + `RescaleCFG` lighting polish) $\to$ `2304×3456` (part-specific detailers + 4× upscale / 0.5× supersampled downsample)**: Substantially reduces the elongated-limb distortion and multi-subject hallucinations of direct high-res SDXL sampling; the `--auto-gate` quality gate catches what remains.
+   - **Soft-Feathered Torso Mask (`0.42W × 0.34H`)**: Confines the canonical 6-stripe purple bodice and 3-layered petal skirt reference to the torso, suppressing sleeve hawk emblems bleeding onto lower coattails.
+   - **Alternate Costume Routing (`--outfit frozen-bond / nightgown`)**: Automatically sets Stage 1 `lora_strength_base = 0.0` with paired front + 3/4 `IPAdapter Plus Face` conditioning, restoring `lora_strength_finish = 0.28` only in Stage 2 `FaceDetailer` to suppress default corset bleed.
+   - **Graphs depend only on arguments and configuration**: the builder never rewrites a workflow according to which model files are installed; a missing LoRA, IPAdapter or reference image fails ComfyUI validation instead of silently producing a different image.
 2. **Two-Stage Process Isolation & Same-Stage Batch Wave Pooling (`emilia_studio/engine.py`)**
    - Stage 1 (`CLIP-ViT-H` + dual `IPAdapter`) and Stage 2 (`YOLOv8n` + `SAM ViT-B` + `RealESRGAN`) exceed 12 GB combined and never co-reside in memory. Stage 1 exits cleanly before Stage 2 reads the native render via zero-copy `[output]` references.
-   - `emilia batch` executes all seeds in Wave 1 (Stage 1) $\to$ CPU Quality Gate $\to$ Wave 2 (Stage 2), reducing $2N$ cold model loads to just $2$.
+   - `emilia render` and `emilia batch` are one pipeline: every seed's Stage 1 (including gate retries) $\to$ CPU Quality Gate $\to$ every seed's Stage 2 (eye repair + finishing), so $N$ images always cost exactly $2$ cold model loads.
+   - Each seed gets its `.run.json` receipt (beside its image) and ledger row the moment it is finished or rejected; a later seed crashing does not lose earlier results.
 3. **Zero-VRAM (CPU-Only) Anatomy, Pose & Violet-Iris Self-Healing Gate (`emilia_studio/inspector.py`)**
    - Enforces CPU-only inference across `face_yolov8n`, `hand_yolov8n`, and `yolov8n-pose` to reject multi-face hallucinations, missing faces, and kneeling/cropped-foot failures on `full_body` prompts (`reject_seed`).
-   - **HSV Circular Hue Analysis**: Measures left/right iris circular mean hue to detect blue/pink heterochromia ($>32^\circ$) or non-violet drift outside $[250^\circ, 302^\circ]$, routing affected frames through a `22s` targeted eye-repair pass (`repair_eyes`) before Stage 2 upscaling.
+   - **HSV Circular Hue Analysis**: Measures left/right iris circular mean hue to detect blue/pink heterochromia ($>32^\circ$) or non-violet drift outside $[250^\circ, 302^\circ]$, and runs a targeted eye-repair pass (`repair_eyes`, about `22s`) inside the Stage 2 process before finishing.
+   - **Known limitation**: eye regions are estimated as fixed fractions of the face box, without landmarks. An eye without enough iris pixels (closed, occluded, profile) is reported as unmeasured (`eye_color_verified=false`): neither counted as violet nor sent to repair.
 4. **12 Bit-Exact Hardware-Ceiling Memory & Latency Optimizations (`patches/` & `engine.py`)**
    - **GPU & PCIe Hot Paths**: Cross-step `(ip_k, ip_v)` linear projection cache in `IPAdapter` (eliminating **15,000+** redundant CUDA kernel launches), `[B, S, 1]` broadcast spatial attention mask cache (eliminating `1,960` `F.interpolate` calls and `1280×` `.repeat()` VRAM traffic), `CLIPVision` zero-image uncond embedding cache, per-step `sigma` scalar cache (eliminating **2,484** GPU$\to$CPU sync stalls), and `SAM ViT-B` `meta + mmap + assign` loading (**6.0×** faster, `-750 MiB` peak host commit) + ViT-B feature caching (`-50%` latency).
    - **CPU, Memory & Boot Hot Paths**: 256-row L3-cache-blocked multi-threaded `float32 <-> uint8` quantization (**3.3×** faster, eliminating `382.2 MiB` in `lanczos` and `91.1 MiB` in `SaveImage`), `VAE` destination-buffer writes & `tiled_scale_multidim` feather-mask caching (`-676.8 MiB`), per-tile GPU transfer in `ImageUpscaleWithModel` (`-382.21 MiB`), PyAV-free static PNG `LoadImage` fast path, stage-specific `--whitelist-custom-nodes` + headless `comfy_extras` fast boot (`-17.3s`), `<1ms` exclusive socket bind + log-driven zero-SYN-retry readiness, and background CPU YOLO pre-warming + teardown-overlapped inspection (eliminating the `8.8s` cold gate stall).
@@ -120,9 +123,16 @@ flowchart LR
 python -m pip install -e .
 
 # Initialize user configuration (saved to %APPDATA%\EmiliaStudio\config.toml)
-emilia config init --root-dir D:/comfyui --app-dir D:/comfyui/app --python D:/conda-data/envs/comfyui/python.exe
+emilia config init --root-dir <workspace> --app-dir <workspace>/app --python <inference-env>/python.exe
 
-# Sync top-level references, runtime patches, and GUI workflows into app/, then run 22 health checks
+# First deployment: check ComfyUI and the three custom nodes out at the commits in models_manifest.json, then apply the source patches
+git -C app checkout 0a33ed6c28f926d14536235771c222f9e6d1026b
+git -C app apply ../patches/comfyui_core.patch
+git -C app/custom_nodes/comfyui-ipadapter-plus apply ../../../patches/ipadapter_plus.patch
+git -C app/custom_nodes/comfyui-impact-pack apply ../../../patches/impact_pack.patch
+git -C app/custom_nodes/comfyui-impact-subpack apply ../../../patches/impact_subpack.patch
+
+# Sync top-level references, the patch plugin, and GUI workflows into app/, then run the health checks (including each checkout's commit and patch state)
 emilia setup --sync
 emilia doctor
 
@@ -139,10 +149,10 @@ emilia pull --list
 emilia render --profile ultra --preset rose-garden --auto-gate
 
 # 2. Creative controls: 5 outfits, camera angles, Puck companion, and ice magic effects
-emilia render --profile ultra --preset library --outfit nightgown --angle three-quarter --puck --magic frost --auto-gate
+emilia render --profile ultra --preset moonlit-balcony --outfit nightgown --angle three-quarter --puck --magic ice --auto-gate
 
 # 3. Compile natural-language prompts via CPU-only Ollama into the 2-stage pipeline
-emilia idea "爱蜜莉雅站在飘雪的月光庭院里微笑，双手轻捧冰晶花" --outfit cloak --magic snow --auto-gate
+emilia idea "爱蜜莉雅站在飘雪的月光庭院里微笑，双手轻捧冰晶花" --outfit cloak --magic blizzard --auto-gate
 
 # 4. Same-stage wave batch rendering (zero redundant model reloads across seeds)
 emilia batch --seeds 20261113 20261114 20261115 --profile ultra --preset rose-garden --auto-gate
@@ -179,13 +189,13 @@ emilia clean --older-than-hours 1.0
 | Command | Description |
 | :--- | :--- |
 | `config init / show / set / path` | Initialize, inspect, or update TOML config (`EMILIA_*` env > `--config` > user config > checkout config) |
-| `doctor` / `setup --sync` | Validate Python, dependencies, model sizes (`required` / `experimental`), references, and sync into `app/` |
+| `doctor` / `setup --sync` | Validate Python, dependencies, model sizes (`required` / `experimental`), references, custom nodes, and the pinned commit + applied patch of ComfyUI and each custom node; sync assets and the patch plugin into `app/` |
 | `pull --list / <key> / all` | Resumable HTTP Range downloader with `.part` staging and SHA-256 verification (prints manual guide for LoRAs) |
 | `presets [name]` / `outfits [name]` | Browse 6 zero-Ollama scene presets and 5 Emilia outfits (`royal`, `cloak`, `frozen-bond`, `sanctuary`, `nightgown`) |
-| `render` / `batch` / `idea` | Single render, wave-pooled batch render, and Ollama prompt-compiled render (supports `--fast`, `--fp16-upscaler`, `--fp16-vae`, `--fast-tiled-vae`, `--steps`, etc.) |
+| `render` / `batch` / `idea` | Single render, wave-pooled batch render, and Ollama prompt-compiled render (supports `--fast`, `--fp16-upscaler`, `--fp16-vae`, `--fast-tiled-vae`, `--steps`, etc.). Exit codes: `0` success, `2` rejected by the quality gate, `1` failure |
 | `inspect` / `compare` | CPU-only image diagnostics; side-by-side pixel hash and iris hue comparison |
 | `export` / `clean` | Export deliverable bundle; prune finished temporary stage directories |
-| `ledger` / `benchmark` / `workflows` | Query SQLite ledger & cross-round parity; summarize benchmarks; audit/sync 27 API & 10 GUI workflows |
+| `ledger` / `benchmark` / `workflows` | Query SQLite ledger & cross-round parity; summarize benchmarks; audit the API workflow directory and re-sync GUI workflows from the builder |
 | `shell` / `banner` / `--version` | Interactive REPL shell, ASCII banner, and version string |
 
 ---
@@ -204,11 +214,11 @@ emilia clean --older-than-hours 1.0
 │   ├── inspection_worker.py       # Persistent JSON-lines external CPU YOLO worker for frozen emilia.exe
 │   ├── ledger.py                  # WAL-mode SQLite experiment and benchmark ledger
 │   ├── tui.py                     # Gradient ASCII banner, CJK-aware tables, and live progress bar
-│   └── workflows.py               # Declarative API graph builder & zero-drift GUI workflow synchronizer
-├── assets/                        # 12 official reference conditioning crops (front/3Q face, bodice/skirt, brooch)
-├── workflows/                     # Single-source-of-truth workflows & benchmark records
-│   ├── api/                       # 27 canonical .api.json execution graphs
-│   ├── visual/                    # 10 synchronized ComfyUI visual workflows (Emilia_01..10)
+│   └── workflows.py               # API graph builder (quality graphs from JSON templates, ultra graphs built in code) & GUI workflow synchronizer
+├── assets/                        # Official reference conditioning crops (front/3Q face, bodice/skirt, brooch)
+├── workflows/                     # Workflows & benchmark records
+│   ├── api/                       # The 4 templates the builder loads, ultra canonical snapshots, and historical experiment .api.json graphs
+│   ├── visual/                    # Synchronized ComfyUI visual workflows (Emilia_01..10)
 │   ├── reports/                   # Historical ablation, visual review, and hardware benchmark JSON reports
 │   └── WORKFLOW_DECISIONS.txt     # Engineering decision log and pixel-hash audit trail
 ├── patches/                       # Bit-exact memory and hardware-ceiling latency patches
@@ -218,18 +228,21 @@ emilia clean --older-than-hours 1.0
 │   ├── impact_pack.patch          # SAMLoader meta+mmap+assign load & SAMWrapper feature cache patch
 │   └── impact_subpack.patch       # Zero-copy bbox mask & quiet inference patch for subcore.py
 ├── packaging/                     # PyInstaller spec and Windows build script (emilia.spec, build_windows.ps1)
-├── tests/                         # 10 standalone test modules (158 tests) + comfy_core/ operator unit tests
+├── scripts/                       # 10-seed benchmark round runner and evaluator; Python resolver shared by the launchers
+├── tests/                         # Standalone test modules + comfy_core/ operator unit tests
 ├── AGENTS.md                      # Hardware constraints, process isolation rules, and engineering guidelines
-├── PROGRESS.md                    # 16-phase engineering ledger and benchmark tables
+├── PROGRESS.md                    # Engineering ledger and benchmark tables
 ├── build_support.py               # Build-time immutable resource stager for wheel & PyInstaller
 ├── config.example.toml            # Portable TOML configuration template
-├── models_manifest.json           # 14 required/experimental model weights, references, and pinned node commits
-├── ollama_comfyui_bridge.py       # Standalone natural-language bridge script (--mode quality / fast)
-├── render-emilia-quality.ps1      # One-click PowerShell two-stage quality launcher
+├── models_manifest.json           # Model weights, references, and the pinned commit + patch of ComfyUI and each custom node
+├── gpu_profile.py                 # Optional CMP 40HX power/fan/clock-offset profile (rule out the overclock first when a hash differs)
+├── install-gpu-profile-task.ps1   # Keeps that profile applied via a SYSTEM scheduled task; audits the ACLs of what it executes
+├── ollama_comfyui_bridge.py       # Standalone natural-language bridge script (--mode ultra / quality / fast)
+├── render-emilia-quality.ps1      # PowerShell shortcut for `emilia render`
 └── start-comfyui.ps1              # Interactive ComfyUI GUI server launcher (default 127.0.0.1:8188)
 ```
 
-*Note: Local `app/` (ComfyUI runtime and custom nodes) is ignored in `.gitignore` so `app/.git` remains a clean upstream ComfyUI repository.*
+*Note: Local `app/` (ComfyUI runtime and custom nodes) is ignored in `.gitignore`. It is not a clean upstream checkout: `patches/*.patch` modify tracked source files in it, the base commits are recorded in `models_manifest.json`, and `emilia doctor` verifies both the commits and the patch state. Upgrading ComfyUI or a custom node requires regenerating its patch.*
 
 ---
 
@@ -238,13 +251,13 @@ emilia clean --older-than-hours 1.0
 ```powershell
 # Build portable wheel and standalone Windows executable (dist/emilia.exe)
 python -m pip install ".[build]"
-powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build_windows.ps1 -Python D:/conda-data/envs/comfyui/python.exe
+powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build_windows.ps1 -Python <inference-env>/python.exe
 
-# Run the top-level Emilia Studio unit suite (151 passed)
-D:\conda-data\envs\comfyui\python.exe -m pytest tests/
+# Run the top-level Emilia Studio unit suite (no GPU needed; cases needing app/ or torch skip themselves)
+python -m pytest tests/
 
-# Run the full ComfyUI runtime & core operator unit suite (151 passed)
-D:\conda-data\envs\comfyui\python.exe -m pytest app/tests-unit/comfy_test/
+# Run the full ComfyUI runtime & core operator unit suite (needs the inference environment and app/)
+python -m pytest app/tests-unit/comfy_test/
 ```
 
 ---
