@@ -668,6 +668,9 @@ class StudioConfig:
     ollama_model: str = field(
         default_factory=lambda: os.environ.get("EMILIA_OLLAMA_MODEL", "qwen3.5:9b")
     )
+    # Ultra profile LoRA. An explicit name, never a fallback chain: the same
+    # arguments must build the same graph on every machine.
+    ultra_lora_name: str = "Emilia_Rezero_Q-000005.safetensors"
 
     # Canonical constants exposed on the config instance
     emilia_canonical: str = EMILIA_CANONICAL
@@ -828,7 +831,7 @@ class StudioConfig:
         for key, value in paths.items():
             lines.append(f"{key} = {json.dumps(str(value).replace(chr(92), '/'), ensure_ascii=False)}")
         lines.extend([
-            "", "[endpoints]",
+            "", "[services]",
             f"comfy_host = {json.dumps(self.comfy_host, ensure_ascii=False)}",
             f"comfy_port = {self.comfy_port}",
             f"quality_port = {self.quality_port}",
@@ -836,6 +839,9 @@ class StudioConfig:
             f"ollama_model = {json.dumps(self.ollama_model, ensure_ascii=False)}",
             "",
         ])
+        default_lora = type(self).__dataclass_fields__["ultra_lora_name"].default
+        if self.ultra_lora_name != default_lora:
+            lines.extend(["[models]", f"ultra_lora_name = {json.dumps(self.ultra_lora_name, ensure_ascii=False)}", ""])
         return "\n".join(lines)
 
     def save_user_config(self, target_path: str | Path | None = None) -> Path:

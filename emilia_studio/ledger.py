@@ -12,21 +12,80 @@ from typing import Any
 from .config import StudioConfig, load_config
 
 
-_INITIALIZED_DBS: set[tuple[str, int]] = set()
+_INITIALIZED_DBS: set[str] = set()
+
+_GIB = 1024**3
+
+
+def _file_timestamp(path: Path) -> str:
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+
+
+def _receipt_row(data: dict[str, Any]) -> dict[str, Any]:
+    """Ledger columns derivable from a pipeline ``.run.json`` receipt."""
+    finishing = data.get("finishing") or {}
+    inspection = data.get("quality_inspection") or {}
+    native = inspection.get("native") or {}
+    final = inspection.get("final") or {}
+    eye_repair = inspection.get("eye_repair") or data.get("eye_repair") or {}
+    # Every Stage 1 attempt counts; receipts older than gate retries only have `generation`.
+    generations = [a.get("generation") or {} for a in data.get("attempts") or []] or [data.get("generation") or {}]
+    native_seconds = sum(float(g.get("seconds") or 0.0) for g in generations)
+    finish_seconds = float(finishing.get("seconds") or 0.0)
+    repair_seconds = float(eye_repair.get("seconds") or 0.0) if isinstance(eye_repair, dict) else 0.0
+    profile = str(data.get("profile") or "quality")
+    pag = bool((data.get("selected_settings") or {}).get("pag")) or "PAG" in str(data.get("guidance") or "")
+    return {
+        "timestamp": data.get("timestamp"),
+        "seed": data.get("seed"),
+        "mode": f"{profile}_pag" if pag and not profile.endswith("_pag") else profile,
+        "guidance": data.get("guidance", "baseline"),
+        "prompt_idea": data.get("user_idea"),
+        "native_path": data.get("native"),
+        "final_path": data.get("final"),
+        "native_sha256": native.get("pixel_sha256"),
+        "final_sha256": final.get("pixel_sha256"),
+        "native_seconds": native_seconds,
+        "finish_seconds": finish_seconds,
+        "total_seconds": native_seconds + finish_seconds + repair_seconds,
+        "face_count": native.get("face_count"),
+        "hand_count": native.get("hand_count"),
+        "heterochromia_score": native.get("heterochromia_score"),
+        "eye_drift_detected": native.get("eye_drift_detected"),
+        "quality_action": (
+            "reject_seed"
+            if data.get("status") == "quality_rejected"
+            else (final.get("recommended_action") or native.get("recommended_action") or "accept")
+        ),
+    }
+
+
+def _benchmark_row(data: dict[str, Any], round_num: int | None) -> dict[str, Any]:
+    """Ledger columns of one ``scripts/benchmark_architecture_iterations.py`` record."""
+    receipt = data.get("receipt") or {}
+    hashes = data.get("pixel_hashes") or {}
+    peak_rss = data.get("peak_sampled_rss")
+    min_ram = data.get("min_available_ram")
+    return {
+        "seed": data.get("seed") or receipt.get("seed"),
+        "mode": "benchmark",
+        "guidance": receipt.get("guidance", "baseline"),
+        "native_path": receipt.get("native"),
+        "final_path": receipt.get("final"),
+        "native_sha256": hashes.get("native"),
+        "final_sha256": hashes.get("final"),
+        "native_seconds": (receipt.get("generation") or {}).get("seconds"),
+        "finish_seconds": (receipt.get("finishing") or {}).get("seconds"),
+        "total_seconds": data.get("wall_seconds"),
+        "peak_rss_gib": peak_rss / _GIB if peak_rss is not None else None,
+        "min_avail_ram_gib": min_ram / _GIB if min_ram is not None else None,
+        "round_num": round_num,
+    }
 
 
 class ExperimentLedger:
     """SQLite ledger tracking Emilia Studio renders and benchmark rounds."""
 
-    def __init__(self, db_path: str | Path | None = None, config: StudioConfig | None = None) -> None:
-        self.config = config or load_config()
-        self.db_path = Path(db_path) if db_path else self.config.ledger_db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        resolved_key = str(self.db_path.resolve())
-        stat_size = self.db_path.stat().st_size if self.db_path.is_file() else 0
-        if (resolved_key, 1) not in _INITIALIZED_DBS or stat_size == 0:
-            self._init_db()
-            _INITIALIZED_DBS.add((resolved_key, 1))
     _RUN_COLS: tuple[str, ...] = (
         "timestamp", "seed", "mode", "guidance", "prompt_idea", "positive_prompt",
         "native_path", "final_path", "native_sha256", "final_sha256",
@@ -35,6 +94,15 @@ class ExperimentLedger:
         "heterochromia_score", "eye_drift_detected", "quality_action",
         "receipt_path", "round_num",
     )
+
+    def __init__(self, db_path: str | Path | None = None, config: StudioConfig | None = None) -> None:
+        self.config = config or load_config()
+        self.db_path = Path(db_path) if db_path else self.config.ledger_db_path
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        key = str(self.db_path.resolve())
+        if key not in _INITIALIZED_DBS or not self.db_path.is_file() or self.db_path.stat().st_size == 0:
+            self._init_db()
+            _INITIALIZED_DBS.add(key)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -76,187 +144,95 @@ class ExperimentLedger:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_round ON runs(round_num)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_mode ON runs(mode)")
 
-    def _normalize_row(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        row = {k: kwargs.get(k) for k in self._RUN_COLS}
+    def _normalize_row(self, values: dict[str, Any]) -> dict[str, Any]:
+        row = {column: values.get(column) for column in self._RUN_COLS}
         if not row["timestamp"]:
             row["timestamp"] = datetime.now(timezone.utc).isoformat()
         if isinstance(row["eye_drift_detected"], bool):
-            row["eye_drift_detected"] = 1 if row["eye_drift_detected"] else 0
-        for k, v in row.items():
-            if isinstance(v, dict):
-                row[k] = v.get("path") or v.get("image") or json.dumps(v, ensure_ascii=False)
-            elif isinstance(v, (list, tuple)):
-                row[k] = json.dumps(v, ensure_ascii=False)
+            row["eye_drift_detected"] = int(row["eye_drift_detected"])
+        for column, value in row.items():
+            if isinstance(value, dict):
+                row[column] = value.get("path") or value.get("image") or json.dumps(value, ensure_ascii=False)
+            elif isinstance(value, (list, tuple)):
+                row[column] = json.dumps(value, ensure_ascii=False)
         return row
 
-    def record_run(self, **kwargs: Any) -> int:
-        filtered = {k: kwargs.get(k) for k in self._RUN_COLS if k in kwargs}
-        if "timestamp" not in filtered or not filtered["timestamp"]:
-            filtered["timestamp"] = datetime.now(timezone.utc).isoformat()
-        if "eye_drift_detected" in filtered and isinstance(filtered["eye_drift_detected"], bool):
-            filtered["eye_drift_detected"] = 1 if filtered["eye_drift_detected"] else 0
+    def _upsert(self, conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> None:
+        """Insert rows; a row whose receipt is already indexed is updated in place.
 
-        placeholders = ", ".join(["?"] * len(filtered))
-        columns = ", ".join(filtered.keys())
-        values = list(filtered.values())
+        Updating keeps the row id (so `recent` ordering is stable) and keeps existing
+        values the new source cannot provide, such as the prompt of a live render.
+        """
+        columns = ", ".join(self._RUN_COLS)
+        placeholders = ", ".join(f":{column}" for column in self._RUN_COLS)
+        updates = ", ".join(
+            f"{column} = COALESCE(excluded.{column}, {column})"
+            for column in self._RUN_COLS if column != "receipt_path"
+        )
+        conn.executemany(
+            f"INSERT INTO runs ({columns}) VALUES ({placeholders}) "
+            f"ON CONFLICT(receipt_path) DO UPDATE SET {updates}",
+            [self._normalize_row(row) for row in rows],
+        )
 
+    def record_run(self, **values: Any) -> None:
+        """Index one finished or rejected render."""
         with closing(self._connect()) as conn, conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                f"INSERT OR REPLACE INTO runs ({columns}) VALUES ({placeholders})",
-                values,
+            self._upsert(conn, [values])
+
+    def ingest_existing_artifacts(self, *, refresh: bool = False) -> int:
+        """Index receipts and benchmark records found on disk; return how many were found.
+
+        Already indexed files are skipped unless ``refresh`` re-reads all of them.
+        """
+        app_dir = self.config.app_dir
+        assert app_dir is not None
+        output_dir = self.config.output_dir or app_dir / "output"
+        # Each source carries the function that turns its JSON into ledger columns.
+        sources: list[tuple[Path, Any]] = [
+            (path, _receipt_row) for path in sorted((output_dir / "emilia").rglob("*.run.json"))
+        ]
+        for round_dir in sorted((app_dir / "temp" / "architecture_iterations").glob("round_*")):
+            if not round_dir.is_dir():
+                continue
+            try:
+                round_num: int | None = int(round_dir.name.split("_")[-1])
+            except ValueError:
+                round_num = None
+            sources.extend(
+                (path, lambda data, round_num=round_num: _benchmark_row(data, round_num))
+                for path in sorted(round_dir.glob("*.json")) if path.name != "summary.json"
             )
-            return cursor.lastrowid or 0
-
-    def ingest_existing_artifacts(
-        self,
-        app_dir: str | Path | None = None,
-        *,
-        force_refresh: bool = False,
-    ) -> int:
-        app_path = Path(app_dir) if app_dir else self.config.app_dir
-        assert app_path is not None
 
         with closing(self._connect()) as conn, conn:
-            existing_paths: set[str] = set()
-            if not force_refresh:
-                existing_paths = {
-                    row[0]
-                    for row in conn.execute(
-                        "SELECT receipt_path FROM runs WHERE receipt_path IS NOT NULL"
-                    ).fetchall()
-                }
-
-            pending_rows: list[tuple[Any, ...]] = []
-            now_iso = datetime.now(timezone.utc).isoformat()
-            total_matched = 0
-
-            # 1. Scan all output/emilia/**/*.run.json receipts (quality, ultra, etc.)
-            out_base = (self.config.output_dir if (app_dir is None and self.config.output_dir) else (app_path / "output"))
-            emilia_out_dir = out_base / "emilia"
-            if emilia_out_dir.is_dir():
-                for run_file in sorted(emilia_out_dir.rglob("*.run.json")):
-                    resolved_str = str(run_file.resolve())
-                    if resolved_str in existing_paths:
-                        total_matched += 1
-                        continue
-                    try:
-                        data = json.loads(run_file.read_text(encoding="utf-8"))
-                        gen = data.get("generation") or {}
-                        fin = data.get("finishing") or {}
-                        qi = data.get("quality_inspection") or {}
-                        qi_native = qi.get("native") or {}
-                        qi_final = qi.get("final") or {}
-                        eye_rep = qi.get("eye_repair") or data.get("eye_repair") or {}
-                        n_sec = float(gen.get("seconds") or 0.0)
-                        f_sec = float(fin.get("seconds") or 0.0)
-                        r_sec = float(eye_rep.get("seconds") or 0.0) if isinstance(eye_rep, dict) else 0.0
-                        profile = str(data.get("profile") or "quality")
-                        sel_settings = data.get("selected_settings") or {}
-                        is_pag = bool(sel_settings.get("pag")) or ("PAG" in str(data.get("guidance") or ""))
-                        mode = f"{profile}_pag" if is_pag and not profile.endswith("_pag") else profile
-                        try:
-                            file_ts = datetime.fromtimestamp(run_file.stat().st_mtime, tz=timezone.utc).isoformat()
-                        except OSError:
-                            file_ts = now_iso
-                        action = (
-                            "reject_seed"
-                            if data.get("status") == "quality_rejected"
-                            else (qi_final.get("recommended_action") or qi_native.get("recommended_action") or "accept")
-                        )
-                        row = self._normalize_row({
-                            "timestamp": data.get("timestamp") or file_ts,
-                            "seed": data.get("seed"),
-                            "mode": mode,
-                            "guidance": data.get("guidance", "baseline"),
-                            "prompt_idea": data.get("user_idea"),
-                            "native_path": data.get("native"),
-                            "final_path": data.get("final"),
-                            "native_sha256": qi_native.get("pixel_sha256"),
-                            "final_sha256": qi_final.get("pixel_sha256"),
-                            "native_seconds": n_sec,
-                            "finish_seconds": f_sec,
-                            "total_seconds": n_sec + f_sec + r_sec,
-                            "face_count": qi_native.get("face_count"),
-                            "hand_count": qi_native.get("hand_count"),
-                            "heterochromia_score": qi_native.get("heterochromia_score"),
-                            "eye_drift_detected": qi_native.get("eye_drift_detected"),
-                            "quality_action": action,
-                            "receipt_path": resolved_str,
-                        })
-                        pending_rows.append(tuple(row[c] for c in self._RUN_COLS))
-                        total_matched += 1
-                    except Exception:
-                        continue
-
-            # 2. Scan temp/architecture_iterations/round_*/*.json
-            iter_dir = app_path / "temp" / "architecture_iterations"
-            if iter_dir.is_dir():
-                for round_dir in iter_dir.glob("round_*"):
-                    if not round_dir.is_dir():
-                        continue
-                    try:
-                        round_num = int(round_dir.name.split("_")[-1])
-                    except ValueError:
-                        round_num = None
-                    for rec_file in round_dir.glob("*.json"):
-                        if rec_file.name == "summary.json":
-                            continue
-                        resolved_str = str(rec_file.resolve())
-                        if resolved_str in existing_paths:
-                            total_matched += 1
-                            continue
-                        try:
-                            data = json.loads(rec_file.read_text(encoding="utf-8"))
-                            receipt = data.get("receipt", {})
-                            hashes = data.get("pixel_hashes", {})
-                            gen = receipt.get("generation", {})
-                            fin = receipt.get("finishing", {})
-                            row = self._normalize_row({
-                                "timestamp": now_iso,
-                                "seed": data.get("seed") or receipt.get("seed"),
-                                "mode": "benchmark",
-                                "guidance": receipt.get("guidance", "baseline"),
-                                "native_path": receipt.get("native"),
-                                "final_path": receipt.get("final"),
-                                "native_sha256": hashes.get("native"),
-                                "final_sha256": hashes.get("final"),
-                                "native_seconds": gen.get("seconds"),
-                                "finish_seconds": fin.get("seconds"),
-                                "total_seconds": data.get("wall_seconds"),
-                                "peak_rss_gib": (
-                                    data.get("peak_rss_bytes", 0) / (1024**3)
-                                    if "peak_rss_bytes" in data
-                                    else None
-                                ),
-                                "min_avail_ram_gib": (
-                                    data.get("min_available_ram_bytes", 0) / (1024**3)
-                                    if "min_available_ram_bytes" in data
-                                    else None
-                                ),
-                                "receipt_path": resolved_str,
-                                "round_num": round_num,
-                            })
-                            pending_rows.append(tuple(row[c] for c in self._RUN_COLS))
-                            total_matched += 1
-                        except Exception:
-                            continue
-
-            if pending_rows:
-                cols_sql = ", ".join(self._RUN_COLS)
-                placeholders = ", ".join(["?"] * len(self._RUN_COLS))
-                conn.executemany(
-                    f"INSERT OR REPLACE INTO runs ({cols_sql}) VALUES ({placeholders})",
-                    pending_rows,
-                )
-
-            return total_matched
+            indexed = set() if refresh else {
+                row[0] for row in conn.execute("SELECT receipt_path FROM runs WHERE receipt_path IS NOT NULL")
+            }
+            rows: list[dict[str, Any]] = []
+            found = 0
+            for path, to_row in sources:
+                resolved = str(path.resolve())
+                if resolved in indexed:
+                    found += 1
+                    continue
+                try:
+                    row = to_row(json.loads(path.read_text(encoding="utf-8")))
+                    row["timestamp"] = row.get("timestamp") or _file_timestamp(path)
+                except (OSError, ValueError, TypeError, AttributeError):
+                    # A truncated or foreign JSON file is not a receipt; it must not block the rest.
+                    continue
+                row["receipt_path"] = resolved
+                rows.append(row)
+                found += 1
+            if rows:
+                self._upsert(conn, rows)
+            return found
 
     def get_summary_stats(self) -> dict[str, Any]:
         with closing(self._connect()) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute("""
-                SELECT 
+                SELECT
                     COUNT(*) as total_runs,
                     AVG(total_seconds) as avg_total_seconds,
                     AVG(native_seconds) as avg_native_seconds,
@@ -271,7 +247,7 @@ class ExperimentLedger:
             conn.row_factory = sqlite3.Row
             rows_a = {r["seed"]: dict(r) for r in conn.execute("SELECT * FROM runs WHERE round_num = ?", (round_a,)).fetchall()}
             rows_b = {r["seed"]: dict(r) for r in conn.execute("SELECT * FROM runs WHERE round_num = ?", (round_b,)).fetchall()}
-            
+
             common_seeds = sorted(set(rows_a.keys()) & set(rows_b.keys()))
             exact_matches = 0
             comparisons = []

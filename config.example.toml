@@ -21,3 +21,7 @@ comfy_port = 8188
 quality_port = 8199
 ollama_base = "http://127.0.0.1:11434"
 ollama_model = "qwen3.5:9b"
+
+[models]
+# The ultra profile's LoRA. Graphs never fall back to another file: a missing LoRA fails loudly.
+# ultra_lora_name = "Emilia_Rezero_Q-000005.safetensors"

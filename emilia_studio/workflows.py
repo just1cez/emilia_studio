@@ -11,6 +11,12 @@ from typing import Any, Dict, Optional
 
 from .config import EMILIA_ANGLE_SPECS, ULTRA_FRAMING_LEADS, StudioConfig, load_config
 
+# Node ids of the image a stage hands to the next one; the engine never hard-codes graph layout.
+NATIVE_OUTPUT_NODE = "9"
+EYE_REPAIR_OUTPUT_NODE = "22"
+FINAL_OUTPUT_NODE = "16"
+
+
 @dataclass
 class WorkflowSpec:
     """Declarative specification for Emilia workflows."""
@@ -19,6 +25,7 @@ class WorkflowSpec:
 
 _RAW_WORKFLOW_CACHE: dict[str, str] = {}
 _PARSED_WORKFLOW_CACHE: dict[str, Dict[str, Any]] = {}
+
 
 
 def _fast_clone_json(obj: Any) -> Any:
@@ -175,6 +182,34 @@ class EmiliaWorkflowBuilder:
                 graph.pop(node_id, None)
         return graph
 
+    def build_ultra_eye_repair(
+        self,
+        image_path: str,
+        seed: int,
+        *,
+        native_graph: Dict[str, Any],
+        lora_name: str | None = None,
+        lora_strength: float | None = None,
+    ) -> Dict[str, Any]:
+        """Eye repair for an ultra native: same checkpoint and LoRA, ultra face prompts.
+
+        The LoRA never drops below 0.25 here, so zero-LoRA alternate outfits still
+        get identity guidance while the eyes are repainted.
+        """
+        graph = self.build_eye_repair(image_path=image_path, seed=seed, upscale=False)
+        native_lora = native_graph["10"]["inputs"]
+        strength = max(0.25, float(native_lora["strength_model"] if lora_strength is None else lora_strength))
+        graph["4"]["inputs"]["ckpt_name"] = native_graph["4"]["inputs"]["ckpt_name"]
+        graph["10"]["inputs"].update(
+            lora_name=lora_name or native_lora["lora_name"],
+            strength_model=strength,
+            strength_clip=strength,
+        )
+        graph["17"]["inputs"]["text"] = self.config.ultra_face_positive_prompt
+        graph["18"]["inputs"]["text"] = self.config.ultra_face_negative_prompt
+        graph["21"]["inputs"].update(feather=12, noise_mask_feather=0)
+        return graph
+
     def build_lora_native(
         self,
         positive_prompt: str,
@@ -231,6 +266,9 @@ class EmiliaWorkflowBuilder:
         affect text conditioning, not a promise of pose-matched face imagery.
         Portrait omits outfit IPA; upper-body moves its soft mask to the torso.
         ``downscale_factor`` enables Kohya Deep Shrink on the base pass only.
+        The graph depends only on its arguments and configuration, never on which
+        model files happen to be installed: a missing LoRA, adapter or reference
+        image fails ComfyUI validation instead of silently changing the image.
         """
         if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 0xFFFFFFFFFFFFFFFF:
             raise ValueError("seed must be a non-negative 64-bit integer")
@@ -304,22 +342,8 @@ class EmiliaWorkflowBuilder:
         out_prefix = filename_prefix or (
             "emilia/ultra/01_pag_base" if pag else "emilia/ultra/01_base"
         )
-        app_dir = self.config.app_dir
-        if lora_name is None:
-            if app_dir is not None and (app_dir / "models" / "loras" / "Emilia_Rezero_Q-000005.safetensors").is_file():
-                lora_name = "Emilia_Rezero_Q-000005.safetensors"
-            else:
-                lora_name = "emilia-re-zero-re.safetensors"
-
-        has_general_ipa = bool(
-            app_dir is not None
-            and (app_dir / "models" / "ipadapter" / "ip-adapter-plus_sdxl_vit-h.safetensors").is_file()
-        )
-        has_skirt_ref = bool(
-            (app_dir is not None and (app_dir / "input" / "emilia_official_skirt_and_bodice.png").is_file())
-            or (self.config.assets_dir / "official_references" / "emilia_official_skirt_and_bodice.png").is_file()
-        )
-        use_skirt_ipa = framing != "portrait" and skirt_ipadapter_weight > 0 and has_general_ipa and has_skirt_ref
+        lora_name = lora_name or self.config.ultra_lora_name
+        use_skirt_ipa = framing != "portrait" and skirt_ipadapter_weight > 0
 
         graph: Dict[str, Any] = {
             "1": {
@@ -693,12 +717,7 @@ class EmiliaWorkflowBuilder:
                 raise ValueError(f"{name} must be an integer between 64 and 16384")
         if face_guide_size > face_max_size or hand_guide_size > hand_max_size:
             raise ValueError("Detailer guide sizes must not exceed their max sizes")
-        app_dir = self.config.app_dir
-        if lora_name is None:
-            if app_dir is not None and (app_dir / "models" / "loras" / "Emilia_Rezero_Q-000005.safetensors").is_file():
-                lora_name = "Emilia_Rezero_Q-000005.safetensors"
-            else:
-                lora_name = "emilia-re-zero-re.safetensors"
+        lora_name = lora_name or self.config.ultra_lora_name
         graph = self.build_highres_finish(
             image_path=image_path,
             seed=seed,
@@ -828,8 +847,37 @@ class EmiliaWorkflowBuilder:
                     node["widgets_values"] = list(wvn.values())
         return visual
 
+    def _canonical_builds(self) -> Dict[str, Any]:
+        """Tracked canonical graph file -> the default builder call that must reproduce it exactly."""
+        return {
+            "emilia_ipadapter_highres_production.api.json": lambda: self.build_highres_native(seed=20261027, pag=False),
+            "emilia_ipadapter_highres_upscale.api.json": lambda: self.build_highres_finish(
+                image_path="emilia_quality_selected_native.png", seed=20261027, pag=False
+            ),
+            "emilia_eye_repair.api.json": lambda: self.build_eye_repair(
+                image_path="emilia_eye_repair_source.png", seed=20260936
+            ),
+            "emilia_ultra_multiscale_native.api.json": lambda: self.build_ultra_native(seed=20261027, pag=False),
+            "emilia_ultra_multiscale_finish.api.json": lambda: self.build_ultra_finish(
+                image_path="emilia_ultra_selected_base.png", seed=20261027, pag=False
+            ),
+        }
+
+    def canonical_parity(self) -> Dict[str, bool]:
+        """Whether each default builder call is key-and-value identical to its tracked canonical graph."""
+        parity: Dict[str, bool] = {}
+        for name, build in self._canonical_builds().items():
+            path = self.config.workflows_dir / name
+            parity[name] = path.is_file() and build() == json.loads(path.read_text(encoding="utf-8"))
+        return parity
+
     def audit_workflow_directory(self) -> Dict[str, list[str]]:
-        """Classifies all JSON files in workflows/api and workflows/reports (or app/emilia)."""
+        """Classify the JSON files in workflows/api and workflows/reports.
+
+        Canonical graphs are the ones a default builder call must reproduce; every
+        other ``.api.json`` is a template input or a historical experiment.
+        """
+        canonical = set(self._canonical_builds())
         results: Dict[str, list[str]] = {
             "canonical_workflows": [],
             "historical_workflows": [],
@@ -848,8 +896,10 @@ class EmiliaWorkflowBuilder:
                 if name in seen:
                     continue
                 seen.add(name)
-                if name.endswith(".api.json"):
+                if name in canonical:
                     results["canonical_workflows"].append(name)
+                elif name.endswith(".api.json"):
+                    results["historical_workflows"].append(name)
                 elif any(sub in name for sub in ["report", "test", "experiment", "evaluation", "run"]):
                     results["experiment_reports"].append(name)
                 else:
