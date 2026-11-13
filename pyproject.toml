@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+requires = ["setuptools>=75", "wheel>=0.44"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "emilia-studio"
-version = "2.1.0"
-description = "Declarative High-Res SDXL + IPAdapter + Detailer + Upscale Pipeline, Quality Inspector, Ollama Compiler, Interactive TUI, and SQLite Ledger for Emilia (Re:Zero)"
+dynamic = ["version"]
+description = "High-Res SDXL + IPAdapter + Detailer + Upscale Pipeline, Quality Inspector, Ollama Compiler, Interactive TUI, and SQLite Ledger for Emilia (Re:Zero)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -24,6 +24,9 @@ emilia = "emilia_studio.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["emilia_studio*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "emilia_studio._version.__version__"}
 
 # build_support copies the canonical top-level resources only into build/lib.
 # No generated resource duplicates are maintained in the source package.

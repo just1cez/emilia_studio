@@ -1,6 +1,6 @@
 """Emilia Studio — Unified Declarative SDXL Quality Pipeline, Inspector, Compiler, TUI, and Ledger."""
 
-__version__ = "2.1.0"
+from ._version import __version__
 
 from .compiler import BridgeError, CompiledPromptSpec, OllamaPromptCompiler
 from .config import BUILTIN_SCENE_PRESETS, StudioConfig, get_user_config_path, load_config

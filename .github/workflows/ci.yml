@@ -7,7 +7,12 @@ on:
 
 jobs:
   unit-tests:
-    runs-on: ubuntu-24.04
+    # The project runs on Windows; Linux stays in the matrix to keep the controller portable.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
@@ -19,9 +24,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install CPU test dependencies
+        # CPU torch and OpenCV enable the runtime-plugin and garment-geometry tests,
+        # which skip themselves without them.
         run: |
           python -m pip install --upgrade pip
-          pip install numpy Pillow aiohttp pytest
+          pip install pytest
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install opencv-python-headless
           pip install -e .
 
       - name: Verify Emilia Studio package imports, workflow audit, and CLI

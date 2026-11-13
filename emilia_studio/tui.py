@@ -14,6 +14,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from ._version import __version__
+
 # Slant ASCII art spelling "EMILIA" using --, \, /, _, and |
 EMILIA_SLANT_ASCII: tuple[str, ...] = (
     r"    ______   __  ___   ____   __     ____   ___ ",
@@ -24,7 +26,7 @@ EMILIA_SLANT_ASCII: tuple[str, ...] = (
 )
 
 EMILIA_TAGLINE: str = (
-    "  *+.  E M I L I A   S T U D I O   v2.1  --  Re:Zero Decorative SDXL Pipeline  .+*"
+    f"  *+.  E M I L I A   S T U D I O   v{'.'.join(__version__.split('.')[:2])}  --  Re:Zero Decorative SDXL Pipeline  .+*"
 )
 
 
@@ -328,7 +330,7 @@ def download_file_with_progress(
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     part_path = dest_path.with_suffix(dest_path.suffix + ".part")
     existing_size = part_path.stat().st_size if part_path.is_file() else 0
-    headers = {"User-Agent": "EmiliaStudio-CLI/2.1", "Accept-Encoding": "identity"}
+    headers = {"User-Agent": f"EmiliaStudio-CLI/{__version__}", "Accept-Encoding": "identity"}
     if existing_size > 0:
         headers["Range"] = f"bytes={existing_size}-"
     bar = ProgressBar(label or dest_path.name, total=expected_bytes or 0, unit="bytes")

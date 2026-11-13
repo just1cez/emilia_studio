@@ -8,3 +8,4 @@ recursive-include workflows/visual *.json
 recursive-include patches *.patch
 recursive-include patches/emilia_runtime_patches *.py
 recursive-include packaging *.py *.spec *.ps1
+recursive-include scripts *.py *.ps1
