@@ -26,6 +26,7 @@ LOG_PATH = Path(__file__).resolve().parent / "temp" / "gpu_profile.log"
 
 # NvAPI_GPU_GetPstates20/SetPstates20 V2 buffer (7416 bytes). Int32 indices verified on driver 582.78:
 # [2] numPstates, [3] numClocks, [5] pstateId, [7]/[18] clock domain, [10]/[21] frequency delta (kHz).
+# The layout is undocumented; _read_pstates verifies it on every call before any offset is trusted or written.
 _PSTATES20_BYTES = 7416
 _PSTATES20_VERSION = _PSTATES20_BYTES | (2 << 16)
 _DOMAIN_GRAPHICS = 0
@@ -71,16 +72,31 @@ class NvApi:
         self._fn(_NVAPI_GET_ERROR_MESSAGE, ctypes.c_int, ctypes.c_char_p)(status, message)
         raise RuntimeError(f"{name} failed: {status} {message.value.decode(errors='replace')}")
 
-    def offsets_khz(self) -> tuple[int, int]:
+    def _read_pstates(self) -> Any:
+        """Read the P-state buffer and refuse to interpret a layout that differs from the verified one."""
         buffer = (ctypes.c_int32 * (_PSTATES20_BYTES // 4))()
         buffer[0] = _PSTATES20_VERSION
         self._check(
             self._fn(_NVAPI_GET_PSTATES20, ctypes.c_void_p, ctypes.c_void_p)(self._gpu, ctypes.byref(buffer)),
             "NvAPI_GPU_GetPstates20",
         )
+        if not (
+            buffer[2] >= 1 and buffer[3] >= 2 and buffer[5] == 0
+            and buffer[7] == _DOMAIN_GRAPHICS and buffer[18] == _DOMAIN_MEMORY
+        ):
+            raise RuntimeError(
+                "Unexpected NvAPI PSTATES20 layout "
+                f"(pstates={buffer[2]}, clocks={buffer[3]}, pstate={buffer[5]}, domains={buffer[7]}/{buffer[18]}); "
+                "refusing to read or write clock offsets on this driver."
+            )
+        return buffer
+
+    def offsets_khz(self) -> tuple[int, int]:
+        buffer = self._read_pstates()
         return buffer[10], buffer[21]
 
     def set_offsets_khz(self, core: int, memory: int) -> None:
+        self._read_pstates()
         buffer = (ctypes.c_int32 * (_PSTATES20_BYTES // 4))()
         buffer[0] = _PSTATES20_VERSION
         buffer[2] = 1  # one P-state: P0

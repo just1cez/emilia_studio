@@ -7,20 +7,12 @@ param(
     [switch]$Fast
 )
 
+# Thin wrapper over `emilia render`; every option maps 1:1 onto the CLI.
 $ErrorActionPreference = 'Stop'
-$Candidates = @(
-    $env:EMILIA_CONDA_PYTHON,
-    'D:\conda-data\envs\comfyui\python.exe',
-    (Join-Path $PSScriptRoot 'env\python.exe')
-) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+. (Join-Path $PSScriptRoot 'scripts\EmiliaPython.ps1')
+$Python = Resolve-EmiliaPython -Root $PSScriptRoot
 
-if (-not $Candidates -or $Candidates.Count -eq 0) {
-    throw "ComfyUI Python environment was not found."
-}
-$Python = $Candidates[0]
-$Script = Join-Path $PSScriptRoot 'app\script_examples\render_emilia_quality.py'
-
-$Arguments = @($Script, '--seed', $Seed, '--profile', $Profile)
+$Arguments = @('-m', 'emilia_studio.cli', 'render', '--seed', $Seed, '--profile', $Profile)
 if ($Pag) {
     $Arguments += '--pag'
 }
@@ -30,5 +22,10 @@ if ($AutoGate) {
 if ($Fast) {
     $Arguments += '--fast'
 }
-& $Python @Arguments
+Push-Location -LiteralPath $PSScriptRoot
+try {
+    & $Python @Arguments
+} finally {
+    Pop-Location
+}
 exit $LASTEXITCODE

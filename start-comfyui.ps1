@@ -7,16 +7,8 @@ $ErrorActionPreference = 'Stop'
 
 $Root = $PSScriptRoot
 $App = Join-Path $Root 'app'
-$Candidates = @(
-    $env:EMILIA_CONDA_PYTHON,
-    'D:\conda-data\envs\comfyui\python.exe',
-    (Join-Path $Root 'env\python.exe')
-) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-
-if (-not $Candidates -or $Candidates.Count -eq 0) {
-    throw "ComfyUI Python environment was not found."
-}
-$Python = $Candidates[0]
+. (Join-Path $Root 'scripts\EmiliaPython.ps1')
+$Python = Resolve-EmiliaPython -Root $Root
 
 if (-not (Test-Path -LiteralPath (Join-Path $App 'main.py') -PathType Leaf)) {
     throw "ComfyUI application was not found: $App"
