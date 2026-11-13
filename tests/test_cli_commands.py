@@ -29,6 +29,7 @@ def test_machine_workflows_output_is_json(capsys):
     assert main(['workflows']) == 0
     report = json.loads(capsys.readouterr().out)
     assert 'emilia_ipadapter_highres_production.api.json' in report['canonical_workflows']
+    assert report['builder_parity'] and all(report['builder_parity'].values())
 
 
 def test_unknown_download_key_fails_without_network(capsys):
@@ -104,6 +105,26 @@ def test_clean_and_benchmark_commands_work_offline(tmp_path, monkeypatch, capsys
     assert keep_dir.is_dir()
     assert main(['benchmark', '--limit', '5']) == 0
     assert 'Benchmark Summary' in capsys.readouterr().out
+
+
+def test_clean_never_removes_a_running_render(tmp_path, monkeypatch, capsys):
+    from emilia_studio.engine import run_lock
+
+    run_dir = tmp_path / 'temp' / 'quality_running12345'
+    run_dir.mkdir(parents=True)
+    (run_dir / 'server.log').write_text('still rendering', encoding='utf-8')
+    monkeypatch.setenv('EMILIA_TEMP_DIR', str(tmp_path / 'temp'))
+    monkeypatch.setenv('EMILIA_ROOT_DIR', str(tmp_path))
+    with run_lock(run_dir):
+        assert main(['clean', '--older-than-hours', '0']) == 0
+        result = json.loads(capsys.readouterr().out)
+        assert result['removed_count'] == 0
+        assert result['skipped_active'] == [str(run_dir)]
+        assert (run_dir / 'server.log').is_file()
+    # Once the render is over (or its process died), the directory is ordinary garbage.
+    assert main(['clean', '--older-than-hours', '0']) == 0
+    assert json.loads(capsys.readouterr().out)['removed_count'] == 1
+    assert not run_dir.exists()
 
 
 def test_render_rejects_creative_flags_on_quality_profile_and_routes_ultra(monkeypatch, capsys):

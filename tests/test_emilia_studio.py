@@ -44,82 +44,39 @@ def test_config_loading_and_paths() -> None:
     assert cfg.quality_port == 8199
 
 def test_workflow_dsl_exact_parity_with_production_jsons(tmp_path: Path) -> None:
-    cfg = load_config()
-    # Ensure canonical model files exist in a synthetic app_dir when running in standalone CI
-    if not (cfg.app_dir / "models" / "loras" / "Emilia_Rezero_Q-000005.safetensors").is_file():
-        ci_app = tmp_path / "ci_parity_app"
-        for rel in (
-            "models/loras/Emilia_Rezero_Q-000005.safetensors",
-            "models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
-            "input/emilia_official_skirt_and_bodice.png",
-        ):
-            target = ci_app / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(b"")
-        cfg = StudioConfig(
-            root_dir=ROOT,
-            app_dir=ci_app,
-            workflows_dir=cfg.workflows_dir,
-            visual_workflows_dir=cfg.visual_workflows_dir,
-        )
-    builder = EmiliaWorkflowBuilder(cfg)
-
-    # 1. HighRes Native baseline parity
-    expected_native = json.loads(
-        (cfg.workflows_dir / "emilia_ipadapter_highres_production.api.json").read_text(
-            encoding="utf-8"
-        )
+    # Graphs depend only on arguments and configuration, never on installed model files:
+    # an empty runtime directory must build exactly the tracked canonical graphs.
+    defaults = load_config()
+    cfg = StudioConfig(
+        root_dir=ROOT,
+        app_dir=tmp_path / "empty_app",
+        workflows_dir=defaults.workflows_dir,
+        visual_workflows_dir=defaults.visual_workflows_dir,
     )
-    built_native = builder.build_highres_native(seed=20261027, pag=False)
-    assert built_native == expected_native
+    builder = EmiliaWorkflowBuilder(cfg)
+    assert builder.canonical_parity() == {
+        "emilia_ipadapter_highres_production.api.json": True,
+        "emilia_ipadapter_highres_upscale.api.json": True,
+        "emilia_eye_repair.api.json": True,
+        "emilia_ultra_multiscale_native.api.json": True,
+        "emilia_ultra_multiscale_finish.api.json": True,
+    }
 
-    # 2. HighRes Native PAG injection parity
+    # A configuration that changes a default must be reported as drift, not hidden.
+    drifted = EmiliaWorkflowBuilder(StudioConfig(
+        root_dir=ROOT, app_dir=tmp_path / "empty_app", workflows_dir=defaults.workflows_dir,
+        visual_workflows_dir=defaults.visual_workflows_dir, ultra_lora_name="another-lora.safetensors",
+    )).canonical_parity()
+    assert drifted["emilia_ultra_multiscale_native.api.json"] is False
+    assert drifted["emilia_ipadapter_highres_production.api.json"] is True
+
+    # HighRes Native PAG injection
     built_pag = builder.build_highres_native(seed=20261027, pag=True)
     assert "60" in built_pag
     assert built_pag["60"]["class_type"] == "PerturbedAttentionGuidance"
     assert built_pag["60"]["inputs"] == {"model": ["42", 0], "scale": 1.0}
     assert built_pag["3"]["inputs"]["model"] == ["60", 0]
     assert built_pag["9"]["inputs"]["filename_prefix"] == "emilia/community/quality_pag_native"
-
-    # 3. HighRes Finish parity
-    expected_finish = json.loads(
-        (cfg.workflows_dir / "emilia_ipadapter_highres_upscale.api.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    built_finish = builder.build_highres_finish(
-        image_path="emilia_quality_selected_native.png",
-        seed=20261027,
-        pag=False,
-    )
-    assert built_finish == expected_finish
-
-    # 4. Eye repair parity
-    expected_eye = json.loads(
-        (cfg.workflows_dir / "emilia_eye_repair.api.json").read_text(encoding="utf-8")
-    )
-    built_eye = builder.build_eye_repair(
-        image_path="emilia_eye_repair_source.png",
-        seed=20260936,
-    )
-    assert built_eye == expected_eye
-
-    # 5. Ultra Multi-Scale Native & Finish parity
-    expected_ultra_native = json.loads(
-        (cfg.workflows_dir / "emilia_ultra_multiscale_native.api.json").read_text(encoding="utf-8")
-    )
-    built_ultra_native = builder.build_ultra_native(seed=20261027, pag=False)
-    assert built_ultra_native == expected_ultra_native
-
-    expected_ultra_finish = json.loads(
-        (cfg.workflows_dir / "emilia_ultra_multiscale_finish.api.json").read_text(encoding="utf-8")
-    )
-    built_ultra_finish = builder.build_ultra_finish(
-        image_path="emilia_ultra_selected_base.png",
-        seed=20261027,
-        pag=False,
-    )
-    assert built_ultra_finish == expected_ultra_finish
 
 
 def test_visual_workflow_sync_zero_drift() -> None:
@@ -233,6 +190,43 @@ def test_sqlite_ledger_ingestion_and_round_comparison(tmp_path: Path) -> None:
     cmp_1_5 = ledger.compare_rounds(1, 5)
     assert cmp_1_5["common_seeds"] == 10
     assert cmp_1_5["exact_pixel_matches"] == 10
+
+def test_ledger_indexes_benchmark_memory_and_refresh_updates_rows_in_place(tmp_path: Path) -> None:
+    cfg = StudioConfig(root_dir=ROOT, app_dir=tmp_path / "app", output_dir=tmp_path / "app" / "output", temp_dir=tmp_path / "temp")
+    round_dir = cfg.app_dir / "temp" / "architecture_iterations" / "round_03"
+    round_dir.mkdir(parents=True)
+    (round_dir / "20261027.json").write_text(json.dumps({
+        "seed": 20261027, "wall_seconds": 300.0,
+        "peak_sampled_rss": 3 * 1024**3, "min_available_ram": 8 * 1024**3,
+        "pixel_hashes": {"native": "aa", "final": "bb"},
+        "receipt": {"generation": {"seconds": 200.0}, "finishing": {"seconds": 60.0}},
+    }), encoding="utf-8")
+    (round_dir / "summary.json").write_text("{}", encoding="utf-8")
+    receipt = cfg.output_dir / "emilia" / "ultra" / "01_base_00001_.run.json"
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text(json.dumps({
+        "seed": 1005, "profile": "ultra", "status": "quality_rejected",
+        "attempts": [{"generation": {"seconds": 10.0}}, {"generation": {"seconds": 20.0}}],
+        "generation": {"seconds": 20.0},
+    }), encoding="utf-8")
+
+    ledger = ExperimentLedger(tmp_path / "ledger.sqlite3", cfg)
+    # A live render records what its receipt cannot reproduce (the prompt).
+    ledger.record_run(seed=1005, mode="ultra", positive_prompt="live prompt", receipt_path=str(receipt.resolve()))
+    assert ledger.ingest_existing_artifacts() == 2
+    rows = {row["mode"]: row for row in ledger.list_recent_runs()}
+    assert rows["benchmark"]["peak_rss_gib"] == 3.0
+    assert rows["benchmark"]["min_avail_ram_gib"] == 8.0
+    assert rows["benchmark"]["round_num"] == 3
+
+    ledger.ingest_existing_artifacts(refresh=True)
+    refreshed = {row["mode"]: row for row in ledger.list_recent_runs()}
+    assert ledger.get_summary_stats()["total_runs"] == 2
+    assert refreshed["ultra"]["id"] == rows["ultra"]["id"]
+    assert refreshed["ultra"]["positive_prompt"] == "live prompt"
+    assert refreshed["ultra"]["native_seconds"] == 30.0  # both gate attempts
+    assert refreshed["ultra"]["quality_action"] == "reject_seed"
+
 
 
 def test_real_seed_20261030_multi_subject_rejection() -> None:
@@ -359,9 +353,7 @@ def test_fast_port_bind_check_and_stage_whitelist(tmp_path: Path) -> None:
     cfg = StudioConfig(root_dir=ROOT, app_dir=app_dir, output_dir=app_dir / "output", temp_dir=app_dir / "temp")
     eng = EmiliaRenderEngine(config=cfg, inspector=QualityInspector(use_yolo=False), ledger=ExperimentLedger(tmp_path / "l.db", cfg))
     assert eng._stage_custom_node_whitelist("native") == ["comfyui-ipadapter-plus", "emilia_runtime_patches"]
-    assert eng._stage_custom_node_whitelist("batch_native") == ["comfyui-ipadapter-plus", "emilia_runtime_patches"]
     assert eng._stage_custom_node_whitelist("finish") == ["comfyui-impact-pack", "comfyui-impact-subpack", "emilia_runtime_patches"]
-    assert eng._stage_custom_node_whitelist("eye_repair") == ["comfyui-impact-pack", "comfyui-impact-subpack", "emilia_runtime_patches"]
 
 
 def test_inspector_histogram_stats_and_roi_corner_equivalence(tmp_path: Path) -> None:

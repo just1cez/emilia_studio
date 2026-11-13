@@ -44,8 +44,6 @@ def test_outfit_mask_softens_internal_edges():
     try:
         from comfy_extras.nodes_mask import SolidMask, FeatherMask, MaskComposite
         graph = EmiliaWorkflowBuilder(cfg).build_ultra_native()
-        if '201' not in graph:
-            pytest.skip('Outfit adapter unavailable')
         values = {}
         classes = {'SolidMask': SolidMask, 'FeatherMask': FeatherMask, 'MaskComposite': MaskComposite}
         def execute(node_id):
@@ -83,7 +81,7 @@ def test_eye_repair_upscale_false_prunes_realesrgan_nodes_and_sync_visual_skips_
 
 def test_inspector_zero_face_does_not_run_duplicate_detect_anatomy(tmp_path, monkeypatch):
     from PIL import Image
-    from emilia_studio.inspector import QualityInspector
+    from emilia_studio.inspector import Detections, QualityInspector
 
     img_path = tmp_path / 'blank_face.png'
     im = Image.new('RGB', (1152, 1728), (120, 130, 140))
@@ -96,7 +94,7 @@ def test_inspector_zero_face_does_not_run_duplicate_detect_anatomy(tmp_path, mon
 
     def fake_detect(image, *, run_pose=True, image_path=None):
         call_count['n'] += 1
-        return [], [], [], [], 'yolo_cpu'
+        return Detections()
 
     monkeypatch.setattr(inspector, 'detect_anatomy', fake_detect)
     rep = inspector.inspect_image(img_path, stage='native', framing='portrait')

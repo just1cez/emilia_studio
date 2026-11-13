@@ -142,6 +142,20 @@ def deduplicate_tags(prompt: str) -> str:
     return ", ".join(deduped)
 
 
+def outfit_stage_options(outfit: str, framing: str, angle: str) -> tuple[float, dict[str, Any], dict[str, Any]]:
+    """Ultra routing for an outfit: face IPAdapter weight, Stage 1 options, Stage 2 options."""
+    spec = EMILIA_OUTFIT_MODES[outfit]
+    native_options = {
+        "framing": framing,
+        "camera_angle": angle,
+        "reference_mode": spec.get("reference_mode", "single"),
+        "lora_strength_base": spec.get("lora_strength_base", spec["lora_strength"]),
+        "skirt_ipadapter_weight": 0.45 if spec["use_skirt_ipa"] else 0.0,
+    }
+    finish_options = {"lora_strength": spec.get("lora_strength_finish", spec["lora_strength"])}
+    return float(spec.get("ipadapter_weight", 0.18)), native_options, finish_options
+
+
 class OllamaPromptCompiler:
     """Translates Chinese or natural-language ideas into SDXL / Illustrious-XL prompt specs."""
 

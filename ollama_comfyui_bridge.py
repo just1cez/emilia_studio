@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Translate a Chinese idea with Ollama and render via Emilia Studio (HighRes Quality 2x or Fast LoRA)."""
+"""Translate a Chinese idea with Ollama and render it.
+
+``--mode ultra`` / ``--mode quality`` are the two-stage pipeline of ``emilia idea``;
+``--mode fast`` queues one 832x1216 LoRA image on the interactive ComfyUI server.
+"""
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
 import secrets
@@ -15,37 +18,24 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from emilia_studio.compiler import (
-    BridgeError,
-    OllamaPromptCompiler,
-    clean_generated_prompt,
-    http_json,
-    is_emilia_request,
-)
+from emilia_studio.cli import main as emilia_main
+from emilia_studio.compiler import BridgeError, OllamaPromptCompiler, http_json, is_emilia_request
 from emilia_studio.config import (
-    EMILIA_ALIASES,
     EMILIA_ANGLE_SPECS,
-    EMILIA_CANONICAL,
     EMILIA_MAGIC_TAGS,
     EMILIA_OUTFIT_MODES,
     EMILIA_REFERENCE,
-    QUALITY_TAGS,
-    STYLE_HINTS,
     load_config,
 )
-from emilia_studio.engine import EmiliaRenderEngine
 from emilia_studio.workflows import EmiliaWorkflowBuilder
 
 CONFIG = load_config()
 ROOT = CONFIG.root_dir
 APP = CONFIG.app_dir
-ENV = CONFIG.conda_python.parent if CONFIG.conda_python else ROOT / "env"
 PYTHON = CONFIG.conda_python or (ROOT / "env" / "python.exe")
 OUTPUT = CONFIG.output_dir
 TEMP = CONFIG.temp_dir
 COMFY_BASE = CONFIG.comfy_base
-OLLAMA_BASE = CONFIG.ollama_base
-OLLAMA_MODEL = CONFIG.ollama_model
 NATIVE_WORKFLOW = CONFIG.workflows_dir / "emilia_lora_native.api.json"
 VISUAL_WORKFLOW = CONFIG.visual_workflows_dir / "Emilia_03_LoRA_8GB.json"
 
@@ -61,11 +51,6 @@ def probe_comfy() -> dict[str, Any] | None:
     if not isinstance(stats, dict) or "system" not in stats:
         raise BridgeError(f"{CONFIG.comfy_port} 端口已有服务，但它不是可识别的 ComfyUI")
     return stats
-
-
-def probe_ollama() -> dict[str, Any] | None:
-    """Return the Ollama tag response when up, or None only on connection refusal."""
-    return OllamaPromptCompiler(CONFIG).probe_ollama()
 
 
 def start_background(command: list[str], cwd: Path, log_path: Path) -> None:
@@ -138,25 +123,6 @@ def ensure_comfy() -> dict[str, Any]:
     return stats
 
 
-def ensure_ollama() -> dict[str, Any]:
-    return OllamaPromptCompiler(CONFIG).ensure_ollama()
-
-
-def generate_sdxl_prompt(
-    idea: str,
-    style: str = "anime",
-    *,
-    highres_quality_mode: bool = False,
-) -> str:
-    compiler = OllamaPromptCompiler(CONFIG)
-    spec = compiler.compile_idea(
-        idea,
-        style=style,
-        highres_quality_mode=highres_quality_mode,
-    )
-    return spec.positive_prompt
-
-
 def queue_image(
     idea: str,
     positive_prompt: str,
@@ -193,7 +159,7 @@ def queue_image(
                 "generation": {
                     "bridge": "ollama_comfyui_bridge",
                     "reference": EMILIA_REFERENCE if is_emilia_request(idea) else None,
-                    "ollama_model": OLLAMA_MODEL,
+                    "ollama_model": CONFIG.ollama_model,
                     "user_idea": idea,
                 },
             }
@@ -267,9 +233,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=None, help="指定随机种子")
     parser.add_argument("--pag", action="store_true", help="在 quality 模式下启用 PAG scale 1.0")
     parser.add_argument("--auto-gate", action="store_true", help="启用自动瞳色修复与结构质检门禁")
-    parser.add_argument("--width", type=int, choices=range(64, 4097, 8), help="默认使用已验证工作流宽度")
-    parser.add_argument("--height", type=int, choices=range(64, 4097, 8), help="默认使用已验证工作流高度")
-    parser.add_argument("--steps", type=int, choices=range(1, 101), help="默认使用已验证工作流步数")
+    parser.add_argument("--width", type=int, choices=range(64, 4097, 8), metavar="PX", help="默认使用已验证工作流宽度")
+    parser.add_argument("--height", type=int, choices=range(64, 4097, 8), metavar="PX", help="默认使用已验证工作流高度")
+    parser.add_argument("--steps", type=int, choices=range(1, 101), metavar="N", help="默认使用已验证工作流步数")
     parser.add_argument(
         "--style",
         choices=("anime", "illustration", "cinematic"),
@@ -286,83 +252,39 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--fast-finish", action="store_true", help="一键开启极速高分套餐 (FP16超分 + FP16-Fix VAE + 单轮分块VAE + 精简步数)")
     return parser.parse_args(argv)
 
+
+def _idea_command(args: argparse.Namespace, idea: str) -> list[str]:
+    """The equivalent ``emilia idea`` invocation for the two-stage modes."""
+    command = [
+        "idea", idea, "--profile", args.mode, "--style", args.style,
+        "--outfit", args.outfit, "--angle", args.angle, "--magic", args.magic,
+    ]
+    for option, value in (("--seed", args.seed), ("--steps", args.steps)):
+        if value is not None:
+            command += [option, str(value)]
+    for flag, enabled in (
+        ("--pag", args.pag), ("--auto-gate", args.auto_gate), ("--puck", args.puck),
+        ("--fp16-upscaler", args.fp16_upscaler), ("--fp16-vae", args.fp16_vae),
+        ("--fast-tiled-vae", args.fast_tiled_vae), ("--fast", args.fast_finish),
+    ):
+        if enabled:
+            command.append(flag)
+    return command
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     idea = " ".join(args.idea).strip()
     if not idea:
         raise BridgeError("请输入中文生图想法")
+    if args.mode in ("ultra", "quality"):
+        return emilia_main(_idea_command(args, idea))
+
     if APP is None or not PYTHON.is_file() or not (APP / "main.py").is_file():
         raise BridgeError(f"ComfyUI 安装不完整：{PYTHON} / {APP}")
-
     print("检查 Ollama 本地服务……", flush=True)
     compiler = OllamaPromptCompiler(CONFIG)
     compiler.ensure_ollama()
-
-    if args.mode in ("ultra", "quality"):
-        is_ultra = args.mode == "ultra"
-        print(f"正在让 Ollama 编译高画质结构化提示词 [{args.mode}]……", flush=True)
-        companion = "puck" if args.puck else "none"
-        spec = compiler.compile_idea(
-            idea,
-            style=args.style,
-            highres_quality_mode=True,
-            ultra_mode=is_ultra,
-            outfit=args.outfit,
-            companion=companion,
-            magic=args.magic,
-            angle=args.angle,
-        )
-        print(
-            f"英文提示词 [{args.mode}/{spec.framing}, outfit={args.outfit}, angle={args.angle}, IPAdapter={spec.recommended_ipadapter_weight}]：{spec.positive_prompt}",
-            flush=True,
-        )
-        seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1)
-        spec_outfit = EMILIA_OUTFIT_MODES[args.outfit]
-        eff_ipa = (
-            max(spec.recommended_ipadapter_weight, float(spec_outfit.get("ipadapter_weight", 0.18)))
-            if is_ultra
-            else spec.recommended_ipadapter_weight
-        )
-        native_opts = (
-            {
-                "framing": spec.framing,
-                "camera_angle": args.angle,
-                "reference_mode": spec_outfit.get("reference_mode", "single"),
-                "lora_strength_base": spec_outfit.get("lora_strength_base", spec_outfit["lora_strength"]),
-                "skirt_ipadapter_weight": 0.45 if spec_outfit["use_skirt_ipa"] else 0.0,
-            }
-            if is_ultra
-            else None
-        )
-        finish_opts = {"lora_strength": spec_outfit.get("lora_strength_finish", spec_outfit["lora_strength"])} if is_ultra else None
-        engine = EmiliaRenderEngine(CONFIG)
-        receipt = asyncio.run(
-            engine.render_quality_pipeline(
-                seed=seed,
-                port=CONFIG.quality_port,
-                pag=args.pag,
-                profile=args.mode,
-                positive_prompt=spec.positive_prompt,
-                negative_prompt=spec.negative_prompt,
-                ipadapter_weight=eff_ipa,
-                user_idea=idea,
-                strict_seed_lock=not args.auto_gate,
-                auto_eye_repair=args.auto_gate,
-                max_seed_retries=2 if args.auto_gate else 0,
-                native_options=native_opts,
-                finish_options=finish_opts,
-                native_steps=args.steps if args.steps is not None else ((24 if is_ultra else 32) if args.fast_finish else None),
-                hand_steps=16 if args.fast_finish else None,
-                fp16_upscaler=bool(args.fp16_upscaler or args.fast_finish),
-                fp16_vae=bool(args.fp16_vae or args.fast_finish),
-                fast_tiled_vae=bool(args.fast_tiled_vae or args.fast_finish),
-            )
-        )
-        print(f"母版图片：{receipt['native']}", flush=True)
-        print(f"终版 2304×3456 图片：{receipt['final']}", flush=True)
-        return 0
-
-    # Fast single-stage mode
     defaults = json.loads(NATIVE_WORKFLOW.read_text(encoding="utf-8"))
     width = args.width or defaults["5"]["inputs"]["width"]
     height = args.height or defaults["5"]["inputs"]["height"]
@@ -370,7 +292,7 @@ def main(argv: list[str] | None = None) -> int:
     print("检查 ComfyUI 本地服务……", flush=True)
     ensure_comfy()
     print("正在让 Ollama 生成英文提示词……", flush=True)
-    positive_prompt = generate_sdxl_prompt(idea, args.style, highres_quality_mode=False)
+    positive_prompt = compiler.compile_idea(idea, style=args.style, highres_quality_mode=False).positive_prompt
     print(f"英文提示词：{positive_prompt}", flush=True)
     prefix = "emilia/ollama_native" if is_emilia_request(idea) else "ollama_animagine"
     prompt_id = queue_image(

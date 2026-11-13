@@ -32,6 +32,47 @@ PATH_KEYS = (
 VALUE_KEYS = ('comfy_host', 'comfy_port', 'quality_port', 'ollama_base', 'ollama_model')
 
 
+def checkout_checks(config, manifest: dict) -> list[tuple[str, str, str, bool]]:
+    """Compare runtime git checkouts with their pinned commits and tracked source patches.
+
+    Returns ``(check, status, details, ok)`` rows. A checkout that git cannot inspect is
+    reported UNKNOWN without failing; a different commit or an unapplied patch fails,
+    because every recorded timing and pixel hash refers to exactly this patched source.
+    """
+    rows: list[tuple[str, str, str, bool]] = []
+    git = shutil.which('git')
+    entries = [manifest['comfyui']] if manifest.get('comfyui') else []
+    entries += [node for node in manifest.get('custom_nodes', []) if node.get('pinned_commit')]
+    for entry in entries:
+        directory = (config.app_dir / entry['directory']).resolve()
+        pinned = entry['pinned_commit']
+
+        def run(*arguments: str) -> subprocess.CompletedProcess[str] | None:
+            if git is None or not (directory / '.git').exists():
+                return None
+            try:
+                return subprocess.run([git, '-C', str(directory), *arguments], capture_output=True, text=True, timeout=60)
+            except (OSError, subprocess.SubprocessError):
+                return None
+
+        head = run('rev-parse', 'HEAD')
+        if head is None or head.returncode != 0:
+            rows.append((f"{entry['name']} commit", 'UNKNOWN', f'not a readable git checkout; expected {pinned[:12]}', True))
+        else:
+            actual = head.stdout.strip()
+            matches = actual.startswith(pinned) or pinned.startswith(actual)
+            rows.append((f"{entry['name']} commit", 'OK' if matches else 'DRIFT', actual[:12] if matches else f'{actual[:12]} (pinned {pinned[:12]})', matches))
+        patch = entry.get('patch')
+        if patch:
+            patch_path = config.resources_dir / patch
+            applied = run('apply', '--reverse', '--check', str(patch_path)) if patch_path.is_file() else None
+            if applied is None:
+                rows.append((f"{entry['name']} patch", 'UNKNOWN', patch, True))
+            else:
+                rows.append((f"{entry['name']} patch", 'OK' if applied.returncode == 0 else 'NOT APPLIED', patch, applied.returncode == 0))
+    return rows
+
+
 def add_commands(sub):
     p = sub.add_parser('config', help='Initialize, show or edit persistent configuration')
     p.add_argument('action', choices=('init', 'show', 'set', 'path'), nargs='?', default='show')
@@ -266,14 +307,17 @@ def handle(args, config, main, parser):
         if args.json:
             print(json.dumps(comparison, indent=2, ensure_ascii=False))
         else:
+            def _deg(value: object) -> str:
+                return '-' if value is None else f'{value}°'
+
             rows = [
                 ['Path', str(img_a.name), str(img_b.name)],
                 ['Resolution', f'{rep_a.width}x{rep_a.height}', f'{rep_b.width}x{rep_b.height}'],
                 ['Pixel SHA256', rep_a.pixel_sha256[:16] + '...', rep_b.pixel_sha256[:16] + '...'],
                 ['Exact Match', 'YES' if comparison['pixel_identical'] else 'NO', 'YES' if comparison['pixel_identical'] else 'NO'],
-                ['Seed', str(comparison['image_a']['seed'] or '-'), str(comparison['image_b']['seed'] or '-')],
-                ['Iris Hue (L/R)', f"{comparison['image_a']['left_eye_hue_deg']}° / {comparison['image_a']['right_eye_hue_deg']}°", f"{comparison['image_b']['left_eye_hue_deg']}° / {comparison['image_b']['right_eye_hue_deg']}°"],
-                ['Heterochromia', f"{comparison['image_a']['heterochromia_score']}°", f"{comparison['image_b']['heterochromia_score']}°"],
+                ['Seed', str(metrics_a['seed'] or '-'), str(metrics_b['seed'] or '-')],
+                ['Iris Hue (L/R)', *(f"{_deg(m['left_eye_hue_deg'])} / {_deg(m['right_eye_hue_deg'])}" for m in (metrics_a, metrics_b))],
+                ['Heterochromia', _deg(metrics_a['heterochromia_score']), _deg(metrics_b['heterochromia_score'])],
                 ['Gate Passed', 'PASS' if metrics_a['passed'] else 'FAIL', 'PASS' if metrics_b['passed'] else 'FAIL'],
             ]
             print(render_table(['Metric', 'Image A', 'Image B'], rows, title='Emilia Render Comparison'))
@@ -361,9 +405,12 @@ def handle(args, config, main, parser):
         if not temp_root.is_dir():
             print(json.dumps({'temp_dir': str(temp_root), 'removed_count': 0, 'freed_bytes': 0}, indent=2))
             return 0
+        from .engine import run_is_active
+
         cutoff = time.time() - args.older_than_hours * 3600.0
         prefixes = ('quality_', 'ultra_')
         candidates: list[tuple[Path, int]] = []
+        active: list[str] = []
         for entry in sorted(temp_root.iterdir()):
             if not entry.is_dir() or not entry.name.startswith(prefixes):
                 continue
@@ -372,6 +419,10 @@ def handle(args, config, main, parser):
             except OSError:
                 continue
             if mtime > cutoff:
+                continue
+            # A directory's mtime does not move while its render runs; the run lock decides.
+            if run_is_active(entry):
+                active.append(str(entry))
                 continue
             size = sum(f.stat().st_size for f in entry.rglob('*') if f.is_file())
             candidates.append((entry, size))
@@ -388,6 +439,7 @@ def handle(args, config, main, parser):
             'freed_bytes': freed,
             'freed_human': format_bytes(freed),
             'folders': removed,
+            'skipped_active': active,
         }, indent=2))
         return 0
     if cmd in ('doctor', 'pull'):
@@ -461,6 +513,9 @@ def handle(args, config, main, parser):
             valid = (config.app_dir / item['directory']).is_dir()
             rows.append([item['name'], 'OK' if valid else 'MISSING', item['directory']])
             ok &= valid
+        for check, status, details, passed in checkout_checks(config, manifest):
+            rows.append([check, status, details])
+            ok &= passed
         print(render_table(['Check', 'Status', 'Details'], rows, title='Emilia doctor'))
         return 0 if ok else 2
     return None
