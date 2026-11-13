@@ -2,6 +2,7 @@ include build_support.py
 include README.en.md
 include config.example.toml
 include models_manifest.json
+include workflows/WORKFLOW_DECISIONS.txt
 recursive-include assets *.png
 recursive-include workflows/api *.json
 recursive-include workflows/visual *.json
