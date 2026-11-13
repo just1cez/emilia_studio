@@ -160,6 +160,20 @@
       "source_url": "https://huggingface.co/madebyollin/sdxl-vae-fp16-fix",
       "license": "MIT"
     }
+    ,
+    {
+      "key": "sdxl-lightning-8step-unet",
+      "name": "ByteDance SDXL-Lightning 8-step UNet (optional text-only preview)",
+      "relative_path": "models/diffusion_models/sdxl_lightning_8step_unet.safetensors",
+      "size_bytes": 5135149736,
+      "sha256": "471d8260fda0b17b8906feb24573ce64933d4b6b99ba7a1fa43ca051b994e869",
+      "stage": "preview",
+      "download_url": "https://huggingface.co/ByteDance/SDXL-Lightning/resolve/c9a24f48e1c025556787b0c58dd67a091ece2e44/sdxl_lightning_8step_unet.safetensors",
+      "source_url": "https://huggingface.co/api/models/ByteDance/SDXL-Lightning/tree/c9a24f48e1c025556787b0c58dd67a091ece2e44",
+      "workflow_url": "https://huggingface.co/ByteDance/SDXL-Lightning/blob/c9a24f48e1c025556787b0c58dd67a091ece2e44/comfyui/sdxl_lightning_workflow_full.json",
+      "license": "openrail++ (see official ByteDance model license)",
+      "purpose": "Opt-in official distilled UNet text-only preview: exactly 8 steps, CFG 1, Euler, sgm_uniform, denoise 1. Reuses the installed checkpoint CLIP/VAE, without its UNet or character LoRA/IPAdapter conditioning in sampling. Negative-prompt guidance is inactive at CFG 1. Outfit and angle are text-only; no production identity, composition or wall-clock guarantee. Production graphs never load this model."
+    }
   ],
   "reference_assets": [
     {

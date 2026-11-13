@@ -143,7 +143,8 @@ def _fixture_image(path: Path, size: tuple[int, int], kind: str) -> None:
         w, h = size
         draw.rectangle((0, h * 0.8, w, h), fill=(40, 40, 40))
         if kind == "repair":
-            draw.rectangle((0, h * 0.17, w, h * 0.24), fill=(30, 180, 60))
+            draw.ellipse((w * 0.40, h * 0.19, w * 0.44, h * 0.215), fill=(30, 180, 60))
+            draw.ellipse((w * 0.56, h * 0.19, w * 0.60, h * 0.215), fill=(30, 180, 60))
     image.save(path)
 
 
@@ -174,7 +175,13 @@ def pipeline(tmp_path, monkeypatch):
         elif stage.startswith("eye_repair"):
             node_id, size = EYE_REPAIR_OUTPUT_NODE, (1152, 1728)
         else:
-            node_id, size = NATIVE_OUTPUT_NODE, (1152, 1728)
+            if "51" in graph:
+                scale = graph["51"]["inputs"]
+                size = (int(scale["width"]), int(scale["height"]))
+            else:
+                latent = graph.get("5", {}).get("inputs", {})
+                size = (int(latent.get("width", 1152)), int(latent.get("height", 1728)))
+            node_id = NATIVE_OUTPUT_NODE
         _fixture_image(config.output_dir / filename, size, kind)
         return StageResult(stage=stage, prompt_id="pid", seconds=1.0, outputs={node_id: {"images": [{"filename": filename}]}}, submitted_graph=graph)
 
@@ -476,3 +483,48 @@ def test_silent_worker_times_out_with_its_stderr_and_is_stopped():
         worker.request({}, timeout=3)
     assert "loading detector" in str(caught.value)
     assert not worker.alive
+
+
+def test_preview_mode_runs_single_stage_832x1216_and_indexes_ledger(pipeline):
+    engine, sequence, calls, servers = pipeline
+    sequence.extend(["accept"])
+    from emilia_studio.workflows import LIGHTNING_PREVIEW_UNET
+
+    weights = engine.config.app_dir / "models" / "diffusion_models" / LIGHTNING_PREVIEW_UNET
+    weights.parent.mkdir(parents=True)
+    weights.touch()
+    receipt = asyncio.run(engine.render_quality_pipeline(seed=20261027, profile="ultra", preview=True))
+    assert servers == ["native"]
+    assert [name for name, _ in calls] == ["native"]
+    assert receipt["preview"] is True
+    assert receipt["status"] == "completed"
+    assert receipt["final"] == receipt["selected_native"]
+    recent = engine.ledger.list_recent_runs(limit=1)
+    assert recent[0]["mode"] == "ultra_preview"
+
+
+def test_adaptive_iris_localization_handles_angled_tilted_eyes_and_single_profile_eye():
+    inspector = QualityInspector(use_yolo=False)
+    # Tilted angled face where left/right eyes sit at different heights outside fixed 0.36..0.58 band
+    angled = Image.new("RGB", (600, 600), (242, 224, 214))
+    draw = ImageDraw.Draw(angled)
+    face_box = (150.0, 100.0, 450.0, 400.0)  # fw=300, fh=300; fixed band would be y=208..274
+    # Place violet irises at y=184 (above fixed 0.36..0.58 band) and y=262 (dy=78 <= 0.30*fh)
+    draw.ellipse((205, 170, 235, 198), fill=(150, 70, 220))
+    draw.ellipse((345, 248, 375, 276), fill=(148, 68, 218))
+    pose = [[[300.0, 250.0, 0.9], [220.0, 184.0, 0.92], [360.0, 262.0, 0.88]]]
+    res = inspector.analyze_iris_color(angled, face_bbox=face_box, pose_keypoints=pose, _detect_if_missing=False)
+    assert res["eye_color_verified"] is True
+    assert res["left_eye_in_violet_range"] is True and res["right_eye_in_violet_range"] is True
+    assert res["eye_drift_detected"] is False
+
+    # Side-profile face with only one visible green (drifted) eye
+    profile_img = Image.new("RGB", (600, 600), (242, 224, 214))
+    pdraw = ImageDraw.Draw(profile_img)
+    pdraw.ellipse((215, 210, 248, 242), fill=(40, 195, 70))
+    pres = inspector.analyze_iris_color(profile_img, face_bbox=face_box, _detect_if_missing=False)
+    assert pres["left_eye_in_violet_range"] is False
+    assert pres["right_eye_hue_deg"] is None
+    assert pres["eye_drift_detected"] is True
+
+

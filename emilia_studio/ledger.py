@@ -34,11 +34,14 @@ def _receipt_row(data: dict[str, Any]) -> dict[str, Any]:
     finish_seconds = float(finishing.get("seconds") or 0.0)
     repair_seconds = float(eye_repair.get("seconds") or 0.0) if isinstance(eye_repair, dict) else 0.0
     profile = str(data.get("profile") or "quality")
-    pag = bool((data.get("selected_settings") or {}).get("pag")) or "PAG" in str(data.get("guidance") or "")
+    settings = data.get("selected_settings") or {}
+    is_preview = bool(data.get("preview") or (settings.get("fast_overrides") or {}).get("preview"))
+    pag = bool(settings.get("pag")) or "PAG" in str(data.get("guidance") or "")
+    mode = f"{profile}_preview" if is_preview else (f"{profile}_pag" if pag and not profile.endswith("_pag") else profile)
     return {
         "timestamp": data.get("timestamp"),
         "seed": data.get("seed"),
-        "mode": f"{profile}_pag" if pag and not profile.endswith("_pag") else profile,
+        "mode": mode,
         "guidance": data.get("guidance", "baseline"),
         "prompt_idea": data.get("user_idea"),
         "native_path": data.get("native"),

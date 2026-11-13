@@ -277,6 +277,7 @@ def _ensure(owner: Any, name: str, replacement: Any, *markers: str) -> None:
 
 _TILED_SCALE_MARKER = "ps_view.mul_(mask_view)"
 _U8_MARKER = "tensor_to_u8_numpy"
+_INTERMEDIATE_COMPRESS_MARKER = 'startswith(("01_", "02_", "eye_repair_"))'
 _CHUNKED_HASH_MARKER = "while chunk :="
 
 
@@ -308,6 +309,7 @@ def verify_patches() -> dict[str, bool]:
         "nodes_io_optimizations": _source_has(
             getattr(nodes.SaveImage, "save_images", None), _U8_MARKER, "np.clip(i, 0, 255, out=i)"
         ) is True
+        and _source_has(getattr(nodes.SaveImage, "save_images", None), _INTERMEDIATE_COMPRESS_MARKER) is True
         and all(_source_has(hook, _CHUNKED_HASH_MARKER) is True for hook in hash_hooks),
         "upscale_model_in_place_clamp": _source_has(
             getattr(_upscale_node_class(), "execute", None), "s.clamp_(min=0, max=1.0)"
@@ -431,12 +433,37 @@ class EmiliaRelativeGarmentSEGS:
         )
         return ((h, w), [seg]), out_mask
 
+class EmiliaCheckpointConditioning:
+    """Read checkpoint CLIP/VAE without instantiating its unused diffusion model."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"ckpt_name": (folder_paths.get_filename_list("checkpoints"),)}}
+
+    RETURN_TYPES = ("CLIP", "VAE")
+    FUNCTION = "load"
+    CATEGORY = "Emilia"
+
+    def load(self, ckpt_name):
+        path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
+        model, clip, vae, _ = comfy.sd.load_checkpoint_guess_config(
+            path, output_model=False, output_clip=True, output_vae=True,
+            embedding_directory=folder_paths.get_folder_paths("embeddings"),
+        )
+        if model is not None or clip is None or vae is None:
+            raise RuntimeError("Preview conditioning requires a checkpoint with CLIP and VAE components")
+        vae.throw_exception_if_invalid()
+        return clip, vae
+
+
 
 NODE_CLASS_MAPPINGS: dict[str, Any] = {
     "EmiliaRelativeGarmentSEGS": EmiliaRelativeGarmentSEGS,
+    "EmiliaCheckpointConditioning": EmiliaCheckpointConditioning,
 }
 NODE_DISPLAY_NAME_MAPPINGS: dict[str, str] = {
     "EmiliaRelativeGarmentSEGS": "Emilia Garment Geometry Prior (not segmentation)",
+    "EmiliaCheckpointConditioning": "Emilia Checkpoint CLIP/VAE Only",
 }
 _inactive = sorted(name for name, active in apply_all_patches().items() if not active)
 if _inactive:

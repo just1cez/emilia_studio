@@ -367,7 +367,7 @@ index 50222cc5..e09532ea 100644
              init_db()
              if args.enable_assets:
 diff --git a/nodes.py b/nodes.py
-index e2072144..63ed3061 100644
+index e2072144..73a7e257 100644
 --- a/nodes.py
 +++ b/nodes.py
 @@ -585,7 +585,8 @@ class LoadLatent:
@@ -389,8 +389,16 @@ index e2072144..63ed3061 100644
  
      @classmethod
      def INPUT_TYPES(s):
-@@ -1694,8 +1695,7 @@ class SaveImage:
+@@ -1692,10 +1693,15 @@ class SaveImage:
+     def save_images(self, images, filename_prefix="ComfyUI", prompt=None, extra_pnginfo=None):
+         filename_prefix += self.prefix_append
          full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0])
++        compress_level = (
++            0
++            if os.environ.get("EMILIA_HEADLESS_FAST_BOOT") == "1"
++            and os.path.basename(filename_prefix).startswith(("01_", "02_", "eye_repair_"))
++            else self.compress_level
++        )
          results = list()
          for (batch_number, image) in enumerate(images):
 -            i = 255. * image.cpu().numpy()
@@ -399,7 +407,16 @@ index e2072144..63ed3061 100644
              metadata = None
              if not args.disable_metadata:
                  metadata = PngInfo()
-@@ -1757,6 +1757,17 @@ class LoadImage:
+@@ -1707,7 +1713,7 @@ class SaveImage:
+ 
+             filename_with_batch_num = filename.replace("%batch_num%", str(batch_number))
+             file = f"{filename_with_batch_num}_{counter:05}_.png"
+-            img.save(os.path.join(full_output_folder, file), pnginfo=metadata, compress_level=self.compress_level)
++            img.save(os.path.join(full_output_folder, file), pnginfo=metadata, compress_level=compress_level)
+             results.append({
+                 "filename": file,
+                 "subfolder": subfolder,
+@@ -1757,6 +1763,17 @@ class LoadImage:
          dtype = comfy.model_management.intermediate_dtype()
          device = comfy.model_management.intermediate_device()
  
@@ -417,7 +434,7 @@ index e2072144..63ed3061 100644
          components = InputImpl.VideoFromFile(image_path).get_components()
          if components.images.shape[0] > 0:
              return (components.images.to(device=device, dtype=dtype), (1.0 - components.alpha[..., -1]).to(device=device, dtype=dtype) if components.alpha is not None else torch.zeros((components.images.shape[0], 64, 64), dtype=dtype, device=device))
-@@ -1800,7 +1811,8 @@ class LoadImage:
+@@ -1800,7 +1817,8 @@ class LoadImage:
          image_path = folder_paths.get_annotated_filepath(image)
          m = hashlib.sha256()
          with open(image_path, 'rb') as f:
@@ -427,7 +444,7 @@ index e2072144..63ed3061 100644
          return m.digest().hex()
  
      @classmethod
-@@ -2532,6 +2544,14 @@ async def init_builtin_extra_nodes():
+@@ -2532,6 +2550,14 @@ async def init_builtin_extra_nodes():
          "nodes_text.py",
          "nodes_sam3d_body.py",
      ]

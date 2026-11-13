@@ -25,7 +25,7 @@ from .commands import add_commands, handle
 from .engine import EmiliaRenderEngine, QualityGateRejected
 from .inspector import QualityInspector
 from .ledger import ExperimentLedger
-from .workflows import EmiliaWorkflowBuilder
+from .workflows import LIGHTNING_PREVIEW_STEPS, EmiliaWorkflowBuilder
 
 DEFAULT_SEED = 20261027
 DEFAULT_SCENE_PRESET = "rose-garden"
@@ -63,7 +63,7 @@ def _add_pipeline_args(parser: argparse.ArgumentParser, *, default_profile: str,
 
     parser.add_argument("--reference-mode", choices=("single", "paired"), default=None, help="Face reference mode (ultra profile)")
     parser.add_argument("--hires-bridge", choices=("lanczos", "anime"), default=None, help="Pass 1->2 hires bridge (ultra profile)")
-    parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint filename override (ultra profile)")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint filename override (ultra profile); preview uses its CLIP/VAE only, never its UNet")
     parser.add_argument(
         "--garment-region",
         choices=("brooch_and_collar", "bodice_and_peplum", "full_garment"),
@@ -81,6 +81,7 @@ def _add_pipeline_args(parser: argparse.ArgumentParser, *, default_profile: str,
     parser.add_argument("--fp16-vae", action="store_true", help="Use standalone sdxl-vae-fp16-fix.safetensors in FP16 mode")
     parser.add_argument("--fast-tiled-vae", action="store_true", help="Use single-pass feathered tiled VAE decode/encode instead of 3-pass")
     parser.add_argument("--fast", action="store_true", help="Preset enabling --fp16-upscaler --fp16-vae --fast-tiled-vae and reduced steps (32/16)")
+    parser.add_argument("--preview", action="store_true", help="Opt-in official ByteDance SDXL-Lightning 8-step UNet text-only 832x1216 scout; skips identity/image conditioning and refinement; no timing/composition guarantee")
 
 
 def _add_scene_args(parser: argparse.ArgumentParser) -> None:
@@ -88,22 +89,48 @@ def _add_scene_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--preset", choices=tuple(BUILTIN_SCENE_PRESETS))
 
 
-def _acceleration_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+def _validate_preview_options(args: argparse.Namespace) -> None:
+    if not getattr(args, "preview", False):
+        return
+    if args.steps is not None and args.steps != LIGHTNING_PREVIEW_STEPS:
+        raise ValueError("--preview requires --steps 8 (the official 8-step Lightning UNet)")
+    incompatible = [
+        flag for attr, flag in (
+            ("pag", "--pag"), ("fast", "--fast"),
+            ("fp16_upscaler", "--fp16-upscaler"),
+            ("reference_mode", "--reference-mode"),
+            ("face_steps", "--face-steps"), ("hand_steps", "--hand-steps"),
+            ("hires_bridge", "--hires-bridge"),
+            ("garment_region", "--garment-region"), ("upscaler", "--upscaler"),
+            ("secondary_upscaler", "--secondary-upscaler"), ("upscale_blend", "--upscale-blend"),
+        )
+        if getattr(args, attr, None) is not None and getattr(args, attr) is not False
+    ]
+    if incompatible:
+        raise ValueError(f"--preview is incompatible with {', '.join(incompatible)}")
+
+
+def _acceleration_kwargs(args: argparse.Namespace, config: StudioConfig) -> dict[str, Any]:
+    _validate_preview_options(args)
     native_steps, face_steps, hand_steps = args.steps, args.face_steps, args.hand_steps
-    if args.fast:
+    preview = bool(getattr(args, "preview", False))
+    if preview:
+        native_steps = LIGHTNING_PREVIEW_STEPS
+    elif args.fast:
         if native_steps is None:
             native_steps = 24 if args.profile == "ultra" else 32
         if hand_steps is None:
             hand_steps = 16
     out: dict[str, Any] = {}
+    if preview:
+        out["preview"] = True
     for key, value in (("native_steps", native_steps), ("face_steps", face_steps), ("hand_steps", hand_steps)):
         if value is not None:
             out[key] = int(value)
     for key in ("fp16_upscaler", "fp16_vae", "fast_tiled_vae"):
-        if args.fast or getattr(args, key):
+        if getattr(args, key) or args.fast:
             out[key] = True
     return out
-
 
 def _apply_ultra_tuning(
     args: argparse.Namespace,
@@ -130,7 +157,7 @@ def _pipeline_kwargs(args: argparse.Namespace, config: StudioConfig) -> dict[str
         "strict_seed_lock": not args.auto_gate,
         "auto_eye_repair": args.auto_gate,
         "max_seed_retries": args.max_retries if args.auto_gate else 0,
-        **_acceleration_kwargs(args),
+        **_acceleration_kwargs(args, config),
     }
 
 
@@ -157,14 +184,17 @@ def _scene_kwargs(args: argparse.Namespace, config: StudioConfig) -> dict[str, A
         )
         if args.profile == "ultra":
             negative = compiler.build_emilia_ultra_negative(outfit=outfit, framing=framing)
-            ipadapter_weight, native_options, finish_options = outfit_stage_options(outfit, framing, angle)
+            if args.preview:
+                native_options = {"framing": framing, "camera_angle": angle}
+            else:
+                ipadapter_weight, native_options, finish_options = outfit_stage_options(outfit, framing, angle)
     native_options, finish_options = _apply_ultra_tuning(args, native_options, finish_options)
     return {
         "positive_prompt": prompt,
         "negative_prompt": negative,
         "ipadapter_weight": ipadapter_weight,
         "native_options": native_options,
-        "finish_options": finish_options,
+        "finish_options": None if args.preview else finish_options,
     }
 
 
@@ -255,20 +285,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_render(args: argparse.Namespace, config: StudioConfig) -> int:
-    request = {**_scene_kwargs(args, config), **_pipeline_kwargs(args, config)}
+    pipeline = _pipeline_kwargs(args, config)
+    request = {**_scene_kwargs(args, config), **pipeline}
     engine = EmiliaRenderEngine(config=config)
     asyncio.run(engine.render_quality_pipeline(seed=_base_seed(args), **request))
     return 0
 
 
 def _cmd_batch(args: argparse.Namespace, config: StudioConfig) -> int:
+    pipeline = _pipeline_kwargs(args, config)
     if args.seeds:
         seeds = [int(seed) for seed in args.seeds]
     else:
         if args.count < 1:
             raise ValueError("--count must be positive")
         seeds = [_base_seed(args) + offset for offset in range(args.count)]
-    request = {**_scene_kwargs(args, config), **_pipeline_kwargs(args, config)}
+    request = {**_scene_kwargs(args, config), **pipeline}
     engine = EmiliaRenderEngine(config=config)
     receipts = asyncio.run(engine.render_batch_pipeline(seeds=seeds, **request))
     from .tui import render_table
@@ -289,6 +321,7 @@ def _cmd_batch(args: argparse.Namespace, config: StudioConfig) -> int:
 
 
 def _cmd_idea(args: argparse.Namespace, config: StudioConfig) -> int:
+    pipeline = _pipeline_kwargs(args, config)
     idea_text = " ".join(args.idea).strip()
     compiler = OllamaPromptCompiler(config=config)
     compiler.ensure_ollama()
@@ -303,16 +336,20 @@ def _cmd_idea(args: argparse.Namespace, config: StudioConfig) -> int:
         magic=args.magic,
         angle=args.angle,
     )
+    conditioning = "text-only preview" if args.preview else f"IPAdapter={spec.recommended_ipadapter_weight}"
     print(
-        f"编译完成 [{args.profile}/{spec.framing}, outfit={args.outfit}, angle={args.angle}, IPAdapter={spec.recommended_ipadapter_weight}]:\n{spec.positive_prompt}",
+        f"编译完成 [{args.profile}/{spec.framing}, outfit={args.outfit}, angle={args.angle}, {conditioning}]:\n{spec.positive_prompt}",
         flush=True,
     )
-    ipadapter_weight = spec.recommended_ipadapter_weight
+    ipadapter_weight = None if args.preview else spec.recommended_ipadapter_weight
     native_options: dict[str, Any] | None = None
     finish_options: dict[str, Any] | None = None
     if is_ultra:
-        outfit_weight, native_options, finish_options = outfit_stage_options(args.outfit, spec.framing, args.angle)
-        ipadapter_weight = max(ipadapter_weight, outfit_weight)
+        if args.preview:
+            native_options = {"framing": spec.framing, "camera_angle": args.angle}
+        else:
+            outfit_weight, native_options, finish_options = outfit_stage_options(args.outfit, spec.framing, args.angle)
+            ipadapter_weight = max(ipadapter_weight, outfit_weight)
         native_options, finish_options = _apply_ultra_tuning(args, native_options, finish_options)
     engine = EmiliaRenderEngine(config=config)
     asyncio.run(
@@ -323,8 +360,8 @@ def _cmd_idea(args: argparse.Namespace, config: StudioConfig) -> int:
             ipadapter_weight=ipadapter_weight,
             user_idea=idea_text,
             native_options=native_options,
-            finish_options=finish_options,
-            **_pipeline_kwargs(args, config),
+            finish_options=None if args.preview else finish_options,
+            **pipeline,
         )
     )
     return 0

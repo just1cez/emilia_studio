@@ -16,6 +16,19 @@ NATIVE_OUTPUT_NODE = "9"
 EYE_REPAIR_OUTPUT_NODE = "22"
 FINAL_OUTPUT_NODE = "16"
 
+# Official ByteDance full-UNet recipe: CFG 1, Euler + sgm_uniform,
+# with the checkpoint matching the inference step count.
+# https://huggingface.co/ByteDance/SDXL-Lightning
+LIGHTNING_PREVIEW_UNET = "sdxl_lightning_8step_unet.safetensors"
+LIGHTNING_PREVIEW_STEPS = 8
+
+
+def _preview_sampling(pag: bool, steps: int) -> None:
+    if pag:
+        raise ValueError("SDXL-Lightning preview does not support PAG")
+    if isinstance(steps, bool) or not isinstance(steps, int) or steps != LIGHTNING_PREVIEW_STEPS:
+        raise ValueError("SDXL-Lightning 8-step preview requires exactly 8 steps")
+
 
 @dataclass
 class WorkflowSpec:
@@ -79,12 +92,13 @@ class EmiliaWorkflowBuilder:
         graph: Dict[str, Any],
         vae_name: str = "sdxl-vae-fp16-fix.safetensors",
     ) -> Dict[str, Any]:
-        """Rewire all checkpoint VAE outputs (["4", 2]) to a standalone VAELoader node."""
+        """Rewire checkpoint VAE outputs, including the preview's CLIP/VAE-only loader."""
         _model_name("vae_name", vae_name)
+        vae_output = 1 if graph.get("4", {}).get("class_type") == "EmiliaCheckpointConditioning" else 2
         rewired = False
         for node in graph.values():
             inputs = node.get("inputs")
-            if isinstance(inputs, dict) and inputs.get("vae") == ["4", 2]:
+            if isinstance(inputs, dict) and inputs.get("vae") == ["4", vae_output]:
                 inputs["vae"] = ["90", 0]
                 rewired = True
         if rewired:
@@ -660,6 +674,146 @@ class EmiliaWorkflowBuilder:
             "_meta": {"title": "Save 1152x1728 Multi-Scale Base"},
         }
         return graph
+
+    def build_lightning_preview(
+        self,
+        seed: int = 20261027,
+        pag: bool = False,
+        steps: int = LIGHTNING_PREVIEW_STEPS,
+        *,
+        positive_prompt: str | None = None,
+        negative_prompt: str | None = None,
+        width: int = 832,
+        height: int = 1216,
+        checkpoint_name: str = "Illustrious-XL-v0.1.safetensors",
+        filename_prefix: str = "emilia/preview/01_lightning8_unet",
+    ) -> Dict[str, Any]:
+        """Official distilled UNet, text-only; checkpoint supplies CLIP/VAE only.
+
+        No identity LoRA, image reference, IPA, PAG, hires or CFG override is
+        accepted. Negative text is recorded but CFG 1 does not apply negative
+        guidance. This is not a production identity/composition or timing promise.
+        Requires the EmiliaCheckpointConditioning runtime node, which avoids
+        loading the unused checkpoint UNet. External VAE selection is explicit.
+        """
+        _preview_sampling(pag, steps)
+        if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 0xFFFFFFFFFFFFFFFF:
+            raise ValueError("seed must be a non-negative 64-bit integer")
+        for name, value in (("width", width), ("height", height)):
+            if isinstance(value, bool) or not isinstance(value, int) or not 64 <= value <= 16384 or value % 8:
+                raise ValueError(f"{name} must be an integer multiple of 8 between 64 and 16384")
+        _model_name("checkpoint_name", checkpoint_name)
+        return {
+            "4": {
+                "class_type": "EmiliaCheckpointConditioning",
+                "inputs": {"ckpt_name": checkpoint_name},
+                "_meta": {"title": "Checkpoint CLIP/VAE only (UNet not loaded)"},
+            },
+            "91": {
+                "class_type": "UNETLoader",
+                "inputs": {"unet_name": LIGHTNING_PREVIEW_UNET, "weight_dtype": "default"},
+                "_meta": {"title": "Official ByteDance SDXL-Lightning 8-step UNet"},
+            },
+            "6": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"clip": ["4", 0], "text": self.config.base_positive_prompt if positive_prompt is None else positive_prompt},
+            },
+            "7": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"clip": ["4", 0], "text": self.config.base_negative_prompt if negative_prompt is None else negative_prompt},
+                "_meta": {"title": "Negative text recorded; guidance inactive at CFG 1"},
+            },
+            "5": {
+                "class_type": "EmptyLatentImage",
+                "inputs": {"width": width, "height": height, "batch_size": 1},
+            },
+            "3": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "model": ["91", 0], "positive": ["6", 0], "negative": ["7", 0],
+                    "latent_image": ["5", 0], "seed": seed, "steps": steps,
+                    "cfg": 1.0, "sampler_name": "euler", "scheduler": "sgm_uniform", "denoise": 1.0,
+                },
+                "_meta": {"title": "Official UNet text-only preview / 8 steps / CFG 1"},
+            },
+            "8": {
+                "class_type": "VAEDecodeTiled",
+                "inputs": {
+                    "samples": ["3", 0], "vae": ["4", 1], "tile_size": 512,
+                    "overlap": 64, "temporal_size": 64, "temporal_overlap": 8,
+                },
+            },
+            "9": {
+                "class_type": "SaveImage",
+                "inputs": {"images": ["8", 0], "filename_prefix": filename_prefix},
+                "_meta": {"title": f"Save {width}x{height} text-only preview (not production)"},
+            },
+        }
+
+    def build_highres_preview(
+        self,
+        seed: int = 20261027,
+        pag: bool = False,
+        steps: int = LIGHTNING_PREVIEW_STEPS,
+        *,
+        positive_prompt: str | None = None,
+        negative_prompt: str | None = None,
+        width: int = 832,
+        height: int = 1216,
+        checkpoint_name: str = "Illustrious-XL-v0.1.safetensors",
+        filename_prefix: str = "emilia/preview/01_quality_lightning8_unet",
+    ) -> Dict[str, Any]:
+        """Quality-profile text-only preview; see build_lightning_preview's contract."""
+        return self.build_lightning_preview(
+            seed=seed, pag=pag, steps=steps, positive_prompt=positive_prompt,
+            negative_prompt=negative_prompt, width=width, height=height,
+            checkpoint_name=checkpoint_name, filename_prefix=filename_prefix,
+        )
+
+    def build_ultra_preview(
+        self,
+        seed: int = 20261027,
+        pag: bool = False,
+        steps: int = LIGHTNING_PREVIEW_STEPS,
+        *,
+        positive_prompt: str | None = None,
+        negative_prompt: str | None = None,
+        base_width: int = 832,
+        base_height: int = 1216,
+        framing: str = "full_body",
+        camera_angle: str = "auto",
+        checkpoint_name: str = "Illustrious-XL-v0.1.safetensors",
+        filename_prefix: str = "emilia/preview/01_ultra_lightning8_unet",
+    ) -> Dict[str, Any]:
+        """Ultra text composition only: no production identity/model patch options.
+
+        Framing/camera angle adjust default text, never select reference images.
+        Explicit custom prompts are preserved except missing explicit angle tags.
+        Other arguments obey build_lightning_preview's narrow sampling contract.
+        """
+        _choice("framing", framing, ("full_body", "upper_body", "portrait"))
+        _choice("camera_angle", camera_angle, ("auto", "front", "three-quarter", "side", "high-angle", "low-angle"))
+        pos = self.config.ultra_positive_prompt if positive_prompt is None else positive_prompt
+        neg = self.config.ultra_negative_prompt if negative_prompt is None else negative_prompt
+        if positive_prompt is None and framing != "full_body":
+            pos = pos.replace(ULTRA_FRAMING_LEADS["full_body"], ULTRA_FRAMING_LEADS[framing])
+            if framing == "portrait":
+                pos = ", ".join(
+                    t.strip() for t in pos.split(",")
+                    if not any(w in t for w in ("skirt", "stockings", "boots", "thighs", "zettai", "coattails", "legs"))
+                )
+        if negative_prompt is None and framing != "full_body":
+            neg = ", ".join(t.strip() for t in neg.split(",") if t.strip() not in ("cropped feet", "feet out of frame"))
+        if camera_angle != "auto":
+            existing = {t.strip().casefold() for t in pos.split(",")}
+            missing = [t.strip() for t in EMILIA_ANGLE_SPECS[camera_angle]["tags"].split(",") if t.strip() and t.strip().casefold() not in existing]
+            if missing:
+                pos = f"{pos}, {', '.join(missing)}"
+        return self.build_lightning_preview(
+            seed=seed, pag=pag, steps=steps, positive_prompt=pos, negative_prompt=neg,
+            width=base_width, height=base_height, checkpoint_name=checkpoint_name,
+            filename_prefix=filename_prefix,
+        )
 
     def build_ultra_finish(
         self,

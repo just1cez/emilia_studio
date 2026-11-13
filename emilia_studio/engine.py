@@ -27,6 +27,8 @@ from .workflows import (
     EYE_REPAIR_OUTPUT_NODE,
     FINAL_OUTPUT_NODE,
     NATIVE_OUTPUT_NODE,
+    LIGHTNING_PREVIEW_UNET,
+    LIGHTNING_PREVIEW_STEPS,
     EmiliaWorkflowBuilder,
 )
 
@@ -185,6 +187,7 @@ class _RenderPlan:
     flags: RuntimeFlags
     framing: str
     require_pose: bool
+    preview: bool = False
 
     @property
     def is_ultra(self) -> bool:
@@ -350,6 +353,32 @@ class EmiliaRenderEngine:
         log_dir: Path | None = None,
         on_first_progress: Callable[[], None] | None = None,
     ) -> StageResult:
+        """Bound connect, submission, execution and history by one per-graph deadline."""
+        timeout_s = self.config.stage_timeout_s
+        deadline = asyncio.timeout(timeout_s if timeout_s > 0 else None)
+        try:
+            async with deadline:
+                return await self._execute_graph_session(
+                    server, graph=graph, stage=stage, log_dir=log_dir,
+                    on_first_progress=on_first_progress,
+                )
+        except TimeoutError as exc:
+            if deadline.expired():
+                raise TimeoutError(
+                    f"{stage}: execution exceeded stage_timeout_s ({timeout_s:g}s); "
+                    f"see {server.home / 'server.log'}"
+                ) from exc
+            raise
+
+    async def _execute_graph_session(
+        self,
+        server: StageServer,
+        *,
+        graph: dict[str, Any],
+        stage: str,
+        log_dir: Path | None,
+        on_first_progress: Callable[[], None] | None,
+    ) -> StageResult:
         """Queue one graph on a live stage server and wait for its outputs."""
         session, base_url = server.session, server.base_url
         client_id = str(uuid.uuid4())
@@ -380,8 +409,33 @@ class EmiliaRenderEngine:
             previous_value = -1
             pass_number = 0
             reset_progress = False
+            stall_timeout = self.config.stall_timeout_s
+            last_activity = started
             while True:
-                message = await ws.receive()
+                if server.process is not None and server.process.poll() is not None:
+                    raise RuntimeError(
+                        f"{stage}: ComfyUI process exited mid-execution (code {server.process.returncode}); see {server.home / 'server.log'}"
+                    )
+                now = time.monotonic()
+                wait_s: float | None = None
+                if stall_timeout > 0:
+                    rem_stall = (last_activity + stall_timeout) - now
+                    if rem_stall <= 0:
+                        raise TimeoutError(
+                            f"{stage}: WebSocket stalled with no progress for {stall_timeout:.1f}s; see {server.home / 'server.log'}"
+                        )
+                    wait_s = rem_stall if wait_s is None else min(wait_s, rem_stall)
+                recv_step = 5.0 if server.process is not None else wait_s
+                if wait_s is not None and recv_step is not None:
+                    recv_step = min(wait_s, recv_step)
+                try:
+                    message = (
+                        await asyncio.wait_for(ws.receive(), timeout=recv_step)
+                        if recv_step is not None
+                        else await ws.receive()
+                    )
+                except TimeoutError:
+                    continue
                 if message.type == aiohttp.WSMsgType.BINARY:
                     continue
                 if message.type != aiohttp.WSMsgType.TEXT:
@@ -392,6 +446,7 @@ class EmiliaRenderEngine:
                 kind, payload = event["type"], event["data"]
                 if payload.get("prompt_id") != prompt_id:
                     continue
+                last_activity = time.monotonic()
                 if kind in ("execution_error", "execution_interrupted"):
                     raise RuntimeError(f"{stage}: {payload}")
                 if kind == "executing":
@@ -598,6 +653,7 @@ class EmiliaRenderEngine:
         fp16_upscaler: bool = False,
         fp16_vae: bool = False,
         fast_tiled_vae: bool = False,
+        preview: bool = False,
     ) -> list[dict[str, Any]]:
         """Render seeds as one Stage 1 process, a CPU gate, then one Stage 2 process.
 
@@ -622,7 +678,7 @@ class EmiliaRenderEngine:
             strict_seed_lock=strict_seed_lock, auto_eye_repair=auto_eye_repair,
             max_seed_retries=max_seed_retries, native_options=native_options,
             finish_options=finish_options, native_steps=native_steps, face_steps=face_steps,
-            hand_steps=hand_steps,
+            hand_steps=hand_steps, preview=bool(preview),
             flags=RuntimeFlags(bool(fp16_upscaler), bool(fp16_vae), bool(fast_tiled_vae)),
         )
         temp_dir = self.config.temp_dir or self.config.app_dir / "temp"
@@ -632,12 +688,20 @@ class EmiliaRenderEngine:
         with run_lock(run_dir):
             try:
                 await self._native_wave(plan, items, run_dir)
-                if not plan.auto_eye_repair:
+                if plan.preview:
                     for item in items:
                         if plan.gated and item.needs_eye_repair:
-                            item.rejection = "Eye repair is required but automatic eye repair is disabled."
-                if any(item.rejection is None for item in items):
-                    await self._finish_wave(plan, items, run_dir)
+                            item.rejection = "Preview requires eye repair; run the full pipeline to repair and reinspect it."
+                        if item.rejection is None:
+                            item.final = item.selected
+                            item.final_report = item.native_report
+                else:
+                    if not plan.auto_eye_repair:
+                        for item in items:
+                            if plan.gated and item.needs_eye_repair:
+                                item.rejection = "Eye repair is required but automatic eye repair is disabled."
+                    if any(item.rejection is None for item in items):
+                        await self._finish_wave(plan, items, run_dir)
             finally:
                 for item in items:
                     if item.settled:
@@ -662,6 +726,7 @@ class EmiliaRenderEngine:
         native_steps: int | None,
         face_steps: int | None,
         hand_steps: int | None,
+        preview: bool = False,
         flags: RuntimeFlags,
     ) -> _RenderPlan:
         """Validate a request before any process is launched."""
@@ -685,6 +750,19 @@ class EmiliaRenderEngine:
         for name, value in (("native_steps", native_steps), ("face_steps", face_steps), ("hand_steps", hand_steps)):
             if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
                 raise ValueError(f"{name} must be a positive integer")
+        if preview:
+            if pag or (native_steps is not None and native_steps != LIGHTNING_PREVIEW_STEPS):
+                raise ValueError("Lightning preview requires exactly 8 steps and does not support PAG")
+            if finish_options or face_steps is not None or hand_steps is not None or flags.fp16_upscaler:
+                raise ValueError("Preview omits Stage 2; refinement and upscaler options are not supported")
+            preview_keys = {"base_width", "base_height", "framing", "camera_angle", "checkpoint_name"}
+            if ipadapter_weight is not None or set(native_options or {}) - preview_keys:
+                raise ValueError("Lightning preview is text-only; identity LoRA/IPAdapter and hires tuning are not supported")
+            lightning_path = self.config.app_dir / "models" / "diffusion_models" / LIGHTNING_PREVIEW_UNET
+            if not lightning_path.is_file():
+                raise FileNotFoundError(
+                    f"Preview requires {lightning_path}; run `emilia pull sdxl-lightning-8step-unet`."
+                )
         if flags.fp16_vae:
             vae_path = self.config.app_dir / "models" / "vae" / FP16_VAE_NAME
             if not vae_path.is_file():
@@ -693,7 +771,7 @@ class EmiliaRenderEngine:
                 )
         native_options = dict(native_options or {})
         finish_options = dict(finish_options or {})
-        if is_ultra:
+        if is_ultra and not preview:
             if native_steps is not None:
                 native_options.setdefault("base_steps", native_steps)
             if face_steps is not None:
@@ -704,18 +782,46 @@ class EmiliaRenderEngine:
         return _RenderPlan(
             profile=profile, port=port, pag=pag,
             positive_prompt=positive_prompt, negative_prompt=negative_prompt,
-            ipadapter_weight=(0.18 if is_ultra else 0.40) if ipadapter_weight is None else ipadapter_weight,
+            ipadapter_weight=0.0 if preview else ((0.18 if is_ultra else 0.40) if ipadapter_weight is None else ipadapter_weight),
             user_idea=user_idea, strict_seed_lock=strict_seed_lock, auto_eye_repair=auto_eye_repair,
             max_seed_retries=max_seed_retries, native_options=native_options, finish_options=finish_options,
             native_steps=native_steps, face_steps=face_steps, hand_steps=hand_steps, flags=flags,
             framing=framing,
             require_pose=bool(is_ultra and not strict_seed_lock and framing == "full_body"),
+            preview=bool(preview),
         )
 
     def _with_runtime_vae(self, plan: _RenderPlan, graph: dict[str, Any]) -> dict[str, Any]:
         return self.builder.inject_external_vae(graph, FP16_VAE_NAME) if plan.flags.fp16_vae else graph
 
+    def _native_expected_size(self, plan: _RenderPlan) -> tuple[int, int]:
+        if plan.preview:
+            if plan.is_ultra:
+                return (
+                    int(plan.native_options.get("base_width", 832)),
+                    int(plan.native_options.get("base_height", 1216)),
+                )
+            return QualityInspector.SAFE_NATIVE_SIZE
+        return QualityInspector.NATIVE_SIZE
+
     def _native_graph(self, plan: _RenderPlan, seed: int) -> dict[str, Any]:
+        if plan.preview:
+            if plan.is_ultra:
+                preview_opts = dict(plan.native_options)
+                steps = int(plan.native_steps or LIGHTNING_PREVIEW_STEPS)
+                graph = self.builder.build_ultra_preview(
+                    seed=seed, pag=plan.pag, steps=steps,
+                    positive_prompt=plan.positive_prompt, negative_prompt=plan.negative_prompt,
+                    **preview_opts,
+                )
+            else:
+                w, h = QualityInspector.SAFE_NATIVE_SIZE
+                graph = self.builder.build_highres_preview(
+                    seed=seed, pag=plan.pag, positive_prompt=plan.positive_prompt,
+                    negative_prompt=plan.negative_prompt, width=w, height=h,
+                    steps=int(plan.native_steps or LIGHTNING_PREVIEW_STEPS),
+                )
+            return self._with_runtime_vae(plan, graph)
         if plan.is_ultra:
             graph = self.builder.build_ultra_native(
                 seed=seed, pag=plan.pag, positive_prompt=plan.positive_prompt,
@@ -769,8 +875,8 @@ class EmiliaRenderEngine:
     def _warm_cpu_side(self, plan: _RenderPlan) -> None:
         """Best-effort work for the idle CPU and disk while Stage 1 samples on the GPU."""
         self.inspector.warmup(run_pose=plan.framing == "full_body")
-        self._prewarm_stage2_files_in_ram(plan.flags)
-
+        if not plan.preview:
+            self._prewarm_stage2_files_in_ram(plan.flags)
     async def _native_wave(self, plan: _RenderPlan, items: list[_RenderItem], run_dir: Path) -> None:
         """Stage 1: every seed (and its gate retries) in one process, inspection overlapping the next render."""
         numbered = len(items) > 1
@@ -816,7 +922,7 @@ class EmiliaRenderEngine:
                         )
                         item.attempts.append({"seed": item.seed, "generation": generation, "inspection": {}})
                         task = self._inspect(
-                            plan, item.native, QualityInspector.NATIVE_SIZE, "native", strict=plan.strict_seed_lock
+                            plan, item.native, self._native_expected_size(plan), "native", strict=plan.strict_seed_lock
                         )
                         if not can_retry:
                             pending = (item, task)
@@ -907,12 +1013,17 @@ class EmiliaRenderEngine:
         native_report = item.native_report
         assert native_report is not None and item.native is not None and item.selected is not None
         guidance = (
-            ("Ultra Multi-Scale + PAG" if plan.pag else "Ultra Multi-Scale (832->1152->2304)")
-            if plan.is_ultra else ("PAG scale 1.0" if plan.pag else "baseline")
+            f"{plan.profile} 832x1216 preview"
+            if plan.preview
+            else (
+                ("Ultra Multi-Scale + PAG" if plan.pag else "Ultra Multi-Scale (832->1152->2304)")
+                if plan.is_ultra else ("PAG scale 1.0" if plan.pag else "baseline")
+            )
         )
         fast_overrides = {
             key: value
             for key, value in {
+                "preview": plan.preview,
                 "native_steps": plan.native_steps, "face_steps": plan.face_steps,
                 "hand_steps": plan.hand_steps, "fp16_upscaler": plan.flags.fp16_upscaler,
                 "fp16_vae": plan.flags.fp16_vae, "fast_tiled_vae": plan.flags.fast_tiled_vae,
@@ -924,11 +1035,16 @@ class EmiliaRenderEngine:
             "seed": item.seed,
             "requested_seed": item.requested_seed,
             "profile": plan.profile,
+            "preview": plan.preview,
             "status": "quality_rejected" if item.rejection else "completed",
             "rejection_reason": item.rejection,
             "guidance": guidance,
             "python": self._python_executable(),
-            "isolation": "Stage 1 process exited before the Stage 2 process started; no model overlap across stages.",
+            "isolation": (
+                "Single-stage 832x1216 preview process; Stage 2 refinement omitted."
+                if plan.preview
+                else "Stage 1 process exited before the Stage 2 process started; no model overlap across stages."
+            ),
             "native": str(item.native),
             "selected_native": str(item.selected),
             "final": str(item.final) if item.final is not None else None,
@@ -963,7 +1079,7 @@ class EmiliaRenderEngine:
         repair_seconds = float((item.eye_repair or {}).get("seconds", 0.0))
         self.ledger.record_run(
             seed=item.seed,
-            mode=f"{plan.profile}_pag" if plan.pag else plan.profile,
+            mode=f"{plan.profile}_preview" if plan.preview else (f"{plan.profile}_pag" if plan.pag else plan.profile),
             guidance=guidance,
             prompt_idea=plan.user_idea,
             positive_prompt=plan.positive_prompt or (

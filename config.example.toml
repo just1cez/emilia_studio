@@ -21,6 +21,9 @@ comfy_port = 8188
 quality_port = 8199
 ollama_base = "http://127.0.0.1:11434"
 ollama_model = "qwen3.5:9b"
+# Per-graph execution deadline and WebSocket silence watchdog (seconds; <=0 disables).
+stage_timeout_s = 900
+stall_timeout_s = 300
 
 [models]
 # The ultra profile's LoRA. Graphs never fall back to another file: a missing LoRA fails loudly.

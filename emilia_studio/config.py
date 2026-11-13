@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import sys
@@ -668,6 +669,12 @@ class StudioConfig:
     ollama_model: str = field(
         default_factory=lambda: os.environ.get("EMILIA_OLLAMA_MODEL", "qwen3.5:9b")
     )
+    stage_timeout_s: float = field(
+        default_factory=lambda: float(os.environ.get("EMILIA_STAGE_TIMEOUT_S", "900"))
+    )
+    stall_timeout_s: float = field(
+        default_factory=lambda: float(os.environ.get("EMILIA_STALL_TIMEOUT_S", "300"))
+    )
     # Ultra profile LoRA. An explicit name, never a fallback chain: the same
     # arguments must build the same graph on every machine.
     ultra_lora_name: str = "Emilia_Rezero_Q-000005.safetensors"
@@ -771,6 +778,14 @@ class StudioConfig:
             if not 1 <= port_val <= 65535:
                 raise ValueError(f"{port_attr} must be an integer between 1 and 65535")
             setattr(self, port_attr, port_val)
+        for name in ("stage_timeout_s", "stall_timeout_s"):
+            raw = getattr(self, name)
+            if isinstance(raw, bool):
+                raise ValueError(f"{name} must be a finite number of seconds")
+            value = float(raw)
+            if not math.isfinite(value):
+                raise ValueError(f"{name} must be a finite number of seconds")
+            setattr(self, name, value)
     @property
     def comfy_base(self) -> str:
         """Base HTTP URL for standard ComfyUI service."""
@@ -838,6 +853,8 @@ class StudioConfig:
             f"ollama_base = {json.dumps(self.ollama_base, ensure_ascii=False)}",
             f"ollama_model = {json.dumps(self.ollama_model, ensure_ascii=False)}",
             "",
+            f"stage_timeout_s = {self.stage_timeout_s}",
+            f"stall_timeout_s = {self.stall_timeout_s}",
         ])
         default_lora = type(self).__dataclass_fields__["ultra_lora_name"].default
         if self.ultra_lora_name != default_lora:
@@ -905,6 +922,8 @@ def load_config(config_path: str | Path | None = None) -> StudioConfig:
         "quality_port": "EMILIA_QUALITY_PORT",
         "ollama_base": "EMILIA_OLLAMA_BASE",
         "ollama_model": "EMILIA_OLLAMA_MODEL",
+        "stage_timeout_s": "EMILIA_STAGE_TIMEOUT_S",
+        "stall_timeout_s": "EMILIA_STALL_TIMEOUT_S",
     }
     for key, value in overrides.items():
         if key not in StudioConfig.__dataclass_fields__ or key == "config_source":
@@ -917,8 +936,17 @@ def load_config(config_path: str | Path | None = None) -> StudioConfig:
                 value = cfg_file.parent / value
             value = value.resolve()
         kwargs[key] = value
+    int_fields = {"comfy_port", "quality_port"}
+    float_fields = {"stage_timeout_s", "stall_timeout_s"}
     for key, variable in env_map.items():
         value = os.environ.get(variable)
         if value:
-            kwargs[key] = Path(value).expanduser() if key in path_fields else value
+            if key in path_fields:
+                kwargs[key] = Path(value).expanduser()
+            elif key in int_fields:
+                kwargs[key] = int(value)
+            elif key in float_fields:
+                kwargs[key] = float(value)
+            else:
+                kwargs[key] = value
     return StudioConfig(**kwargs)

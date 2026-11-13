@@ -4,7 +4,8 @@ param(
     [string]$Profile = 'quality',
     [switch]$Pag,
     [switch]$AutoGate,
-    [switch]$Fast
+    [switch]$Fast,
+    [switch]$Preview
 )
 
 # Thin wrapper over `emilia render`; every option maps 1:1 onto the CLI.
@@ -21,6 +22,9 @@ if ($AutoGate) {
 }
 if ($Fast) {
     $Arguments += '--fast'
+}
+if ($Preview) {
+    $Arguments += '--preview'
 }
 Push-Location -LiteralPath $PSScriptRoot
 try {

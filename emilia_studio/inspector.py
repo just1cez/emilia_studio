@@ -8,6 +8,7 @@ import contextlib
 import hashlib
 import io
 import json
+import math
 import queue
 import shutil
 import subprocess
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from . import inspection_worker
 
@@ -188,6 +189,101 @@ def _detections_from_worker(data: Any, sx: float, sy: float) -> Detections:
         )
     except (ValueError, KeyError, TypeError, AttributeError, IndexError) as exc:
         raise InspectionRuntimeError("CPU YOLO detector returned an invalid detection response.") from exc
+
+
+def _find_iris_components(
+    arr: np.ndarray, bx1: int, by1: int, bx2: int, by2: int, fw: float, fh: float
+) -> list[tuple[int, float, float, list[int]]]:
+    """Bounded inspection-only color components; these are candidates, not identified eyes.
+
+    Work on at most 384x384 pixels, join scanline runs instead of Python pixel
+    floodfill, and abandon excessively fragmented masks. Full-resolution source
+    pixels are never modified; color measurement uses the original array.
+    """
+    img_h, img_w = arr.shape[:2]
+    bx1, bx2 = max(0, min(img_w, bx1)), max(0, min(img_w, bx2))
+    by1, by2 = max(0, min(img_h, by1)), max(0, min(img_h, by2))
+    band = arr[by1:by2, bx1:bx2]
+    if band.size == 0 or fw <= 0 or fh <= 0:
+        return []
+    scale = min(1.0, 384.0 / max(band.shape[:2]))
+    if scale < 1.0:
+        band = np.asarray(Image.fromarray(band).resize(
+            (max(1, round(band.shape[1] * scale)), max(1, round(band.shape[0] * scale))),
+            Image.Resampling.NEAREST,
+        ))
+    sy, sx = (by2 - by1) / band.shape[0], (bx2 - bx1) / band.shape[1]
+    hue, sat, value = _rgb_to_hsv_deg(band)
+    mask = (sat > 0.22) & (value > 0.15) & (value < 0.95) & (hue >= 65.0) & (hue <= 345.0)
+    radius = max(1, min(4, round(0.010 * fw / sx)))
+    joined = np.asarray(Image.fromarray(mask.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(2 * radius + 1))) != 0
+    # Each run has a union-find label. No per-pixel Python queue or recursion.
+    parents = [0]
+    runs: list[tuple[int, int, int, int]] = []
+    previous: list[tuple[int, int, int]] = []
+
+    def root(label: int) -> int:
+        while parents[label] != label:
+            parents[label] = parents[parents[label]]
+            label = parents[label]
+        return label
+
+    for y, row in enumerate(joined):
+        edges = np.flatnonzero(np.diff(np.pad(row.astype(np.int8), (1, 1))))
+        current: list[tuple[int, int, int]] = []
+        previous_start = 0
+        for start, end in zip(edges[::2].tolist(), edges[1::2].tolist()):
+            label = len(parents)
+            if label > 16384:
+                return []
+            parents.append(label)
+            while previous_start < len(previous) and previous[previous_start][1] < start:
+                previous_start += 1
+            for old_index in range(previous_start, len(previous)):
+                old_start, old_end, old_label = previous[old_index]
+                if old_start > end:
+                    break
+                parents[root(old_label)] = root(label)
+            current.append((start, end, label))
+            runs.append((y, start, end, label))
+        previous = current
+    labels = np.zeros(mask.shape, dtype=np.int32)
+    for y, start, end, label in runs:
+        labels[y, start:end] = root(label)
+    ys, xs = np.nonzero(mask)
+    ids = labels[ys, xs]
+    counts = np.bincount(ids, minlength=len(parents))
+    sum_x = np.bincount(ids, weights=xs, minlength=len(parents))
+    sum_y = np.bincount(ids, weights=ys, minlength=len(parents))
+    min_x = np.full(len(parents), mask.shape[1], dtype=np.int32)
+    min_y = np.full(len(parents), mask.shape[0], dtype=np.int32)
+    max_x = np.full(len(parents), -1, dtype=np.int32)
+    max_y = np.full(len(parents), -1, dtype=np.int32)
+    np.minimum.at(min_x, ids, xs)
+    np.minimum.at(min_y, ids, ys)
+    np.maximum.at(max_x, ids, xs)
+    np.maximum.at(max_y, ids, ys)
+    blobs: list[tuple[int, float, float, list[int]]] = []
+    for label in np.flatnonzero(counts):
+        count = int(round(counts[label] * sx * sy))
+        cw, ch = (max_x[label] - min_x[label] + 1) * sx, (max_y[label] - min_y[label] + 1) * sy
+        # Reject clipped clusters and hair-sized/elongated colored regions before
+        # pairing: large hair must not beat small irises simply by pixel count.
+        if (count < _MIN_IRIS_PIXELS or not 0.30 <= cw / ch <= 2.8
+                or cw > 0.28 * fw or ch > 0.25 * fh or count > 0.050 * fw * fh
+                or min_x[label] == 0 or min_y[label] == 0
+                or max_x[label] == mask.shape[1] - 1 or max_y[label] == mask.shape[0] - 1):
+            continue
+        box = [
+            max(bx1, int(math.floor(bx1 + min_x[label] * sx))),
+            max(by1, int(math.floor(by1 + min_y[label] * sy))),
+            min(bx2, int(math.ceil(bx1 + (max_x[label] + 1) * sx))),
+            min(by2, int(math.ceil(by1 + (max_y[label] + 1) * sy))),
+        ]
+        blobs.append((count, bx1 + (sum_x[label] / counts[label] + 0.5) * sx,
+                      by1 + (sum_y[label] / counts[label] + 0.5) * sy, box))
+    # A fragmented face is ambiguous, not permission for an unbounded pair search.
+    return blobs if len(blobs) <= 32 else []
 
 
 @dataclass
@@ -423,9 +519,17 @@ class QualityInspector:
         face_bbox: tuple[float, float, float, float] | None = None,
         *,
         rgb_array: np.ndarray | None = None,
+        pose_keypoints: list[list[list[float]]] | None = None,
+        pose_boxes: list[tuple[float, float, float, float]] | None = None,
         _detect_if_missing: bool = True,
     ) -> dict[str, Any]:
-        """Locate left and right eye regions, isolate saturated iris pixels in HSV, and check for drift."""
+        """Inspect original iris pixels using COCO pose eyes or an explicit geometry prior.
+
+        General-purpose CPU YOLO pose landmarks are not anime facial landmarks.
+        Geometry/color alone cannot distinguish a small hair ornament from an eye;
+        ambiguous or occluded regions remain unmeasured, not automatically violet.
+        Left/right name image-space sides, not the subject's anatomical sides.
+        """
         if isinstance(image, (str, Path)):
             with Image.open(image) as opened:
                 opened.load()
@@ -437,29 +541,131 @@ class QualityInspector:
         detector_source = "provided_bbox"
         if face_bbox is None:
             if _detect_if_missing:
-                detections = self.detect_anatomy(rgb, run_pose=False)
+                detections = self.detect_anatomy(rgb, run_pose=True)
                 detector_source = detections.source
+                if pose_keypoints is None:
+                    pose_keypoints, pose_boxes = detections.pose_keypoints, detections.pose_boxes
                 if detections.face_boxes:
                     face_bbox = detections.face_boxes[0]
             if face_bbox is None:
                 face_bbox = (0.30 * w, 0.08 * h, 0.70 * w, 0.34 * h)
                 detector_source = "fallback_upper_body"
-        x1, y1, x2, y2 = face_bbox
-        fw = max(1.0, x2 - x1)
-        fh = max(1.0, y2 - y1)
+        # Preserve the detector's face coordinate frame for partially clipped
+        # faces, but clip every sampling box before NumPy slicing.
+        if len(face_bbox) != 4 or not all(math.isfinite(c) for c in face_bbox):
+            raise ValueError("face_bbox must contain four finite coordinates")
+        x1, y1, x2, y2 = (float(value) for value in face_bbox)
+        fw, fh = max(0.0, x2 - x1), max(0.0, y2 - y1)
+        face_bbox = (x1, y1, x2, y2)
 
-        # Eye vertical band and left/right horizontal sub-boxes within the anime face bounding box
-        ey1 = int(max(0, round(y1 + 0.36 * fh)))
-        ey2 = int(min(h, round(y1 + 0.58 * fh)))
-        lx1 = int(max(0, round(x1 + 0.16 * fw)))
-        lx2 = int(min(w, round(x1 + 0.45 * fw)))
-        rx1 = int(max(0, round(x1 + 0.55 * fw)))
-        rx2 = int(min(w, round(x1 + 0.84 * fw)))
+        def clipped_box(a: float, b: float, c: float, d: float) -> list[int]:
+            if fw <= 0 or fh <= 0:
+                return [0, 0, 0, 0]
+            return [max(0, min(w, round(a))), max(0, min(h, round(b))),
+                    max(0, min(w, round(c))), max(0, min(h, round(d)))]
 
+        geom_lbox = clipped_box(x1 + 0.16 * fw, y1 + 0.36 * fh, x1 + 0.45 * fw, y1 + 0.58 * fh)
+        geom_rbox = clipped_box(x1 + 0.55 * fw, y1 + 0.36 * fh, x1 + 0.84 * fw, y1 + 0.58 * fh)
         arr = rgb_array if rgb_array is not None else np.asarray(rgb)
-        left_crop = arr[ey1:ey2, lx1:lx2]
-        right_crop = arr[ey1:ey2, rx1:rx2]
+        if arr.shape != (h, w, 3) or arr.dtype != np.uint8:
+            raise ValueError("rgb_array must match the image's uint8 RGB dimensions")
 
+        # Match a whole person's landmarks to this face, never the first person's
+        # eyes or a mixture of people. General COCO landmarks need confidence,
+        # nose proximity, optional person-box containment and plausible spread.
+        pose_matches: list[tuple[float, list[tuple[float, float]]]] = []
+        for person_index, person in enumerate(pose_keypoints or ()):
+            if len(person) < 3 or fw <= 0 or fh <= 0:
+                continue
+
+            def reliable(pt: list[float], confidence: float) -> bool:
+                return (len(pt) >= 3 and all(math.isfinite(float(v)) for v in pt[:3])
+                        and float(pt[2]) >= confidence and x1 <= pt[0] <= x2 and y1 <= pt[1] <= y2
+                        and 0 <= pt[0] < w and 0 <= pt[1] < h)
+
+            if not reliable(person[0], 0.35):
+                continue
+            if pose_boxes is not None and person_index < len(pose_boxes):
+                px1, py1, px2, py2 = pose_boxes[person_index]
+                if not (px1 <= (x1 + x2) / 2 <= px2 and py1 <= (y1 + y2) / 2 <= py2):
+                    continue
+            eyes = sorted([(float(p[0]), float(p[1])) for p in person[1:3] if reliable(p, 0.50)])
+            if not eyes:
+                continue
+            mx, my = np.mean(eyes, axis=0)
+            if not (0.12 <= (mx - x1) / fw <= 0.88 and 0.10 <= (my - y1) / fh <= 0.76):
+                continue
+            nose_distance = math.hypot((person[0][0] - mx) / fw, (person[0][1] - my) / fh)
+            if nose_distance > 0.40:
+                continue
+            if len(eyes) == 2:
+                spread = math.hypot((eyes[1][0] - eyes[0][0]) / fw, (eyes[1][1] - eyes[0][1]) / fh)
+                if not 0.14 <= spread <= 0.85:
+                    continue
+            score = math.hypot((mx - (x1 + 0.5 * fw)) / fw, (my - (y1 + 0.45 * fh)) / fh)
+            pose_matches.append((score, eyes))
+        pose_matches.sort(key=lambda item: item[0])
+        pose_eyes: list[tuple[float, float]] = []
+        if pose_matches and (len(pose_matches) == 1 or pose_matches[1][0] - pose_matches[0][0] > 0.08):
+            pose_eyes = pose_matches[0][1]
+
+        # A broad band is safe only when reliable pose eyes anchor candidates.
+        band = clipped_box(x1 + 0.06 * fw, y1 + (0.04 if pose_eyes else 0.25) * fh,
+                           x2 - 0.06 * fw, y1 + (0.94 if pose_eyes else 0.67) * fh)
+        blobs = _find_iris_components(arr, *band, fw, fh) if fw > 0 and fh > 0 else []
+        selected: list[tuple[int, float, float, list[int]] | None] = [None, None]
+        localization_method = "geometric_fallback"
+        if pose_eyes:
+            # Independent distance gates, not a weak pair-score bonus: a missing
+            # eye cannot be replaced by a larger hair/brooch component elsewhere.
+            slots = list(enumerate(pose_eyes)) if len(pose_eyes) == 2 else [
+                (0 if pose_eyes[0][0] <= x1 + 0.5 * fw else 1, pose_eyes[0])]
+            used: set[int] = set()
+            for side, (ex, ey) in slots:
+                candidates = sorted(
+                    (math.hypot((blob[1] - ex) / fw, (blob[2] - ey) / fh), index)
+                    for index, blob in enumerate(blobs) if index not in used
+                )
+                if candidates and candidates[0][0] <= 0.10:
+                    if len(candidates) == 1 or candidates[1][0] - candidates[0][0] > 0.035:
+                        index = candidates[0][1]
+                        selected[side] = blobs[index]
+                        used.add(index)
+            if all(blob is not None for blob in selected):
+                localization_method = "adaptive_iris_pair_pose"
+            elif any(blob is not None for blob in selected):
+                localization_method = "adaptive_iris_single_pose"
+            else:
+                localization_method = "pose_eye_regions_unmeasured"
+        else:
+            # Explicit image-space geometry prior: color area never ranks pairs.
+            # Avoid the forehead, lateral hair, central nose and low brooch band.
+            for side, center in enumerate((0.305, 0.695)):
+                candidates = []
+                for blob in blobs:
+                    rx, ry = (blob[1] - x1) / fw, (blob[2] - y1) / fh
+                    if abs(rx - center) <= 0.145 and 0.30 <= ry <= 0.62:
+                        candidates.append((math.hypot(rx - center, ry - 0.47), blob))
+                candidates.sort(key=lambda candidate: candidate[0])
+                if candidates and (len(candidates) == 1 or candidates[1][0] - candidates[0][0] > 0.06):
+                    selected[side] = candidates[0][1]
+            if all(blob is not None for blob in selected):
+                left, right = selected
+                assert left is not None and right is not None
+                if (abs(left[2] - right[2]) > 0.28 * fh
+                        or max(left[0], right[0]) > 3.5 * min(left[0], right[0])):
+                    selected = [None, None]
+                else:
+                    localization_method = "adaptive_iris_pair"
+            elif any(blob is not None for blob in selected):
+                localization_method = "adaptive_iris_single"
+        # Fallback boxes are diagnostic only when no credible component exists;
+        # measuring all saturated pixels in them would reintroduce false eyes.
+        lbox = selected[0][3] if selected[0] is not None else (geom_lbox if not any(selected) else [0, 0, 0, 0])
+        rbox = selected[1][3] if selected[1] is not None else (geom_rbox if not any(selected) else [0, 0, 0, 0])
+        empty = np.empty((0, 0, 3), dtype=np.uint8)
+        left_crop = arr[lbox[1]:lbox[3], lbox[0]:lbox[2]] if selected[0] is not None else empty
+        right_crop = arr[rbox[1]:rbox[3], rbox[0]:rbox[2]] if selected[1] is not None else empty
         def _extract_iris_hues(crop: np.ndarray) -> np.ndarray:
             if crop.size == 0:
                 return np.empty((0,), dtype=np.float32)
@@ -514,8 +720,16 @@ class QualityInspector:
         return {
             "detector_source": detector_source,
             "face_bbox": [round(float(c), 2) for c in face_bbox],
-            "left_eye_box": [lx1, ey1, lx2, ey2],
-            "right_eye_box": [rx1, ey1, rx2, ey2],
+            "localization_method": localization_method,
+            "localization_prior": "cpu_yolo_coco_pose" if pose_eyes else "face_relative_geometry",
+            "localization_limitations": [
+                "General COCO pose eyes are not dedicated anime facial landmarks; reliability is gated, not measured accuracy.",
+                "Geometry/color fallback cannot prove eye identity or rule out eye-sized hair ornaments.",
+                "Clipped, ambiguous, tiny or occluded components may remain unmeasured; unmeasured is not verified violet.",
+                "Color priors exclude warm/red and near-white/dark irises; bounded downsampling can miss very small eyes.",
+            ],
+            "left_eye_box": lbox,
+            "right_eye_box": rbox,
             "left_iris_pixel_count": int(l_hues.size),
             "right_iris_pixel_count": int(r_hues.size),
             "left_eye_hue_deg": round(l_mean, 2) if l_mean is not None else None,
@@ -802,7 +1016,7 @@ class QualityInspector:
                     )
 
                 detections = self.detect_anatomy(
-                    rgb_im, run_pose=(framing == "full_body"), image_path=path
+                    rgb_im, run_pose=True, image_path=path
                 )
                 face_boxes, face_confs = detections.face_boxes, detections.face_confidences
                 hand_boxes, hand_confs = detections.hand_boxes, detections.hand_confidences
@@ -813,7 +1027,12 @@ class QualityInspector:
 
                 primary_face = face_boxes[0] if face_boxes else None
                 iris = self.analyze_iris_color(
-                    rgb_im, face_bbox=primary_face, rgb_array=arr, _detect_if_missing=False
+                    rgb_im,
+                    face_bbox=primary_face,
+                    rgb_array=arr,
+                    pose_keypoints=detections.pose_keypoints,
+                    pose_boxes=detections.pose_boxes,
+                    _detect_if_missing=False,
                 )
                 iris["anatomy_detector_source"] = detector_source
                 try:
