@@ -123,3 +123,19 @@ def test_unclosed_think_tag_and_lora_hires_node_reuse_and_seed_validation():
     g_portrait = builder.build_ultra_native(framing='portrait')
     assert 'boots' not in g_portrait['6']['inputs']['text']
     assert 'cropped feet' not in g_portrait['7']['inputs']['text']
+
+
+def test_posture_bans_follow_the_requested_scene():
+    compiler = OllamaPromptCompiler(load_config())
+    standing = set(compiler.build_emilia_ultra_negative(scene_and_pose_tags='standing on a garden path').split(', '))
+    seated = set(compiler.build_emilia_ultra_negative(scene_and_pose_tags='sitting on a bench, reading').split(', '))
+    assert {'sitting', 'kneeling', 'lying', 'on back'} <= standing
+    assert not {'sitting', 'kneeling', 'lying', 'on back'} & seated
+    # Concept leaks that drew a frame border on unrelated scenes stay banned either way.
+    assert 'purple border' in standing and 'purple border' in seated
+    # A custom --prompt goes straight to the builder; a seated prompt must not be negated there either.
+    builder = EmiliaWorkflowBuilder(load_config())
+    custom = set(builder.build_ultra_native(positive_prompt='1girl, emilia, sitting on a bench')['7']['inputs']['text'].split(', '))
+    default = set(builder.build_ultra_native()['7']['inputs']['text'].split(', '))
+    assert 'sitting' not in custom and 'purple border' in custom
+    assert {'sitting', 'kneeling', 'lying', 'on back'} <= default

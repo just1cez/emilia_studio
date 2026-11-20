@@ -195,8 +195,9 @@ def handle(args, config, main, parser):
             from .compiler import OllamaPromptCompiler
             spec = EMILIA_OUTFIT_MODES[args.name]
             compiler = OllamaPromptCompiler(config)
-            pos = compiler.build_emilia_ultra_prompt('standing gracefully, gentle smile, looking at viewer', args.framing, outfit=args.name)
-            neg = compiler.build_emilia_ultra_negative(outfit=args.name, framing=args.framing)
+            scene = 'standing gracefully, gentle smile, looking at viewer'
+            pos = compiler.build_emilia_ultra_prompt(scene, args.framing, outfit=args.name)
+            neg = compiler.build_emilia_ultra_negative(outfit=args.name, framing=args.framing, scene_and_pose_tags=scene)
             print(json.dumps({
                 'outfit': args.name,
                 'title': spec['title'],

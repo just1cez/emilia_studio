@@ -14,14 +14,15 @@ from typing import Any
 
 # Canonical Emilia identity and prompt constants
 EMILIA_CANONICAL: str = (
-    r"1girl, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, safe, solo, "
+    r"1girl, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, general, solo, "
     "silver hair, purple eyes, braid, hair flower, x hair ornament, "
     "white dress, detached sleeves, green gem"
 )
 EMILIA_REFERENCE: str = "https://re-zero-anime.jp/tv/character/"
 EMILIA_ALIASES: tuple[str, ...] = ("爱蜜莉雅", "艾米莉娅", "エミリア", "emilia")
 
-QUALITY_TAGS: str = "masterpiece, high score, great score, absurdres"
+# Illustrious-XL v0.1 trained quality/year tags (model card and arXiv:2409.19946); not Animagine's score tags.
+QUALITY_TAGS: str = "masterpiece, best quality, absurdres, newest"
 STYLE_HINTS: dict[str, str] = {
     "anime": "Japanese anime key visual, clean expressive line art, soft cel shading, polished 2D animation finish",
     "illustration": "polished fantasy illustration, refined line art, luminous painterly details",
@@ -85,8 +86,8 @@ ULTRA_EMILIA_OUTFIT_CANONICAL: str = (
     "white corset waist panel with six vertical purple dash markings, "
     "three-tiered white petal-scalloped peplum overskirt with lavender edges, "
     "white box-pleated miniskirt with thin purple stripe near hem, "
-    "plain white split dress coattails with thin purple border trim and pale lavender lining, "
-    "detached wide white juliet bell sleeves with purple frilled upper cuffs and pointed purple sleeve cuffs bearing yellow hawk emblem, "
+    "plain white split dress coattails with thin purple hem trim and pale lavender lining, "
+    "detached wide white juliet bell sleeves with purple frilled upper cuffs and pointed purple sleeve cuffs with yellow emblem, "
     "zettai ryouiki, bare thighs, white thighhigh stockings with purple zig-zag V-shaped cuffs, "
     "white high-heel ankle boots with purple V-cuffs"
 )
@@ -107,7 +108,7 @@ ULTRA_FRAMING_LEADS: dict[str, str] = {
 DEFAULT_ULTRA_POSITIVE_PROMPT: str = (
     "masterpiece, best quality, absurdres, polished anime key visual illustration, 1girl, solo, "
     f"{ULTRA_FRAMING_LEADS['full_body']}, {ULTRA_EMILIA_OUTFIT_CANONICAL}, "
-    "standing on a sunlit stone garden path, blooming white roses, stone archway, "
+    "outdoors, standing on a sunlit stone garden path, blooming white roses, stone archway, blue sky, "
     "intricate background foliage, soft golden hour volumetric light, warm key light and cool ambient shadows, "
     "natural shadow gradients on face and dress pleats, balanced exposure, delicate clean lineart, luminous shading"
 )
@@ -126,8 +127,26 @@ DEFAULT_ULTRA_NEGATIVE_PROMPT: str = (
     "emblem on skirt, emblem on coattails, four purple tails, "
     "round gold button, double brooch, background character, distant person, crowd, multiple girls, "
     "asymmetrical eyes, crossed eyes, spiral eyes, target eyes, multiple pupils, "
-    "red eyes, solid blue eyes, pink eyes, heterochromia, cropped head, photo, realistic, 3d, nsfw"
+    "red eyes, solid blue eyes, pink eyes, heterochromia, cropped head, photo, realistic, 3d, nsfw, "
+    "border, purple border, white border, framed, sitting, kneeling, lying, on back"
 )
+
+# Opposite-posture bans in DEFAULT_ULTRA_NEGATIVE_PROMPT. Kept only when the prompt asks for a
+# standing/walking figure, so a scene that wants her seated or reclining is never negated.
+_POSTURE_NEGATIVES = frozenset({"sitting", "kneeling", "lying", "on back"})
+_UPRIGHT_CUES = ("standing", "walking")
+
+
+def drop_unrequested_posture_negatives(negative: str, scene_and_pose_tags: str | None) -> str:
+    """Remove the upright-only posture bans unless the scene requests standing or walking.
+
+    ``None`` means the built-in standing scene: the bans stay.
+    """
+    if scene_and_pose_tags is None or any(cue in scene_and_pose_tags.casefold() for cue in _UPRIGHT_CUES):
+        return negative
+    return ", ".join(t.strip() for t in negative.split(",") if t.strip() and t.strip().casefold() not in _POSTURE_NEGATIVES)
+
+
 DEFAULT_ULTRA_FACE_POSITIVE_PROMPT: str = (
     r"masterpiece, best quality, rezero emilia, emilia \(re:zero\), anime face, "
     "symmetrical violet eyes, clear glossy purple outer irises with luminous cyan-blue inner ring around soft vertical oval pupils, "
@@ -499,7 +518,7 @@ BUILTIN_SCENE_PRESETS: dict[str, dict[str, Any]] = {
         "framing": "full_body",
         "default_seed": 20261027,
         "tags": (
-            "standing on a sunlit stone garden path, blooming white roses, stone archway, "
+            "outdoors, standing on a sunlit stone garden path, blooming white roses, stone archway, blue sky, "
             "intricate background foliage, soft golden hour volumetric light, warm key light and cool ambient shadows, "
             "hands relaxed, gentle smile, looking at viewer"
         ),

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .config import EMILIA_ANGLE_SPECS, ULTRA_FRAMING_LEADS, StudioConfig, load_config
+from .config import EMILIA_ANGLE_SPECS, ULTRA_FRAMING_LEADS, StudioConfig, drop_unrequested_posture_negatives, load_config
 
 # Node ids of the image a stage hands to the next one; the engine never hard-codes graph layout.
 NATIVE_OUTPUT_NODE = "9"
@@ -316,7 +316,8 @@ class EmiliaWorkflowBuilder:
         for name, value in (("lora_strength_base", lora_strength_base), ("lora_strength_hires", lora_strength_hires)):
             _range(name, value, -100.0, 100.0)
         pos = positive_prompt or self.config.ultra_positive_prompt
-        neg = negative_prompt or self.config.ultra_negative_prompt
+        # A custom positive prompt that does not ask for a standing figure must not have its pose negated.
+        neg = negative_prompt or drop_unrequested_posture_negatives(self.config.ultra_negative_prompt, positive_prompt or None)
         if not positive_prompt and framing != "full_body":
             pos = pos.replace(ULTRA_FRAMING_LEADS["full_body"], ULTRA_FRAMING_LEADS[framing])
             if framing == "portrait":
@@ -597,9 +598,11 @@ class EmiliaWorkflowBuilder:
                 "upscale_method": "lanczos",
                 "width": width,
                 "height": height,
-                "crop": "disabled",
+                # 832x1216 is not exactly 2:3; "center" trims ~11 px per side of the
+                # base instead of stretching the figure 2.6% taller to 1152x1728.
+                "crop": "center",
             },
-            "_meta": {"title": "Lanczos Pixel Upscale to 1152x1728"},
+            "_meta": {"title": "Lanczos Pixel Upscale to 1152x1728 (aspect-preserving center crop)"},
         }
         if hires_bridge == "anime":
             graph["56"] = {
@@ -823,13 +826,13 @@ class EmiliaWorkflowBuilder:
         lora_name: str | None = None,
         lora_strength: float = 0.25,
         face_denoise: float = 0.28,
-        hand_denoise: float = 0.30,
+        hand_denoise: float = 0.40,
         face_steps: int = 20,
         hand_steps: int = 20,
         face_guide_size: int = 768,
         face_max_size: int = 1024,
-        hand_guide_size: int = 640,
-        hand_max_size: int = 896,
+        hand_guide_size: int = 512,
+        hand_max_size: int = 1024,
         upscale_factor: float = 2.0,
         checkpoint_name: str = "Illustrious-XL-v0.1.safetensors",
         garment_region: str | None = None,
@@ -839,8 +842,14 @@ class EmiliaWorkflowBuilder:
         upscaler_name: str = "RealESRGAN_x4plus_anime_6B.pth",
         secondary_upscaler_name: str | None = None,
     ) -> Dict[str, Any]:
-        """Build ultra finishing without adding any IPA or SAM model loads.
+        """Build ultra finishing on the shared finish template (face YOLO, hand YOLO + SAM).
 
+        Crop context is sized so ``guide_size * crop_factor`` fits ``max_size``:
+        the face (bbox crop 1.6) and hands (crop 2.0) get about 640/512 sampled
+        pixels instead of being clamped to ~400/~250 inside the same 1024 canvas.
+        The hand detailer samples through a feathered mask (``noise_mask_feather``
+        8, which enables DifferentialDiffusion) dilated 12 px past the detector
+        mask, so denoise 0.40 can redraw fingers without a hard latent seam.
         ``garment_region`` opts into a face-relative geometry prior, not garment
         detection. It reuses the face mask and hand detailer's sampling settings.
         ``upscale_blend_strength`` mixes Lanczos (or ``secondary_upscaler_name``)
@@ -895,12 +904,16 @@ class EmiliaWorkflowBuilder:
         graph["18"]["inputs"]["text"] = self.config.ultra_face_negative_prompt
         graph["21"]["inputs"]["guide_size"] = face_guide_size
         graph["21"]["inputs"]["max_size"] = face_max_size
+        graph["21"]["inputs"]["bbox_crop_factor"] = 1.6
         graph["21"]["inputs"]["cfg"] = 5.0
+        graph["25"]["inputs"]["crop_factor"] = 2.0
+        graph["25"]["inputs"]["post_dilation"] = 12
         graph["26"]["inputs"]["text"] = self.config.ultra_hand_positive_prompt
         graph["27"]["inputs"]["text"] = self.config.ultra_hand_negative_prompt
         graph["28"]["inputs"]["guide_size"] = hand_guide_size
         graph["28"]["inputs"]["max_size"] = hand_max_size
         graph["28"]["inputs"]["cfg"] = 5.0
+        graph["28"]["inputs"]["noise_mask_feather"] = 8
         refined_image: list[Any] = ["28", 0]
         if garment_region is not None:
             graph["70"] = {

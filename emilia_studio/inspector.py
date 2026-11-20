@@ -328,7 +328,8 @@ class InspectionReport:
     pose_analysis: dict[str, Any] = field(default_factory=lambda: {
         "available": False, "framing": "full_body", "full_body_complete": True,
         "standing_pose": True, "face_height_ratio": 0.0, "max_ankle_confidence": 0.0,
-        "hip_y_ratio": 0.0, "ankle_y_ratio": 0.0, "leg_span_ratio": 0.0, "reasons": [],
+        "hip_y_ratio": 0.0, "ankle_y_ratio": 0.0, "leg_span_ratio": 0.0,
+        "heads_tall": None, "below_hip_face_heights": None, "shin_thigh_ratios": None, "reasons": [],
     })
     corner_artifact_analysis: dict[str, Any] = field(default_factory=lambda: {
         "advisory_only": True, "max_corner_edge_density": 0.0,
@@ -369,6 +370,14 @@ class QualityInspector:
     FINAL_SIZE: tuple[int, int] = (2304, 3456)
     SAFE_NATIVE_SIZE: tuple[int, int] = (832, 1216)
     SAFE_FINAL_SIZE: tuple[int, int] = (1664, 2432)
+
+    # Full-body pose rules in face heights, fitted on the 42-image corpus recorded in
+    # PROGRESS.md Phase 20: a standing figure is >= 6.3 face heights tall with >= 3.05 below the hips.
+    POSE_MIN_KEYPOINT_CONF = 0.5
+    POSE_SEATED_MAX_HEADS = 6.3
+    POSE_SEATED_MIN_SHIN_THIGH = 1.6
+    POSE_MIN_BELOW_HIP = 3.05
+    POSE_UNRELIABLE_HIPS_MIN_HEADS = 5.0
 
     def __init__(
         self,
@@ -822,7 +831,14 @@ class QualityInspector:
         *,
         framing: str = "full_body",
     ) -> dict[str, Any]:
-        """Evaluate full-body standing and ankle completeness using face-height ratio and CPU YOLO pose keypoints."""
+        """Evaluate full-body standing completeness from face size and CPU YOLO pose keypoints.
+
+        Besides the face/ankle/hip/ankle-position checks, measured in face heights from
+        the matched pose box: shins hanging much longer than the visible thigh drop on a
+        short figure (seated, legs hanging), and too little body below the hips
+        (kneeling, seated or cropped). A figure lying flat seen from above has a standing
+        2D skeleton and cannot be detected here; the ultra negative prompt handles it.
+        """
         face_boxes, detector_source = detections.face_boxes, detections.source
         w, h = image.size
         result: dict[str, Any] = {
@@ -835,6 +851,9 @@ class QualityInspector:
             "hip_y_ratio": 0.0,
             "ankle_y_ratio": 0.0,
             "leg_span_ratio": 0.0,
+            "heads_tall": None,
+            "below_hip_face_heights": None,
+            "shin_thigh_ratios": None,
             "reasons": [],
         }
         if not face_boxes or h <= 0 or w <= 0:
@@ -845,14 +864,21 @@ class QualityInspector:
         fh_ratio = fh / float(h)
         result["face_height_ratio"] = round(fh_ratio, 4)
 
-        matched_kpts: list[list[float]] | None = None
+        # The detector runs at a very low confidence and often returns a partial
+        # upper-body box for the same person before the full-figure box. Use the
+        # face-containing box whose hip/knee/ankle keypoints are best supported.
+        matched: tuple[tuple[float, float, float, float], list[list[float]]] | None = None
+        best_leg_support = -1.0
         for box, kpts in zip(detections.pose_boxes, detections.pose_keypoints):
             if len(box) >= 4 and len(kpts) >= 17:
                 if box[0] <= fcx <= box[2] and box[1] <= fcy <= box[3] and (box[2] - box[0]) >= 0.20 * w:
-                    matched_kpts = kpts
-                    break
+                    leg_support = sum(float(kpts[i][2]) for i in range(11, 17))
+                    if leg_support > best_leg_support:
+                        best_leg_support = leg_support
+                        matched = (box, kpts)
 
-        if matched_kpts is not None:
+        if matched is not None:
+            matched_box, matched_kpts = matched
             result["available"] = True
             l_hip, r_hip = matched_kpts[11], matched_kpts[12]
             l_ankle, r_ankle = matched_kpts[15], matched_kpts[16]
@@ -864,6 +890,19 @@ class QualityInspector:
             result["hip_y_ratio"] = round(hip_y, 4)
             result["ankle_y_ratio"] = round(ankle_y, 4)
             result["leg_span_ratio"] = round(leg_span, 4)
+            k = matched_kpts
+            heads_tall = (float(matched_box[3]) - fy1) / fh
+            below_hip = (float(matched_box[3]) - (float(l_hip[1]) + float(r_hip[1])) / 2.0) / fh
+            hip_conf = min(float(l_hip[2]), float(r_hip[2]))
+            legs = ((11, 13, 15), (12, 14, 16))
+            ratios: list[float | None] = []
+            for hip_i, knee_i, ankle_i in legs:
+                thigh = float(k[knee_i][1]) - float(k[hip_i][1])
+                ratios.append((float(k[ankle_i][1]) - float(k[knee_i][1])) / thigh if thigh > 0.05 * fh else None)
+            legs_trusted = all(min(float(k[i][2]) for i in leg) >= self.POSE_MIN_KEYPOINT_CONF for leg in legs)
+            result["heads_tall"] = round(heads_tall, 3)
+            result["below_hip_face_heights"] = round(below_hip, 3)
+            result["shin_thigh_ratios"] = [None if r is None else round(r, 3) for r in ratios]
 
             if framing == "full_body":
                 reasons: list[str] = []
@@ -882,6 +921,22 @@ class QualityInspector:
                 if ankle_y < 0.68:
                     reasons.append(
                         f"ankle_y_ratio={ankle_y:.3f} below 0.68 (seated or floating legs)"
+                    )
+                if (
+                    heads_tall < self.POSE_SEATED_MAX_HEADS and legs_trusted
+                    and all(r is not None and r >= self.POSE_SEATED_MIN_SHIN_THIGH for r in ratios)
+                ):
+                    reasons.append(
+                        f"shin/thigh vertical ratio {ratios[0]:.2f}/{ratios[1]:.2f} >= {self.POSE_SEATED_MIN_SHIN_THIGH} "
+                        f"with heads_tall={heads_tall:.2f} < {self.POSE_SEATED_MAX_HEADS} (seated, legs hanging)"
+                    )
+                if hip_conf >= self.POSE_MIN_KEYPOINT_CONF and below_hip < self.POSE_MIN_BELOW_HIP:
+                    reasons.append(
+                        f"below_hip_face_heights={below_hip:.2f} < {self.POSE_MIN_BELOW_HIP} (kneeling, seated or cropped legs)"
+                    )
+                if hip_conf < self.POSE_MIN_KEYPOINT_CONF and heads_tall < self.POSE_UNRELIABLE_HIPS_MIN_HEADS:
+                    reasons.append(
+                        f"heads_tall={heads_tall:.2f} < {self.POSE_UNRELIABLE_HIPS_MIN_HEADS} with unreliable hips (non-standing figure)"
                     )
                 if reasons:
                     result["full_body_complete"] = False

@@ -46,7 +46,7 @@ _CREATIVE_ARGS = ("outfit", "angle", "magic", *_ULTRA_TUNING)
 def _add_pipeline_args(parser: argparse.ArgumentParser, *, default_profile: str, idea: bool = False) -> None:
     """Arguments shared by every command that drives the two-stage pipeline."""
     parser.add_argument("--port", type=int, default=None, help="Override configured rendering port")
-    parser.add_argument("--pag", action="store_true", help="Enable PerturbedAttentionGuidance (scale 1.0)")
+    parser.add_argument("--pag", action="store_true", help="Enable PerturbedAttentionGuidance (scale 1.0 quality / 0.8 ultra; one extra UNet pass per step)")
     parser.add_argument(
         "--profile",
         choices=("quality", "ultra"),
@@ -183,7 +183,7 @@ def _scene_kwargs(args: argparse.Namespace, config: StudioConfig) -> dict[str, A
             magic=args.magic or "none", angle=angle,
         )
         if args.profile == "ultra":
-            negative = compiler.build_emilia_ultra_negative(outfit=outfit, framing=framing)
+            negative = compiler.build_emilia_ultra_negative(outfit=outfit, framing=framing, scene_and_pose_tags=scene)
             if args.preview:
                 native_options = {"framing": framing, "camera_angle": angle}
             else:

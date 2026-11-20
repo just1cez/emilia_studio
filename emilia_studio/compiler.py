@@ -27,6 +27,7 @@ from .config import (
     ULTRA_EMILIA_OUTFIT_CANONICAL,
     ULTRA_FRAMING_LEADS,
     StudioConfig,
+    drop_unrequested_posture_negatives,
     load_config,
 )
 
@@ -260,11 +261,14 @@ class OllamaPromptCompiler:
             "balanced exposure, coherent light direction, natural shadow gradients"
         )
 
-    def build_emilia_ultra_negative(self, *, outfit: str = 'royal', framing: str = 'full_body') -> str:
+    def build_emilia_ultra_negative(
+        self, *, outfit: str = 'royal', framing: str = 'full_body', scene_and_pose_tags: str | None = None,
+    ) -> str:
+        """Ultra negative for an outfit and framing; ``scene_and_pose_tags`` gates the posture bans."""
         if outfit not in EMILIA_OUTFIT_MODES or framing not in ULTRA_FRAMING_LEADS:
             raise ValueError('Unknown outfit or framing')
         spec = EMILIA_OUTFIT_MODES[outfit]
-        negative = self.config.ultra_negative_prompt
+        negative = drop_unrequested_posture_negatives(self.config.ultra_negative_prompt, scene_and_pose_tags)
         remove_set = {
             t.strip().casefold()
             for chunk in spec['negative_remove']
@@ -398,7 +402,7 @@ class OllamaPromptCompiler:
                     magic=magic,
                     angle=angle,
                 )
-                neg_prompt = self.build_emilia_ultra_negative(outfit=outfit, framing=framing)
+                neg_prompt = self.build_emilia_ultra_negative(outfit=outfit, framing=framing, scene_and_pose_tags=raw_tags)
             elif highres_quality_mode:
                 highres_identity = (
                     r"masterpiece, best quality, anime illustration, emilia \(re:zero\), 1girl, solo, "
@@ -414,7 +418,10 @@ class OllamaPromptCompiler:
                 neg_prompt = DEFAULT_HIGHRES_NEGATIVE_PROMPT
         else:
             combined = f"{deduplicate_tags(raw_tags)}, {self.config.quality_tags}"
-            base_neg = DEFAULT_ULTRA_NEGATIVE_PROMPT if ultra_mode else DEFAULT_HIGHRES_NEGATIVE_PROMPT
+            base_neg = (
+                drop_unrequested_posture_negatives(DEFAULT_ULTRA_NEGATIVE_PROMPT, raw_tags)
+                if ultra_mode else DEFAULT_HIGHRES_NEGATIVE_PROMPT
+            )
             emilia_specific_bans = {
                 "hood", "hooded cloak", "white cloak", "fur hood", "cape hood",
                 "purple bodysuit", "bodysuit", "solid purple corset", "dark purple apron",

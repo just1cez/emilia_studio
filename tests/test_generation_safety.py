@@ -528,3 +528,58 @@ def test_adaptive_iris_localization_handles_angled_tilted_eyes_and_single_profil
     assert pres["eye_drift_detected"] is True
 
 
+def test_pose_completeness_rejects_hanging_legs_and_half_kneel_that_pass_position_checks():
+    # Both poses keep the ankles visible and low in frame, so only the body-proportion rules can see them.
+    inspector = QualityInspector(use_yolo=False)
+    canvas = Image.new("RGB", (1152, 1728))
+    face = [(380.0, 120.0, 760.0, 320.0)]  # fh = 200
+    head = [[576.0, 200.0, 0.99]] * 11
+    hanging = head + [
+        [620.0, 760.0, 0.95], [520.0, 760.0, 0.95],
+        [620.0, 900.0, 0.95], [520.0, 900.0, 0.95],
+        [620.0, 1180.0, 0.95], [520.0, 1180.0, 0.95],
+    ]
+    seated = inspector.analyze_pose_completeness(
+        canvas, Detections(face_boxes=face, pose_boxes=[(200.0, 80.0, 900.0, 1250.0)], pose_keypoints=[hanging]),
+        framing="full_body",
+    )
+    assert seated["full_body_complete"] is False
+    assert any("legs hanging" in reason for reason in seated["reasons"])
+
+    standing_legs = head + [
+        [620.0, 800.0, 0.98], [520.0, 800.0, 0.98],
+        [620.0, 1150.0, 0.95], [520.0, 1150.0, 0.95],
+        [620.0, 1300.0, 0.85], [520.0, 1300.0, 0.85],
+    ]
+    kneel = inspector.analyze_pose_completeness(
+        canvas, Detections(face_boxes=face, pose_boxes=[(200.0, 80.0, 900.0, 1340.0)], pose_keypoints=[standing_legs]),
+        framing="full_body",
+    )
+    assert kneel["full_body_complete"] is False
+    assert any("below_hip_face_heights" in reason for reason in kneel["reasons"])
+    # Other framings never fail on body proportions.
+    portrait = inspector.analyze_pose_completeness(
+        canvas, Detections(face_boxes=face, pose_boxes=[(200.0, 80.0, 900.0, 1340.0)], pose_keypoints=[standing_legs]),
+        framing="portrait",
+    )
+    assert portrait["full_body_complete"] is True
+
+
+def test_pose_completeness_uses_the_best_supported_box_for_the_face():
+    # The detector lists a partial upper-body box before the full figure; the gate must judge the full one.
+    inspector = QualityInspector(use_yolo=False)
+    canvas = Image.new("RGB", (1152, 1728))
+    head = [[576.0, 200.0, 0.99]] * 11
+    partial = head + [[600.0, 690.0, 0.26], [520.0, 690.0, 0.26], [600.0, 800.0, 0.05], [520.0, 800.0, 0.05],
+                      [600.0, 897.0, 0.02], [520.0, 897.0, 0.02]]
+    full = head + [[620.0, 800.0, 0.98], [520.0, 800.0, 0.98], [620.0, 1150.0, 0.95], [520.0, 1150.0, 0.95],
+                   [620.0, 1500.0, 0.85], [520.0, 1500.0, 0.85]]
+    info = inspector.analyze_pose_completeness(
+        canvas,
+        Detections(face_boxes=[(450.0, 120.0, 680.0, 320.0)],
+                   pose_boxes=[(200.0, 75.0, 640.0, 702.0), (200.0, 80.0, 900.0, 1620.0)],
+                   pose_keypoints=[partial, full]),
+        framing="full_body",
+    )
+    assert info["full_body_complete"] is True, info["reasons"]
+    assert info["max_ankle_confidence"] == 0.85
