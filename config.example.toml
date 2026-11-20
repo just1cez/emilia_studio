@@ -1,30 +1,36 @@
-# Emilia Studio Portable Configuration Template
-# Use `emilia config init --root-dir <workspace> --python <inference-python>`.
-# Priority: environment fields > explicit/EMILIA_CONFIG_TOML file > user file > source checkout file.
-# Relative TOML paths resolve beside the TOML file, never against the working directory.
+# Emilia Studio Portable Configuration Template (v2.1.0)
+# Initialize via: `emilia config init --root-dir <workspace> --app-dir <workspace>/app --python <inference-python>`
+# Precedence: EMILIA_* environment variables > --config / EMILIA_CONFIG_TOML > user config (%APPDATA%/EmiliaStudio/config.toml or ~/.config/emilia-studio/config.toml; override dir via EMILIA_CONFIG_DIR) > source checkout config.toml.
+# Relative TOML paths resolve beside the selected TOML file, never against the caller's working directory.
 
 [paths]
-# Installed defaults use a writable user workspace; source checkouts retain their root.
+# Installed wheel/exe defaults use a writable user workspace; source checkouts retain their repository root.
+# Env overrides: EMILIA_ROOT_DIR, EMILIA_APP_DIR, EMILIA_OUTPUT_DIR, EMILIA_TEMP_DIR,
+#                EMILIA_WORKFLOWS_DIR, EMILIA_VISUAL_WORKFLOWS_DIR, EMILIA_RESOURCES_DIR,
+#                EMILIA_CONDA_PYTHON, EMILIA_OLLAMA_EXE
 # root_dir = "."
 # app_dir = "./app"
 # output_dir = "./app/output"
 # temp_dir = "./temp"
-# workflows_dir = "./workflows/api"
-# visual_workflows_dir = "./workflows/visual"
+# workflows_dir = "./workflows/api"          # defaults to <resources_dir>/workflows/api when unset
+# visual_workflows_dir = "./workflows/visual" # defaults to <resources_dir>/workflows/visual when unset
 # conda_python = "C:/Miniconda/envs/comfyui/python.exe"
 # ollama_exe = "C:/Users/you/AppData/Local/Programs/Ollama/ollama.exe"
-# resources_dir = "./resources"  # optional immutable resource override; normally bundled
+# resources_dir = "./resources"              # optional immutable resource override; normally bundled
 
 [services]
+# Env overrides: EMILIA_COMFY_HOST, EMILIA_COMFY_PORT, EMILIA_QUALITY_PORT,
+#                EMILIA_OLLAMA_BASE, EMILIA_OLLAMA_MODEL,
+#                EMILIA_STAGE_TIMEOUT_S, EMILIA_STALL_TIMEOUT_S
 comfy_host = "127.0.0.1"
 comfy_port = 8188
 quality_port = 8199
 ollama_base = "http://127.0.0.1:11434"
 ollama_model = "qwen3.5:9b"
-# Per-graph execution deadline and WebSocket silence watchdog (seconds; <=0 disables).
+# Per-graph total execution deadline and current-prompt WebSocket silence watchdog (seconds; <=0 disables).
 stage_timeout_s = 900
 stall_timeout_s = 300
 
 [models]
-# The ultra profile's LoRA. Graphs never fall back to another file: a missing LoRA fails loudly.
+# Canonical outfit LoRA for the `ultra` profile (TOML-configured; never falls back to another file).
 # ultra_lora_name = "Emilia_Rezero_Q-000005.safetensors"

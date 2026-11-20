@@ -1,6 +1,22 @@
 # Emilia workflow decision record
 
-Current default for finished-image quality: run `render-emilia-quality.ps1` from the project root. It uses the existing `comfyui` Conda environment and completes native generation, face/hand refinement and 2304x3456 delivery automatically. The older lightweight records below are historical comparisons.
+## Current active workflows (v2.1.0)
+
+Entry point: `emilia` / `emilia-studio` (`render`, `batch`, `idea`); `render-emilia-quality.ps1` and `ollama_comfyui_bridge.py` delegate to it.
+
+| Workflow | Builder | Canonical graph (`workflows/api/`) | Role |
+| --- | --- | --- | --- |
+| `quality` native | `build_highres_native` | `emilia_ipadapter_highres_production.api.json` | Bit-exact 1152x1728 baseline (default of `render`) |
+| `quality` finish | `build_highres_finish` | `emilia_ipadapter_highres_upscale.api.json` | Face/hand detailers, RealESRGAN 4x, Lanczos 0.5x |
+| eye repair | `build_eye_repair` / `build_ultra_eye_repair` | `emilia_eye_repair.api.json` | `--auto-gate` only, inside Stage 2; runtime calls use `upscale=False` (the canonical graph keeps the default upscale) |
+| `ultra` native | `build_ultra_native` | `emilia_ultra_multiscale_native.api.json` | 832x1216 -> 1152x1728 multi-scale (default of `batch`/`idea`) |
+| `ultra` finish | `build_ultra_finish` | `emilia_ultra_multiscale_finish.api.json` | Ultra detailer budgets, same delivery |
+| preview | `build_*_preview` | built in code | SDXL-Lightning 8-step text-only draft |
+| bridge fast | `build_lora_native` | `emilia_lora_native.api.json` (template) | `ollama_comfyui_bridge.py --mode fast` on the GUI server |
+
+`emilia workflows` verifies the five default builder calls equal their canonical graphs. Every other `.api.json` is a historical experiment.
+
+Path map for the historical sections below: reports formerly under `app/emilia/*.json` now live in `workflows/reports/`; `app/emilia/*.api.json` are copies of `workflows/api/` made by `emilia setup --sync`; benchmark scripts formerly under `app/script_examples/` are `scripts/benchmark_architecture_iterations.py` and `scripts/evaluate_architecture_iteration.py` (records in `<app_dir>/temp/architecture_iterations/round_NN/`); the ledger is `workflows/studio_ledger.sqlite3`. Current settings are those in `emilia_studio/workflows.py` and `PROGRESS.md` "Current System"; dated sections record what was decided at the time.
 
 ## Historical lightweight baseline
 
@@ -328,3 +344,20 @@ Standalone executable smoke: seed `20261027`, quality profile, launched outside 
 - Real deadline cleanup proof: `EMILIA_STAGE_TIMEOUT_S=0.01`, quality seed `20261027`, CLI exit `1`; exclusive port `8199` bind succeeded afterward and all run locks were released (`25.34s` wall including startup/teardown). PNG write microprobe on the same seed's native RGB image (three buffered writes each): level `0` median `0.0916s`, `5,975,716` bytes; level `1` median `0.1417s`, `4,295,867` bytes. All decoded pixels equal; this does not substantiate a `1.5-3s` end-to-end saving.
 - Accepted official UNet preview: seed `20261027`, ultra rose-garden, `preview/01_ultra_lightning8_unet_00001_.run.json`; `22.108s` execution, `43.66s` command wall, `832x1216`, decoded SHA-256 `65d82fc9ec2341d502a4a69f4859323149ed098cbed456917547fb7b04713cd4`. Visually coherent full-length figure/garden arch; photographic appearance is not a production Emilia anime identity match. No finishing stage, no identity LoRA/IPA, no composition/identity equivalence promise. Official UNet `5,135,149,736` bytes, pinned manifest SHA `471d8260fda0b17b8906feb24573ce64933d4b6b99ba7a1fa43ca051b994e869`. Source: https://huggingface.co/ByteDance/SDXL-Lightning/tree/c9a24f48e1c025556787b0c58dd67a091ece2e44 .
 
+
+## Phase 19 Ultra Prompt Hygiene and Detailer Budgets (2026-11-20)
+
+1. **Prompt dialect and concept leaks (`emilia_studio/config.py`, `emilia_studio/compiler.py`)**:
+   - Illustrious-XL v0.1 trained `worst/bad/average/good/best quality`, `masterpiece`, year tags (`newest`) and the Danbooru rating `general` on comma-separated tags only. `QUALITY_TAGS` (Animagine `high score, great score`) and `safe` were replaced.
+   - CLIP reads adjacent words almost as a bag of tags: `thin purple border trim` produced a solid purple frame border and `yellow hawk emblem` a bird on seed 20261027 (`03_finished_2x_00022_`). Now `thin purple hem trim` and `yellow emblem`; the ultra negative bans `border, purple border, white border, framed`.
+   - The rose-garden scene had no sky or horizon and rendered a top-down figure lying on marble. It now includes `outdoors, blue sky`; the ultra negative adds `sitting, kneeling, lying, on back`, which the compiler drops whenever the scene does not ask for standing or walking.
+   - Decision: default for `ultra`. Evidence: seed 20261027 went from frame/bird/lying (`00022`) to a clean standing full body (`00026`, final SHA-256 `f95dd9ccb179c9c1ca7d95288439a733967074517498139ab11b97534c912766`). Seated/kneeling seeds still occur (20261029 half-kneels in `00027`) and the 2D pose gate does not catch every case.
+2. **Ultra detailer budgets (`build_ultra_finish`)**:
+   - With `guide_size_for=bbox`, Impact Pack scales the crop by `guide_size / min(bbox)` and then clamps to `max_size`. Face `768 x 2.5` and hand `640 x 3.0` against `max_size` 1024/896 left ~400 px faces and ~170-300 px hands. Face `bbox_crop_factor` 1.6 and hand `crop_factor` 2.0 with 512/1024 give ~640/512 px in the same 1024 canvas.
+   - Hand denoise 0.30 on Karras starts at sigma ~0.34: shading only. Hands now use denoise 0.40 through `noise_mask_feather` 8 (DifferentialDiffusion, applied by Impact Pack) with the detector mask dilated 12 px, so fingers can be redrawn without a hard latent seam. FaceDetailer keeps `noise_mask_feather` 0; `quality` graphs keep 0 on both detailers.
+   - Decision from a same-native A/B (three natives, one Stage 2 process, `app/output/emilia/ab_finish/`): sharper faces, more measurable irises (3/6 -> 5/6 eyes), separated fingers, one red stroke artifact removed, no visible seams, all finals gate-accepted.
+
+## Phase 20 Hires-Bridge Aspect and Pose Gate (2026-11-21)
+
+1. **Bridge aspect (`build_ultra_native` node 51)**: 832x1216 is not exactly 2:3, so scaling to 1152x1728 with `crop: disabled` stretched figures 2.6% vertically. Decision: `crop: center` (trims ~11 px per side of the base). Kept the pixel-space lanczos bridge over latent upscaling, which needs denoise >= 0.55 on SDXL and would undo pass-1 anatomy.
+2. **Pose gate (`analyze_pose_completeness`)**: judge the face-containing person box with the best-supported leg keypoints (the low-confidence detector often lists a partial box first, which produced a false reject of a standing seed). Add face-height proportion rules for kneeling/seated/cropped legs (< 3.05 below hips), seated with hanging legs (< 6.3 tall and shin/thigh drop >= 1.6) and unreliable hips (< 5 tall). Lying flat seen from above remains undetectable from 2D keypoints and is handled by the ultra negative prompt; a standing figure shot from above can be rejected (one reseed). Evidence: 42-image corpus and the live `--auto-gate` batch recorded in PROGRESS.md Phase 20.

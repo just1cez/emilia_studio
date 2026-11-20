@@ -1,10 +1,10 @@
-# Emilia Studio (v2.1)
+# Emilia Studio (v2.1.0)
 
 <div align="center">
 
 **[简体中文](README.md) | English**
 
-*A declarative SDXL character artwork compiler, two-stage process-isolated rendering engine, and zero-VRAM quality-gate pipeline built for 8 GiB VRAM GPUs.*
+*An Illustrious-XL character illustration pipeline for 8 GiB GPUs: declarative workflow builder, two-process isolated rendering, CPU-only quality gate, and SQLite experiment ledger.*
 
 </div>
 
@@ -12,288 +12,266 @@
 
 ## Overview
 
-**Emilia Studio** is a declarative, memory-disciplined anime illustration pipeline built around **ComfyUI** and **Ollama**. Engineered specifically for **8 GiB VRAM GPUs** (verified on NVIDIA CMP 40HX / Turing CC 7.5) and bounded Windows system commit limits, it produces **2304×3456 official-grade refined character illustrations** without exhausting GPU or host virtual memory.
+Emilia Studio orchestrates `2304×3456` illustrations of Emilia (Re:Zero) on top of [ComfyUI](https://github.com/Comfy-Org/ComfyUI). The target machine is an **NVIDIA CMP 40HX (8 GiB, Turing CC 7.5) + Xeon E5-2690 v2 with a bounded Windows commit limit**. Every design decision follows one constraint: Stage 1 (checkpoint + IPAdapter + CLIP Vision) and Stage 2 (detailers + YOLO + SAM + upscaler) never share a process.
 
-The top-level controller (`emilia_studio` Python package and standalone `emilia.exe` binary) ships only orchestration code, declarative workflow builders, runtime patches, and reference assets—staying physically decoupled from the external ComfyUI/CUDA inference runtime (`app/`).
+- The controller `emilia_studio/` (wheel and `emilia.exe`) ships orchestration, the workflow builder, inspection, and assets — no inference dependencies.
+- The runtime `app/` is ComfyUI plus three custom nodes at pinned commits, modified by `patches/*.patch`; `emilia doctor` verifies both.
+- The same arguments always build the same graph: the builder never rewrites a workflow according to installed files; a missing model fails ComfyUI validation.
 
 ---
 
-## Architecture & Execution Pipeline
+## Two Profiles
 
-### 1. End-to-End Two-Stage Isolated Rendering & Self-Healing Loop
+| | `quality` (baseline) | `ultra` (creative) |
+| :--- | :--- | :--- |
+| Default for | `render`, `benchmark`, `render-emilia-quality.ps1` | `batch`, `idea`, `ollama_comfyui_bridge.py` |
+| Stage 1 | Single pass `1152×1728`, 36 steps `dpmpp_2m_sde`/`karras`, CFG 5.5 | Pass 1 `832×1216`, 28 steps `dpmpp_2m_sde`/`karras`, CFG 4.5, `RescaleCFG 0.75` → tiled VAE + Lanczos → Pass 2 `1152×1728`, 18 steps `dpmpp_2m`/`karras`, denoise 0.40 |
+| LoRA | `emilia-re-zero-re` 0.80 | `Emilia_Rezero_Q-000005` Pass 1 0.25 / Pass 2 0 (base only) / Stage 2 0.25 |
+| IPAdapter | Plus Face 0.40, `linear`, `K+V`, 0–0.75 | Plus Face 0.18, `ease in-out`, `V only`, 0.15–0.60; full/upper body add a torso soft-masked Plus outfit reference at 0.45 |
+| Stage 2 | FaceDetailer 640/896, denoise 0.22; SAM hands 512/768, 0.24 | FaceDetailer 768/1024, crop 1.6×, 0.28; SAM hands crop 2.0×, 512/1024, 0.40, soft mask (`noise_mask_feather 8` enables DifferentialDiffusion, mask dilated 12 px) |
+| Output | RealESRGAN anime 6B 4× → Lanczos 0.5× = `2304×3456` | same |
+| Purpose | Fixed-seed bit-exact baseline (hashes below) | Scene presets, 5 outfits, angles, Puck, ice magic |
+
+`--fast` (both profiles): FP16 RealESRGAN + `sdxl-vae-fp16-fix` + single-pass tiled VAE; `quality` 32 native steps, `ultra` 24 Pass 1 steps, 16 hand steps. Pixels no longer match the baseline.
+
+`--preview`: the official ByteDance [SDXL-Lightning](https://huggingface.co/ByteDance/SDXL-Lightning) 8-step standalone UNet, `832×1216`, Euler/`sgm_uniform`/CFG 1, reusing only the checkpoint's CLIP/VAE — no LoRA, IPAdapter, or Stage 2. It is a text-only composition draft without identity guarantees; negative prompts have no effect at CFG 1.
+
+---
+
+## Pipeline
 
 ```mermaid
 flowchart TB
-    subgraph L1["1. Creative Input & Zero-VRAM Prompt Compilation"]
-        direction LR
-        IN1["Presets & Creative CLI Flags<br/>--preset / --outfit / --angle / --puck / --magic"]
-        IN2["Natural-Language Idea (emilia idea)<br/>Ollama qwen3.5:9b (num_gpu=0, keep_alive=0)"]
-        COMP["Structured Synthesizer & Graph Builder<br/>Framing Detection + Outfit LoRA Decoupling + Reference Routing"]
-        IN1 & IN2 --> COMP
+    IN["Preset / --prompt / emilia idea (CPU-only Ollama)"] --> S1
+    subgraph S1["Stage 1 process: every seed"]
+        N["native graph (quality, or ultra two-pass)"] --> G{"CPU inspection<br/>YOLOv8n face / hand / pose + HSV iris hue"}
     end
-
-    subgraph L2["2. Stage 1: Isolated Multi-Scale Native Render (ComfyUI Process #1)"]
-        direction LR
-        P1["Pass 1: 832×1216 (28 steps)<br/>Illustrious-XL + LoRA + Face IPA + Feathered Torso Mask Skirt IPA"]
-        BR["FP32 Tiled VAE Decode<br/>Lanczos Upscale + Tiled Encode"]
-        P2["Pass 2: 1152×1728 (18 steps, denoise=0.40)<br/>Pure Base Checkpoint + RescaleCFG(0.75) Lighting & Drapery Polish"]
-        EXIT1["Save 1152×1728 Native PNG<br/>Process Exits Cleanly -> 100% VRAM & Commit Freed"]
-        P1 --> BR --> P2 --> EXIT1
+    G -- "default strict_seed_lock: record only" --> S2
+    G -- "--auto-gate: reject_seed" --> R["seed +1000 retry (≤ --max-retries, default 2)"] --> N
+    G -- "--auto-gate: repair_eyes" --> E
+    subgraph S2["Stage 2 process (starts after Stage 1 exits)"]
+        E["eye repair denoise 0.42 (no upscale) → reinspect"] --> F
+        F["FaceDetailer → SAM hand detailer → RealESRGAN 4× → Lanczos 0.5×"]
     end
-
-    subgraph L3["3. Zero-VRAM CPU Quality Gate (QualityInspector)"]
-        direction LR
-        GATE{"YOLOv8n (Face / Hand / Pose)<br/>+ HSV Circular Violet-Iris Hue Analyzer"}
-        REJ["Multi-Subject / Missing Face / Cropped Legs<br/>Action: reject_seed -> Retry Stage 1 (seed + 1000)"]
-        EYE["Heterochromia (>32°) / Hue Outside [250°, 302°]<br/>Action: repair_eyes -> Eye Repair (~22s) Inside the Stage 2 Process, Then Finish"]
-        GATE -- "reject_seed" --> REJ
-        GATE -- "repair_eyes" --> EYE
-    end
-
-    subgraph L4["4. Stage 2: Isolated Detailer & Supersampled Upscale (ComfyUI Process #2)"]
-        direction LR
-        FD["FaceDetailer (768–1024px)<br/>Violet Outer Iris + Luminous Cyan Inner Ring"]
-        HD["DetailerForEach + SAM ViT-B<br/>Pixel-Tight Finger Masking (Zero Cuff Bleed)"]
-        UP["RealESRGAN 4× (4608×6912)<br/>+ In-Place Lanczos 0.5× Anti-Aliased Downsample"]
-        OUT["2304×3456 Final PNG<br/>+ .run.json Receipt + SQLite Experiment Ledger"]
-        FD --> HD --> UP --> OUT
-    end
-
-    COMP --> P1
-    EXIT1 --> GATE
-    REJ -.-> P1
-    GATE -- "accept" --> FD
-    EYE --> FD
+    F --> O["2304×3456 PNG + sibling .run.json + SQLite ledger"]
 ```
 
-### 2. Physical Separation Between Controller & Inference Runtime
-
-```mermaid
-flowchart LR
-    subgraph Top["Lightweight Top-Level Controller (Git-Tracked / Wheel & emilia.exe)"]
-        CLI["CLI & Interactive TUI<br/>(cli.py / commands.py / tui.py)"]
-        DSL["Declarative Workflows & Compiler<br/>(workflows.py / compiler.py)"]
-        LED["SQLite Experiment Ledger<br/>(ledger.py)"]
-        RES["Bundled Immutable Assets<br/>(27 API JSONs / 10 GUI JSONs / 12 Refs / Patches)"]
-    end
-
-    subgraph Ext["External Heavy Inference Runtime (Isolated Locally)"]
-        OLL["Ollama Server (11434)<br/>CPU-Only Execution"]
-        WKR["Persistent CPU YOLO Worker<br/>(inspection_worker.py)"]
-        APP["ComfyUI Runtime (app/)<br/>8GB VRAM + Bit-Exact Memory Patches"]
-    end
-
-    CLI --> DSL & LED
-    DSL -. "HTTP (num_gpu=0)" .-> OLL
-    CLI -. "JSON-lines IPC (CPU)" .-> WKR
-    RES == "emilia setup --sync" ==> APP
-    CLI == "WebSocket + Isolated Subprocesses" ==> APP
-```
+- $N$ seeds cost exactly $2$ ComfyUI cold starts; Stage 2 reads Stage 1 outputs through `[output]` references without upload or copy.
+- Each seed gets its receipt and ledger row the moment it finishes or is rejected; a later crash never loses earlier results.
+- Each graph has a total deadline `stage_timeout_s=900` and a current-prompt event silence deadline `stall_timeout_s=300`; a timeout stops only the child process Emilia started.
+- Headless `SaveImage` uses PNG compression 0 for `01_`/`02_`/`eye_repair_` prefixes, 1 for other headless outputs, 4 in the GUI; only file size changes.
 
 ---
 
-## Key Technical Highlights
+## Quality Gate
 
-1. **Three-Tier Ultra Multi-Scale Hires.fix & Spatial Garment Decoupling (`emilia_studio/workflows.py`)**
-   - **`832×1216` (proportion & anatomy lock) $\to$ `1152×1728` (pure base model + `RescaleCFG` lighting polish) $\to$ `2304×3456` (part-specific detailers + 4× upscale / 0.5× supersampled downsample)**: Substantially reduces the elongated-limb distortion and multi-subject hallucinations of direct high-res SDXL sampling; the `--auto-gate` quality gate catches what remains.
-   - **Soft-Feathered Torso Mask (`0.42W × 0.34H`)**: Confines the canonical 6-stripe purple bodice and 3-layered petal skirt reference to the torso, suppressing sleeve hawk emblems bleeding onto lower coattails.
-   - **Alternate Costume Routing (`--outfit frozen-bond / nightgown`)**: Automatically sets Stage 1 `lora_strength_base = 0.0` with paired front + 3/4 `IPAdapter Plus Face` conditioning, restoring `lora_strength_finish = 0.28` only in Stage 2 `FaceDetailer` to suppress default corset bleed.
-   - **Graphs depend only on arguments and configuration**: the builder never rewrites a workflow according to which model files are installed; a missing LoRA, IPAdapter or reference image fails ComfyUI validation instead of silently producing a different image.
-2. **Two-Stage Process Isolation & Same-Stage Batch Wave Pooling (`emilia_studio/engine.py`)**
-   - Stage 1 (`CLIP-ViT-H` + dual `IPAdapter`) and Stage 2 (`YOLOv8n` + `SAM ViT-B` + `RealESRGAN`) exceed 12 GB combined and never co-reside in memory. Stage 1 exits cleanly before Stage 2 reads the native render via zero-copy `[output]` references.
-   - `emilia render` and `emilia batch` are one pipeline: every seed's Stage 1 (including gate retries) $\to$ CPU Quality Gate $\to$ every seed's Stage 2 (eye repair + finishing), so $N$ images always cost exactly $2$ cold model loads.
-   - Each seed gets its `.run.json` receipt (beside its image) and ledger row the moment it is finished or rejected; a later seed crashing does not lose earlier results.
-   - Each graph has a separate total deadline (`stage_timeout_s=900`, including connection, submission, execution and history retrieval) and current-prompt event silence deadline (`stall_timeout_s=300`). Timeout unwinds and stops the owned ComfyUI child; an external server occupying the port is never stopped. Configure TOML `[services]` or `EMILIA_STAGE_TIMEOUT_S` / `EMILIA_STALL_TIMEOUT_S`; nonpositive values disable the corresponding limit.
-   - Headless `SaveImage` uses PNG compression level zero for intermediate filename prefixes `01_`, `02_`, and `eye_repair_`; other outputs retain their compression policy. File sizes change, decoded pixels do not. This is not a RAM disk or cross-process tensor transfer.
-3. **Zero-VRAM (CPU-Only) Anatomy, Pose & Violet-Iris Self-Healing Gate (`emilia_studio/inspector.py`)**
-   - Enforces CPU-only inference across `face_yolov8n`, `hand_yolov8n`, and `yolov8n-pose` to reject multi-face hallucinations, missing faces, and kneeling/cropped-foot failures on `full_body` prompts (`reject_seed`).
-   - **HSV Circular Hue Analysis**: Measures left/right iris circular mean hue to detect blue/pink heterochromia ($>32^\circ$) or non-violet drift outside $[250^\circ, 302^\circ]$, and runs a targeted eye-repair pass (`repair_eyes`, about `22s`) inside the Stage 2 process before finishing.
-   - **Localization and limits**: reuse CPU YOLO COCO eye keypoints to constrain iris candidates, with an explicit face-geometry prior when landmarks are unreliable. Candidate extraction is bounded to a `384×384` working image; color is measured from original pixels. This is not a dedicated anime facial-landmark model or a labeled accuracy benchmark. Eye-sized ornaments, warm/red irises, occlusion and tiny eyes can remain ambiguous. Unmeasured eyes report `eye_color_verified=false`: neither verified violet nor repaired solely for missing evidence. Repairs are reinspected and cannot be upscaled after a failed gate.
-4. **12 Bit-Exact Hardware-Ceiling Memory & Latency Optimizations (`patches/` & `engine.py`)**
-   - **GPU & PCIe Hot Paths**: Cross-step `(ip_k, ip_v)` linear projection cache in `IPAdapter` (eliminating **15,000+** redundant CUDA kernel launches), `[B, S, 1]` broadcast spatial attention mask cache (eliminating `1,960` `F.interpolate` calls and `1280×` `.repeat()` VRAM traffic), `CLIPVision` zero-image uncond embedding cache, per-step `sigma` scalar cache (eliminating **2,484** GPU$\to$CPU sync stalls), and `SAM ViT-B` `meta + mmap + assign` loading (**6.0×** faster, `-750 MiB` peak host commit) + ViT-B feature caching (`-50%` latency).
-   - **CPU, Memory & Boot Hot Paths**: 256-row L3-cache-blocked multi-threaded `float32 <-> uint8` quantization (**3.3×** faster, eliminating `382.2 MiB` in `lanczos` and `91.1 MiB` in `SaveImage`), `VAE` destination-buffer writes & `tiled_scale_multidim` feather-mask caching (`-676.8 MiB`), per-tile GPU transfer in `ImageUpscaleWithModel` (`-382.21 MiB`), PyAV-free static PNG `LoadImage` fast path, stage-specific `--whitelist-custom-nodes` + headless `comfy_extras` fast boot (`-17.3s`), `<1ms` exclusive socket bind + log-driven zero-SYN-retry readiness, and background CPU YOLO pre-warming + teardown-overlapped inspection (eliminating the `8.8s` cold gate stall).
-   - Verified **100% bit-exact** (identical decoded PNG SHA-256 hashes) across fixed seed `20261027` (`quality` & `ultra` `2304×3456` pipelines) and the 50-render benchmark corpus.
+`QualityInspector` runs `face_yolov8n`, `hand_yolov8n`, and `yolov8n-pose` on the CPU and never touches VRAM.
+
+| Check | Action | Active when |
+| :--- | :--- | :--- |
+| No face, or several faces on a solo prompt | `reject_seed` | `--auto-gate` |
+| Seated/kneeling/cropped full body (face ratio > 0.165, ankle confidence < 0.30, hip y > 0.60, ankle y < 0.68; in face heights: < 3.05 below the hips, or < 6.3 tall with shin drop ≥ 1.6 × thigh drop, or < 5 tall with unreliable hips) | `reject_seed` | `ultra` + `full_body` + `--auto-gate`; or `inspect --require-full-body-pose` |
+| Iris hue difference > 32°, or an eye outside `[250°, 302°]` | `repair_eyes` | `--auto-gate` |
+| Garment colors, corner watermark stroke density | recorded only | never changes the flow |
+
+- Iris localization prefers COCO eye keypoints from the same CPU pass and falls back to a face-geometry prior; candidates are extracted from a ≤ `384×384` working image, hue is measured on original pixels.
+- An eye with fewer than 8 iris pixels is unmeasured (`eye_color_verified=false`): neither verified violet nor repaired.
+- Limits: COCO keypoints are not an anime face/body model; ornaments, occlusion, tiny or warm irises may stay ambiguous. The pose gate uses the face-containing person box with the best-supported leg keypoints; a figure lying flat seen from above has a standing 2D skeleton and is not detected (the negative prompt handles it); a standing figure shot from above can be rejected, costing one reseed.
+- A repaired native is reinspected and never upscaled after a failed gate. Without `--auto-gate` every finding is recorded but execution and pixels are unchanged.
 
 ---
 
 ## Quick Start
 
-### 1. Installation & Environment Initialization
+### 1. Install
 
 ```powershell
-# Install Emilia Studio in editable or wheel mode
 python -m pip install -e .
-
-# Initialize user configuration (saved to %APPDATA%\EmiliaStudio\config.toml)
 emilia config init --root-dir <workspace> --app-dir <workspace>/app --python <inference-env>/python.exe
 
-# First deployment: check ComfyUI and the three custom nodes out at the commits in models_manifest.json, then apply the source patches
+# First deployment: check out the commits pinned in models_manifest.json and apply the patches
 git -C app checkout 0a33ed6c28f926d14536235771c222f9e6d1026b
 git -C app apply ../patches/comfyui_core.patch
 git -C app/custom_nodes/comfyui-ipadapter-plus apply ../../../patches/ipadapter_plus.patch
 git -C app/custom_nodes/comfyui-impact-pack apply ../../../patches/impact_pack.patch
 git -C app/custom_nodes/comfyui-impact-subpack apply ../../../patches/impact_subpack.patch
 
-# Sync top-level references, the patch plugin, and GUI workflows into app/, then run the health checks (including each checkout's commit and patch state)
-emilia setup --sync
-emilia doctor
-
-# List or resume-download required and experimental model weights
-emilia pull --list
+emilia setup --sync     # references, patch plugin, workflows and runtime tests into app/
+emilia doctor           # dependencies, models, commits and patch state
+emilia pull --list      # resumable, SHA-256 verified; the two Emilia LoRAs have no public URL and must be placed manually
 ```
 
-*Running `emilia` with no arguments displays the gradient ASCII banner and launches the interactive shell (`help <command>` for usage, `exit` to quit).*
+Running `emilia` without arguments opens the interactive shell (`help <command>`, `exit`).
 
-### 2. Render 2304×3456 Illustrations
+### 2. Render
 
 ```powershell
-# 1. Built-in scene preset + Ultra multi-scale pipeline + automatic CPU quality gate
+# Creative profile: built-in scene + automatic gate
 emilia render --profile ultra --preset rose-garden --auto-gate
 
-# 2. Creative controls: 5 outfits, camera angles, Puck companion, and ice magic effects
+# Outfit / angle / Puck / ice magic
 emilia render --profile ultra --preset moonlit-balcony --outfit nightgown --angle three-quarter --puck --magic ice --auto-gate
 
-# 3. Compile natural-language prompts via CPU-only Ollama into the 2-stage pipeline
+# Chinese idea compiled by CPU-only Ollama
 emilia idea "爱蜜莉雅站在飘雪的月光庭院里微笑，双手轻捧冰晶花" --outfit cloak --magic blizzard --auto-gate
 
-# 4. Same-stage wave batch rendering (zero redundant model reloads across seeds)
-emilia batch --seeds 20261113 20261114 20261115 --profile ultra --preset rose-garden --auto-gate
+# Batch: every seed shares one Stage 1 and one Stage 2 process
+emilia batch --profile ultra --preset rose-garden --seed 20261027 --count 4 --auto-gate
 
-# 5. High-speed TensorCore preset (FP16 upscaler + FP16-fix VAE + 1-pass tiled VAE + 32/16 steps, ~213s)
-emilia render --profile quality --seed 20261027 --fast
-
-# 6. Reproducible fixed-seed baseline (or via the PowerShell launcher, supports -Fast)
+# Baseline reproduction (bit-exact with the hashes below)
 .\render-emilia-quality.ps1 -Seed 20261027 -Profile quality
+
+# Acceleration / composition draft
+emilia render --profile quality --seed 20261027 --fast
+emilia pull sdxl-lightning-8step-unet; emilia render --profile ultra --preset rose-garden --preview
 ```
 
-#### Optional: 8-step composition preview (not production output)
+Exit codes: `0` success; `2` rejected by the gate (any seed of a batch); `1` failure; `130` interrupted.
+
+### 3. Inspect and archive
 
 ```powershell
-emilia pull sdxl-lightning-8step-unet
-emilia setup --sync
-emilia render --profile ultra --preset rose-garden --preview
-# Also available for batch / idea; use -Preview in the PowerShell shortcut
-```
-
-Previews use the standalone [official ByteDance SDXL-Lightning](https://huggingface.co/ByteDance/SDXL-Lightning) 8-step UNet (about `5.14 GB`, downloaded into your configured workspace, not bundled), with fixed `Euler / sgm_uniform / CFG 1` and an `832×1216` default canvas. Only the production checkpoint's CLIP/VAE components are loaded, not its UNet. Hires, eye repair, finishing and upscaling are omitted. This is a **text-only composition draft**: outfit/angle affect text, without Emilia LoRA or IPAdapter, so identity or production composition for the same seed is not guaranteed. Negative prompts do not guide sampling at CFG 1.
-
-Missing weights fail with installation guidance; models and VAEs are never silently substituted. `--steps` must be `8`; `--fast`, `--pag`, `--reference-mode` and Stage 2/hires options conflict. VAE accelerations require explicit `--fp16-vae` / `--fast-tiled-vae`. `--auto-gate` can reject/retry a preview; eye repair requirements reject rather than secretly starting Stage 2. Previews do not certify image quality or character identity.
-
-### 3. Inspection, Comparison, Export & Ledger
-
-```powershell
-# Run standalone CPU-only anatomy, full-body pose, violet-iris, and corner-watermark diagnostics
-emilia inspect app/output/emilia/ultra/03_finished_2x_00015_.png --stage final
-
-# Compare resolution, decoded SHA-256, and iris hue metrics across two PNGs or .run.json receipts
-emilia compare app/output/emilia/ultra/03_finished_2x_00013_.png app/output/emilia/ultra/03_finished_2x_00015_.png
-
-# Bundle the latest or specified final PNG, native base, receipt, and workflow JSON into a folder
-emilia export ./deliverables
-
-# Query SQLite experiment statistics, review benchmarks, and clean completed temp stage folders
-emilia ledger stats
-emilia benchmark --limit 10
-emilia clean --older-than-hours 1.0
+emilia inspect app/output/emilia/ultra/03_finished_2x_00015_.png --stage final --require-full-body-pose
+emilia compare <a.png|a.run.json> <b.png|b.run.json> [--json]
+emilia gallery --limit 10 [--open 1]
+emilia export ./deliverables [--image <png|run.json>]
+emilia ledger stats | recent | compare --round-a 1 --round-b 5 | ingest --refresh
+emilia benchmark --limit 10 [--run --profile quality --seed 20261027]
+emilia clean --older-than-hours 1 [--dry-run]     # a running render holds a file lock and is never removed
 ```
 
 ---
 
-## CLI Command Reference
+## CLI Reference
+
+### Commands
 
 | Command | Description |
 | :--- | :--- |
-| `config init / show / set / path` | Initialize, inspect, or update TOML config (`EMILIA_*` env > `--config` > user config > checkout config) |
-| `doctor` / `setup --sync` | Validate Python, dependencies, model sizes (`required` / `experimental`), references, custom nodes, and the pinned commit + applied patch of ComfyUI and each custom node; sync assets and the patch plugin into `app/` |
-| `pull --list / <key> / all` | Resumable HTTP Range downloader with `.part` staging and SHA-256 verification (prints manual guide for LoRAs) |
-| `presets [name]` / `outfits [name]` | Browse 6 zero-Ollama scene presets and 5 Emilia outfits (`royal`, `cloak`, `frozen-bond`, `sanctuary`, `nightgown`) |
-| `render` / `batch` / `idea` | Single render, wave-pooled batch render, and Ollama prompt-compiled render (supports `--fast`, `--fp16-upscaler`, `--fp16-vae`, `--fast-tiled-vae`, `--steps`, etc.). Exit codes: `0` success, `2` rejected by the quality gate, `1` failure |
-| `inspect` / `compare` | CPU-only image diagnostics; side-by-side pixel hash and iris hue comparison |
-| `export` / `clean` | Export deliverable bundle; prune finished temporary stage directories |
-| `ledger` / `benchmark` / `workflows` | Query SQLite ledger & cross-round parity; summarize benchmarks; audit the API workflow directory and re-sync GUI workflows from the builder |
-| `shell` / `banner` / `--version` | Interactive REPL shell, ASCII banner, and version string |
+| `render` | One seed through both stages (default `quality`). `--seed` defaults to the preset seed or `20261027` |
+| `batch` | Several seeds (default `ultra`). `--seeds A B C`, or `--seed S --count N` (default 2) |
+| `idea` | Chinese idea → Ollama → render (default `ultra`, random seed). `--style anime\|illustration\|cinematic` |
+| `inspect` | CPU inspection of one image. `--stage native\|final`, `--framing`, `--require-full-body-pose` |
+| `compare` / `gallery` / `export` | Side-by-side metrics; recent outputs; bundle with native, receipt and embedded workflow |
+| `ledger` / `benchmark` | `ingest\|stats\|recent\|compare`; timing summary or one live run |
+| `workflows` | Verifies the 5 default builder calls equal their canonical graphs (exit `2` on drift); `--sync-visual` rewrites GUI workflows |
+| `setup` / `doctor` / `pull` | Manifest check and `--sync`; environment check; model download |
+| `config init\|show\|set\|path` | TOML configuration. `set` accepts path keys and `comfy_host`, `comfy_port`, `quality_port`, `ollama_base`, `ollama_model` |
+| `presets` / `outfits` | 6 scene presets; 5 outfits (`--framing` previews the prompt) |
+| `clean` / `shell` / `banner` | Temp cleanup; interactive shell; banner |
+
+### Render options (`render` / `batch` / `idea`)
+
+| Option | Description |
+| :--- | :--- |
+| `--profile quality\|ultra` | Profile |
+| `--preset NAME` / `--prompt TEXT` | Scene preset or custom positive prompt (mutually exclusive; not on `idea`) |
+| `--auto-gate` / `--max-retries N` | Gate, seed retry and eye repair; retry limit defaults to 2 |
+| `--pag` | `PerturbedAttentionGuidance`, scale 1.0 on `quality` and 0.8 on `ultra`; one extra UNet pass per step |
+| `--port N` | Stage server port (default: configured `quality_port`, 8199) |
+| `--steps` / `--face-steps` / `--hand-steps` | Step overrides |
+| `--fast` / `--fp16-upscaler` / `--fp16-vae` / `--fast-tiled-vae` | Accelerations (not bit-exact) |
+| `--preview` | Lightning 8-step text-only draft; conflicts with `--fast`, `--pag` and Stage 2 options |
+| `--outfit` `--angle` `--puck` `--magic` | `ultra` only: `royal\|cloak\|frozen-bond\|sanctuary\|nightgown`; `auto\|front\|three-quarter\|side\|high-angle\|low-angle`; `none\|ice\|blizzard` |
+| `--reference-mode single\|paired` | `ultra` only: one face, or averaged front + three-quarter embeddings |
+| `--hires-bridge lanczos\|anime` | `ultra` only: Pass 1→2 pixel bridge |
+| `--checkpoint` `--garment-region` `--upscaler` `--secondary-upscaler` `--upscale-blend` | `ultra` only: checkpoint override; brooch/bodice/full-garment geometry-prior detailer; primary/secondary upscaler and blend |
+
+`render` and `batch` reject creative/ultra options on the `quality` profile.
 
 ---
 
-## Repository Structure
+## Configuration
+
+Precedence: `EMILIA_*` environment > `--config` / `EMILIA_CONFIG_TOML` > user config (`%APPDATA%\EmiliaStudio\config.toml`, directory overridable via `EMILIA_CONFIG_DIR`) > checkout `config.toml`. Relative TOML paths resolve beside that file. See [`config.example.toml`](config.example.toml) for the template and every environment variable.
+
+| Section | Keys |
+| :--- | :--- |
+| `[paths]` | `root_dir` `app_dir` `output_dir` `temp_dir` `workflows_dir` `visual_workflows_dir` `conda_python` `ollama_exe` `resources_dir` |
+| `[services]` | `comfy_host` `comfy_port` `quality_port` `ollama_base` `ollama_model` `stage_timeout_s` `stall_timeout_s` (≤0 disables) |
+| `[models]` | `ultra_lora_name` (missing file fails; no fallback) |
+
+---
+
+## Reproducibility Baseline
+
+Seed `20261027`, `pag=False`, no `--auto-gate`; decoded-pixel SHA-256 (`hashlib.sha256(Image.open(p).tobytes())`):
+
+| Profile | Native | Final |
+| :--- | :--- | :--- |
+| `quality` | `3b58d9daf2770d0ad7e87b971912b854e1e7495f9e99a09f348af9bf258c9425` | `d7fe10c200535d8656ab633248ca7cc651ee6d2e60bd309c23c43fa1ce5af63e` |
+| `quality --fast` | — | `a97a5cbff467816b53049c710b88c1f25ce7ed58b49c0d5c342b572fd6db3f9d` |
+
+If a hash differs, rule out the hardware first: `python gpu_profile.py status` shows clock offsets; `gpu_profile.py reset` (elevated) removes them for a control run. `ultra` hashes and their history are in [PROGRESS.md](PROGRESS.md).
+
+---
+
+## Tuning Rationale (community docs checked against local source)
+
+- **CLIP skip**: ComfyUI's `SDXLClipModel` (`app/comfy/sdxl_clip.py`) already takes the penultimate layer of both `clip_l` and `clip_g` (WebUI CLIP Skip 2), matching Illustrious-XL training. Graphs contain no `CLIPSetLastLayer`.
+- **Quality tags**: the Illustrious-XL v0.1 [model card](https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0) and [technical report](https://arxiv.org/abs/2409.19946) list `worst/bad/average/good/best quality`, `masterpiece`, and year tags such as `newest`; recommended Euler a, 20–28 steps, CFG 5–7.5. v0.1 was trained on comma-separated Danbooru tags only and handles long prose poorly; CLIP behaves close to a bag of words, so adjacent words such as `purple border` or `hawk` activate the matching Danbooru concepts (frame border, bird).
+- **RescaleCFG vs PAG**: at runtime `RescaleCFG` (`sampler_cfg_function`) runs before PAG (`sampler_post_cfg_function`) regardless of node order; PAG's term bypasses RescaleCFG's variance damping, so its scale must stay conservative.
+- **IPAdapter** ([cubiq](https://github.com/cubiq/ComfyUI_IPAdapter_plus)): `V only` scales the attention output without changing the attention distribution; `ease in-out` weights transformer layers and is not a time schedule — `start_at/end_at` are. With one reference image `combine_embeds` has no effect.
+- **Detailers** ([Impact Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack)): with `guide_size_for=bbox` the crop is scaled by `guide_size / min(bbox)` and then clamped by `max_size`, so a large `crop_factor` leaves far fewer face/hand pixels than `guide_size`; `feather` affects only paste-back, while `noise_mask_feather > 0` softens the sampling mask and enables `DifferentialDiffusion` automatically (still loaded under headless fast boot).
+- **Prompt hygiene (Phase 19)**: the `ultra` outfit text now says `thin purple hem trim` and `yellow emblem`, the negative bans `border, purple border, framed`, `rose-garden` adds `outdoors, blue sky`, and the negative keeps `sitting, kneeling, lying, on back` only when the scene mentions standing or walking (the compiler removes them for any other scene). Seed `20261027` changed from "purple frame + yellow bird + lying, seen from above" to a standing full body; seated/kneeling seeds still occur and `--auto-gate` catches only some of them.
+
+---
+
+## Lossless Optimizations
+
+All verified to keep decoded pixels unchanged on the fixed seed and the historical 50-image benchmark.
+
+- **IPAdapter** (`ipadapter_plus.patch`): cross-step `(ip_k, ip_v)` projection cache, `[B,S,1]` broadcast spatial mask, zero-image negative CLIP Vision embedding, per-step `sigma` scalar.
+- **VAE / quantization / upscaler** (`comfyui_core.patch`, 7 files): VAE destination writes and tiled accumulation, `tiled_scale_multidim` mask reuse, 256-row blocked `float32↔uint8`, per-tile GPU transfer in `ImageUpscaleWithModel`, PyAV-free static PNG load, storage-deduplicated `RAMPressureCache` accounting, Windows `PrefetchVirtualMemory` sequential prefetch.
+- **SAM / detection** (`impact_pack.patch`, `impact_subpack.patch`): `meta + mmap + assign` loading, feature cache, no GPU transfer for zero detections, no redundant grayscale copies.
+- **Boot & orchestration** (`engine.py`, `inspector.py`, `app/main.py`, `app/nodes.py`): per-stage custom-node whitelists, only 13 essential `comfy_extras`, `<1 ms` exclusive port check and log-driven readiness, CPU YOLO warm-up and Stage 2 weight read-ahead during Stage 1 sampling, inspection overlapped with process teardown.
+
+---
+
+## Repository Layout
 
 ```text
-.
-├── emilia_studio/                 # Standalone top-level controller package (bundled in wheel & emilia.exe)
-│   ├── cli.py                     # CLI argument parser and subcommand router
-│   ├── commands.py                # config / doctor / pull / presets / outfits / compare / export / clean handlers
-│   ├── compiler.py                # CPU-only Ollama compiler & framing/costume prompt synthesizer
-│   ├── config.py                  # Auto-discovery, TOML loader & canonical Emilia outfit/scene constants
-│   ├── engine.py                  # Two-stage isolated rendering engine & wave-pooled batch runner
-│   ├── inspector.py               # CPU-only YOLO anatomy, pose completeness, HSV iris & watermark gate
-│   ├── inspection_worker.py       # Persistent JSON-lines external CPU YOLO worker for frozen emilia.exe
-│   ├── ledger.py                  # WAL-mode SQLite experiment and benchmark ledger
-│   ├── tui.py                     # Gradient ASCII banner, CJK-aware tables, and live progress bar
-│   └── workflows.py               # API graph builder (quality graphs from JSON templates, ultra graphs built in code) & GUI workflow synchronizer
-├── assets/                        # Official reference conditioning crops (front/3Q face, bodice/skirt, brooch)
-├── workflows/                     # Workflows & benchmark records
-│   ├── api/                       # The 4 templates the builder loads, ultra canonical snapshots, and historical experiment .api.json graphs
-│   ├── visual/                    # Synchronized ComfyUI visual workflows (Emilia_01..10)
-│   ├── reports/                   # Historical ablation, visual review, and hardware benchmark JSON reports
-│   └── WORKFLOW_DECISIONS.txt     # Engineering decision log and pixel-hash audit trail
-├── patches/                       # Bit-exact memory and hardware-ceiling latency patches
-│   ├── emilia_runtime_patches/    # Self-verifying ComfyUI custom_node plugin + EmiliaRelativeGarmentSEGS node
-│   ├── comfyui_core.patch         # Git diff for main.py, comfy/sd.py, utils.py, caching.py, execution.py, nodes.py
-│   ├── ipadapter_plus.patch       # KV projection, broadcast mask, sigma scalar & zero-uncond cache patch
-│   ├── impact_pack.patch          # SAMLoader meta+mmap+assign load & SAMWrapper feature cache patch
-│   └── impact_subpack.patch       # Zero-copy bbox mask & quiet inference patch for subcore.py
-├── packaging/                     # PyInstaller spec and Windows build script (emilia.spec, build_windows.ps1)
-├── scripts/                       # 10-seed benchmark round runner and evaluator; Python resolver shared by the launchers
-├── tests/                         # Standalone test modules + comfy_core/ operator unit tests
-├── AGENTS.md                      # Hardware constraints, process isolation rules, and engineering guidelines
-├── PROGRESS.md                    # Engineering ledger and benchmark tables
-├── build_support.py               # Build-time immutable resource stager for wheel & PyInstaller
-├── config.example.toml            # Portable TOML configuration template
-├── models_manifest.json           # Model weights, references, and the pinned commit + patch of ComfyUI and each custom node
-├── gpu_profile.py                 # Optional CMP 40HX power/fan/clock-offset profile (rule out the overclock first when a hash differs)
-├── install-gpu-profile-task.ps1   # Keeps that profile applied via a SYSTEM scheduled task; audits the ACLs of what it executes
-├── ollama_comfyui_bridge.py       # Standalone natural-language bridge script (--mode ultra / quality / fast)
-├── render-emilia-quality.ps1      # PowerShell shortcut for `emilia render`
-└── start-comfyui.ps1              # Interactive ComfyUI GUI server launcher (default 127.0.0.1:8188)
+emilia_studio/       controller: cli / commands / tui / config / _version / workflows / compiler / engine / inspector / inspection_worker / ledger
+workflows/api/       29 .api.json: 5 canonical graphs (builder-verified), emilia_lora_native template, 23 historical experiments
+workflows/visual/    Emilia_01..10 GUI workflows (08–10 rewritten by workflows --sync-visual)
+workflows/reports/   ablation, image-quality and hardware reports; WORKFLOW_DECISIONS.txt is the decision record
+patches/             4 git patches + emilia_runtime_patches (EmiliaRelativeGarmentSEGS, EmiliaCheckpointConditioning, source-signature checks)
+assets/              official_face_center_clean.png + 10 design crops in official_references/
+scripts/             10-seed benchmark runner/evaluator, shared PowerShell interpreter resolver
+tests/               9 top-level modules + 4 operator modules in comfy_core/
+packaging/           PyInstaller spec and Windows build script
+render-emilia-quality.ps1 · start-comfyui.ps1 · ollama_comfyui_bridge.py · gpu_profile.py · install-gpu-profile-task.ps1
+config.example.toml · models_manifest.json (11 required + 4 experimental models, references, pinned commits and patches)
 ```
 
-*Note: Local `app/` (ComfyUI runtime and custom nodes) is ignored in `.gitignore`. It is not a clean upstream checkout: `patches/*.patch` modify tracked source files in it, the base commits are recorded in `models_manifest.json`, and `emilia doctor` verifies both the commits and the patch state. Upgrading ComfyUI or a custom node requires regenerating its patch.*
+`app/` is ignored by Git. It is not a clean upstream checkout; upgrading ComfyUI or a custom node requires regenerating its patch.
 
-### Optional GPU scheduled task: elevated deployment and boundaries
+### Optional GPU scheduled task
 
-A SYSTEM task executing mutable checkout/Conda files is a local privilege-escalation path. The installer leaves developer directories writable and stages a protected, versioned Python/pynvml runtime under `%ProgramData%\EmiliaGPUProfile\versions\`, with fixed import paths and `-I -S`. Previous versions remain until uninstall so an active task keeps its interpreter.
+`install-gpu-profile-task.ps1` stages a protected, versioned Python/pynvml copy under `%ProgramData%\EmiliaGPUProfile\versions\`, runs it with `-I -S`, and audits the ACLs of everything it executes before registering.
 
 ```powershell
-# Administrator PowerShell; -Audit can run unelevated
-.\install-gpu-profile-task.ps1 -Python D:\conda-data\envs\comfyui\python.exe
-.\install-gpu-profile-task.ps1 -Audit
-# Administrator uninstall; GPU reset is best effort if dependencies disappeared
-.\install-gpu-profile-task.ps1 -Remove
+.\install-gpu-profile-task.ps1 -Python D:\conda-data\envs\comfyui\python.exe   # elevated
+.\install-gpu-profile-task.ps1 -Audit                                           # unelevated
+.\install-gpu-profile-task.ps1 -Remove                                          # elevated
 ```
 
-Audit inspects the actual registered task and dependencies, not merely the proposed source configuration. `-AllowUserWritable` is an insecure opt-out and still fails audit. Upgrades create a fresh copy; reinstall after modifying the repository script to update the SYSTEM runtime. This session's UAC request was canceled: **the workstation's old task has not been migrated**. Editing the source alone does not remove the existing exposure.
-
+Reinstall after editing the repository script to update the SYSTEM copy. `-AllowUserWritable` is an insecure opt-out and still fails the audit.
 
 ---
 
-## Building from Source & Running Tests
+## Build & Test
 
 ```powershell
-# Build portable wheel and standalone Windows executable (dist/emilia.exe)
 python -m pip install ".[build]"
 powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build_windows.ps1 -Python <inference-env>/python.exe
 
-# Run the top-level Emilia Studio unit suite (no GPU needed; cases needing app/ or torch skip themselves)
-python -m pytest tests/
-
-# Run the full ComfyUI runtime & core operator unit suite (needs the inference environment and app/)
-python -m pytest app/tests-unit/comfy_test/
+python -m pytest tests/                        # no GPU needed; cases needing app/ or torch skip themselves
+python -m pytest app/tests-unit/comfy_test/    # inference environment, after setup --sync
 ```
-
----
 
 ## License
 
-- **Emilia Studio Controller, Workflows, Patches & Tests (`emilia_studio/`, `workflows/`, `patches/`, `tests/`, `packaging/`)**: [MIT License](LICENSE).
-- **External ComfyUI Runtime (`app/`)**: GPL-3.0 License.
-- **Model Weights**: Governed by their respective upstream licenses (Illustrious-XL, RealESRGAN, Ultralytics YOLOv8, Segment Anything).
+- Controller, workflows, patches and tests: [MIT](LICENSE).
+- `app/` (ComfyUI): GPL-3.0.
+- Model weights: their upstream licenses (Illustrious-XL under fair-ai-public-license-1.0-sd, RealESRGAN, Ultralytics YOLOv8, Segment Anything, SDXL-Lightning, …).

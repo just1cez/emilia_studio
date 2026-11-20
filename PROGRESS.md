@@ -1,20 +1,32 @@
 # PROGRESS.md — Emilia Studio Engineering Progress & Experiment Ledger
 
-This document tracks the end-to-end engineering progression of **Emilia Studio**, from initial 8 GiB VRAM SDXL bring-up through community workflow evaluations, low-level PyTorch/ComfyUI memory optimizations, 50-image bit-exact verification rounds, and the v2.0 declarative architecture overhaul.
+Current system snapshot followed by the chronological engineering ledger. Earlier phases are kept as measured; where a later phase replaced a setting, the entry says so. Current defaults are always the ones in this summary and in `emilia_studio/workflows.py`.
 
 ---
 
-## Executive Status Summary (Current: v2.1.0 — 2026-11-13)
+## Current System (v2.1.0)
 
-| Subsystem | Current Production Baseline | Verification Status |
+| Subsystem | Current state | Evidence |
 | :--- | :--- | :--- |
-| **Architecture** | Standalone top-level `emilia_studio` package + isolated `app/` ComfyUI runtime (Option A) | ✅ Active |
-| **Stage 1: Native Generation** | `Illustrious-XL-v0.1` + `emilia-re-zero-re` LoRA (0.8) + `IPAdapter Plus Face SDXL` (weight 0.40, end_at 0.75), `1152×1728`, 36 steps, `dpmpp_2m_sde` / `karras`, CFG 5.5, FP32 tiled VAE (`512` tile / `64` overlap) | ✅ Verified Bit-Exact |
-| **Intermediate Quality Gate** | CPU-only YOLOv8n (`face`/`hand`) + HSV circular iris hue analyzer (`[250°, 302°]` violet band, `32°` heterochromia threshold) | ✅ Verified on 108+ runs |
-| **Stage 2: Refinement & 2× Delivery** | `FaceDetailer` (guide 640, max 896, 20 steps, denoise 0.22) $\rightarrow$ `DetailerForEach` (`hand_yolov8n` + `sam_vit_b_01ec64`, guide 512, max 768, 20 steps, denoise 0.24) $\rightarrow$ `RealESRGAN_x4plus_anime_6B` (4×) $\rightarrow$ Lanczos 0.5× (`2304×3456`) | ✅ Verified Bit-Exact |
-| **Ollama Bridge & Compiler** | `qwen3.5:9b` (`num_gpu=0, keep_alive=0`), dynamic framing & IPAdapter weight routing, integrated into 2-stage HighRes Quality pipeline | ✅ Verified |
-| **Unit Test Suite** | `tests/` (top-level, GPU-free, also run in CI on Windows and Linux) and `app/tests-unit/comfy_test/` (runtime suite, after `setup --sync`) | ✅ Passing (counts recorded per phase below) |
-| **SQLite Experiment Ledger** | `workflows/studio_ledger.sqlite3` indexing every `.run.json` receipt under the output directory and the ten-seed benchmark records | ✅ Indexed & Queryable |
+| **Architecture** | `emilia_studio` controller (wheel / `emilia.exe`) + git-ignored `app/` ComfyUI at commit `0a33ed6c` with 3 pinned custom nodes and 4 tracked patches | `emilia doctor` (commit + patch state) |
+| **`quality` profile** (default of `render`) | Stage 1 `1152×1728`, 36 steps `dpmpp_2m_sde`/`karras`, CFG 5.5, `emilia-re-zero-re` 0.80, Plus Face 0.40 `linear` `K+V` 0–0.75 → Stage 2 FaceDetailer 640/896 d0.22, SAM hands 512/768 d0.24, RealESRGAN 4× → Lanczos 0.5× | Bit-exact seed `20261027` hashes below, Phases 5–18 |
+| **`ultra` profile** (default of `batch` / `idea`) | Pass 1 `832×1216`, 28 steps, CFG 4.5, `Emilia_Rezero_Q-000005` 0.25, Plus Face 0.18 `ease in-out` `V only` 0.15–0.60, torso-masked Plus outfit IPA 0.45, `RescaleCFG 0.75` → Pass 2 `1152×1728` 18 steps `dpmpp_2m` d0.40 base only → Stage 2 FaceDetailer 768/1024 crop 1.6 d0.28, SAM hands crop 2.0 512/1024 d0.40 soft mask (feather 8, +12 px) | Phases 19–20 (detailer A/B, center-crop bridge) |
+| **Opt-in modes** | `--fast` (FP16 upscaler, FP16-fix VAE, 1-pass tiled VAE, fewer steps); `--preview` (official SDXL-Lightning 8-step UNet, text-only `832×1216`); `--pag`; ultra tuning flags | Phases 11, 16, 18 |
+| **CPU quality gate** | `face_yolov8n` + `hand_yolov8n` + `yolov8n-pose` on CPU; COCO-eye constrained iris hue (`[250°, 302°]`, 32° heterochromia, <8 px unmeasured); ultra full-body pose gate; advisory garment/corner metrics. Changes flow only under `--auto-gate` | Phases 6, 12, 17, 18 |
+| **Engine** | One Stage 1 process for every seed and retry → CPU gate → one Stage 2 process for eye repairs then finishing; receipts beside images; `stage_timeout_s=900`, `stall_timeout_s=300` | Phases 12, 16, 17, 18 |
+| **Compiler** | `qwen3.5:9b`, `num_gpu=0`, `keep_alive=0`, physical-core `num_thread`, memory + disk tag cache, 5 outfits, framing/IPA routing | Phases 11, 12, 16 |
+| **Ledger** | WAL SQLite `workflows/studio_ledger.sqlite3` indexing every `.run.json` under `output/emilia/` and the 10-seed benchmark rounds; in-place upsert, `ingest --refresh` | Phases 6, 13, 17 |
+| **Tests** | `tests/` (9 modules + `comfy_core/` 4 modules, GPU-free, CI on `windows-latest` and `ubuntu-24.04`); `app/tests-unit/comfy_test/` after `setup --sync` | Latest counts in the newest phase |
+
+### Reference hashes (seed `20261027`, decoded-pixel SHA-256)
+
+| Run | Native | Final |
+| :--- | :--- | :--- |
+| `quality` | `3b58d9daf2770d0ad7e87b971912b854e1e7495f9e99a09f348af9bf258c9425` | `d7fe10c200535d8656ab633248ca7cc651ee6d2e60bd309c23c43fa1ce5af63e` |
+| `quality --fast` | — | `a97a5cbff467816b53049c710b88c1f25ce7ed58b49c0d5c342b572fd6db3f9d` |
+| `ultra --preset rose-garden` (Phase 20, center-crop bridge) | `2f598c58bf7e26e5b0f9f2133ec65dab898c18b622f129869dc910e68d28ca4b` | — (native gate-rejected by the pre-fix box choice; not finished) |
+| `ultra --preset rose-garden` (Phase 19) | `a86572d7b9285e56508c2dc20fb51b8c071a1287569ab82b9aa5564ec669260c` | `f95dd9ccb179c9c1ca7d95288439a733967074517498139ab11b97534c912766` |
+| `ultra --preview` | `65d82fc9ec2341d502a4a69f4859323149ed098cbed456917547fb7b04713cd4` | — |
 
 ---
 
@@ -103,9 +115,11 @@ Following a 10-image diverse scene audit (`03_finished_2x_00062_.png` – `00071
 2. **New `ultra` Profile Architecture (`build_ultra_native` + `build_ultra_finish`)**:
    - **Stage 1 Multi-Scale Hires.fix (`emilia_ultra_multiscale_native.api.json`)**:
      - **Pass 1 (`832×1216`, 28 steps, `dpmpp_2m_sde` Karras, `CFG 5.0`)**: Generates global full-body anatomy inside Illustrious-XL's exact native 2:3 bucket with `LoRA=0.42` and gentle `IPAdapterAdvanced` (`weight=0.18–0.20`, `weight_type="ease in-out"`, `start_at=0.15`, `end_at=0.65`, `embeds_scaling="V only"`).
+       - *Superseded in Phase 9:* Pass 1 now uses CFG 4.5, LoRA 0.25, `end_at=0.60`; Pass 2 uses 18 steps, denoise 0.40, base checkpoint only.
      - **Pass 2 (`832×1216` $\to$ Tiled FP32 Decode $\to$ Lanczos `1152×1728` $\to$ Tiled FP32 Encode $\to$ 16-step `dpmpp_2m` Karras Hires.fix at `denoise=0.34, CFG 4.5, LoRA=0.38`, IPAdapter detached)**: Refines the entire body, dress pleats, corset, legs, stockings, and boots at `1152×1728` before Stage 1 exits.
    - **Stage 2 High-Resolution Detailer + 2× Upscale (`emilia_ultra_multiscale_finish.api.json`)**:
      - Upgraded `FaceDetailer` (`guide_size=768, max_size=1024, denoise=0.28, CFG 5.0, LoRA=0.38`) and `DetailerForEach` Hand SAM refiner (`guide_size=640, max_size=896, denoise=0.30, CFG 5.0`), followed by `RealESRGAN_x4plus_anime_6B` 4× and Lanczos 0.5× to `2304×3456`.
+       - *Superseded in Phase 19:* face `bbox_crop_factor` 1.6; hands crop 2.0, 512/1024, denoise 0.40, `noise_mask_feather` 8, mask +12 px.
 3. **Controlled A/B Verification (`app/temp/ab_ultra_workflow_20261107/ultra_before_after_3scenes.jpg` & `app/output/emilia/ultra/03_finished_2x_00001_.png`)**:
    - **Faster & Safer on 8 GiB VRAM**: Stage 1 runtime dropped from **`181.2s` $\to$ `136.6s` (-44.6s faster)** because the 28-step base pass runs on a `832×1216` canvas (half the tokens of `1152×1728`). Total end-to-end CLI `--profile ultra` runtime is **`278.6s`** (`136.6s` Stage 1 + `85.8s` Stage 2).
    - **Visual Defects Eliminated**: Eliminated the 3rd-leg hallucination on seed `20261106`, eliminated concentric iris rings and high-neck cloak collars on portrait seed `20261105` (`heterochromia_score=1.02°`), and restored Emilia's exact off-shoulder dress, detached white collar, single green emerald crystal, purple corset, layered mini skirt, and white knee-high boots on seeds `20261104` and `20261027`.
@@ -117,10 +131,12 @@ Conducted a direct pixel-by-pixel audit against official Re:Zero TV anime charac
    - **Previous Inaccuracies**: Earlier renders produced a generic solid-purple waist corset and plain ruffled mini skirt, missing Emilia's canonical **white corset waist panel with six vertical purple dash markings**, **three-tiered white petal-scalloped peplum overskirt with lavender edges**, **white box-pleated miniskirt with a thin purple stripe near the hem**, **long split white coattails with purple/gold four-leaf clover trim**, and **white thighhigh stockings with purple zig-zag V-cuffs**.
    - **Multi-Reference Conditioning + Canonical Outfit LoRA**:
      - Added 8 curated multi-angle official reference crops (`assets/official_references/emilia_official_skirt_and_bodice.png`, `emilia_official_fullbody_front.png`, `emilia_official_action_angle.png`, etc.) synced via `emilia-studio setup --sync`.
+      - *Correction:* `assets/official_references/` holds 10 crops (11 PNGs with the root face reference).
      - Integrated general SDXL `ip-adapter-plus_sdxl_vit-h.safetensors` (`weight=0.45`, `ease in-out`, `embeds_scaling="V only"`, `combine_embeds="norm average"`) conditioned on `emilia_official_skirt_and_bodice.png` through a **feathered torso/skirt spatial `attn_mask` (`FeatherMask=96px`)** alongside `Emilia_Rezero_Q-000005.safetensors` (`strength=0.25` in Pass 1, `0.0` in Pass 2). Confining the Skirt IPAdapter to the central torso/skirt mask prevents white reference-sheet backgrounds from washing out scene lighting.
 2. **Painterly Luminous Lighting Architecture**:
    - Added `RescaleCFG` (`multiplier=0.75`) on both Pass 1 (`832×1216`) and Pass 2 (`1152×1728`, `denoise=0.40`, pure Illustrious-XL `strength_hires=0.0`) to eliminate highlight blowout and flat cel-shaded overexposure while rendering volumetric rim light, subsurface scattering on silver hair, and ambient occlusion inside skirt pleats.
    - Updated `EmiliaRenderEngine` so `ultra` mode handles minor iris hue drift inside Stage 2's high-resolution `FaceDetailer` (`guide_size=768, denoise=0.36`) rather than double-inpainting with the legacy `guide_size=640` `emilia_eye_repair` graph, and tightened `QualityInspector._extract_iris_hues` (`65° <= hue <= 345°`) so warm golden sunset/eyelash pixels (`43°–58°`) no longer trigger false heterochromia alarms.
+    - *Superseded in Phase 17:* under `--auto-gate`, `repair_eyes` runs `build_ultra_eye_repair` (guide 640, denoise 0.42, no upscale) inside the Stage 2 process before finishing; ultra FaceDetailer denoise is 0.28.
 3. **Multi-Lighting `2304×3456` Showcase Verification**:
    - **Daylight Flower Garden (`seed 20261027`, `exp4_garden_20261027_final_2x_00001_.png`)**: SHA-256 `e4efa1fa7807336f...` (`167.2s` Stage 1 + `70.9s` Stage 2).
    - **Moonlit Castle Balcony (`seed 20261104`, `exp4_balcony_20261104_final_2x_00001_.png`)**: SHA-256 `d8623c2f4edfdfa0...` (`171.1s` Stage 1 + `81.1s` Stage 2, `heterochromia_score=4.07°`).
@@ -193,6 +209,7 @@ Conducted a direct pixel-by-pixel audit against official Re:Zero TV anime charac
   - Guarded `sync_visual_workflow` with `not isinstance(inputs[key], list)` so linked API inputs never overwrite scalar GUI widgets; fixed `"control_after_generate": "fixed"` in `Emilia_08` and `Emilia_10`; and wired `emilia workflows --sync-visual`.
 - **8. CPU Inspector Zero-Face Single-Pass & Framing-Conditional Pose Inference (`emilia_studio/inspector.py`)**:
   - Added `_detect_if_missing=False` when `inspect_image` calls `analyze_iris_color` (eliminating duplicate 3-model YOLO execution when `face_count == 0`), skipped `yolov8n-pose.pt` when `framing != "full_body"`, and guarded in-process YOLO `.predict()` with `_YOLO_LOCK`.
+    - *Superseded in Phase 18:* pose keypoints are always computed so COCO eye landmarks can constrain iris localization; only the warm-up skips the pose model for non-full-body framing.
 - **9 & 10. Runtime Patch Source-Signature Verification (`patches/emilia_runtime_patches/__init__.py`, `patches/comfyui_core.patch`)**:
   - Upgraded `apply_all_patches()` and `verify_patches()` to inspect live function source signatures (`pixel_samples[x:x+batch_number].copy_(out)`, `np.clip(i, 0, 255, out=i)`, `s.clamp_(min=0, max=1.0)`, `if batch_prompt != 1:`, `_emilia_sigma_val`) instead of unconditionally stamping `_emilia_patched = True`.
 - **Live `2304×3456` Verification (`app/output/emilia/ultra/03_finished_2x_00015_.png`, `seed 20261027`, `preset=rose-garden`)**:
@@ -214,6 +231,7 @@ Conducted a direct pixel-by-pixel audit against official Re:Zero TV anime charac
   - Added 64-bit integer `seed` validation in `build_ultra_native` and `build_ultra_finish`; deduplicated individual angle tags; stripped lower-body tags on direct `build_ultra_native(framing="portrait")` calls; and reused `LoraLoader` node `10` when `lora_strength_hires == lora_strength_base`.
 - **Persistent External YOLO Worker, Corner Watermark Diagnostics, Benchmark Scripts & ComfyUI Cache Accounting (`inspection_worker.py`, `inspector.py`, `app/`)**:
   - Added `--server` persistent JSON-lines loop with `_MODEL_CACHE` and direct `image_path` loading to `inspection_worker.py` + `QualityInspector._detect_anatomy_external`, plus advisory `analyze_corner_artifacts` 4-corner stroke density diagnostics on `InspectionReport`.
+    - *Superseded in Phase 17:* `inspection_worker.py` takes no flags; launched as `python -u inspection_worker.py` it always runs the persistent JSON-lines server.
   - Replaced `time.sleep(2)` with `child.wait(timeout=2.0)` and reused receipt `pixel_sha256` in `benchmark_architecture_iterations.py`; cleaned dead helpers and bare `assert`s in `render_emilia_quality.py` and `evaluate_architecture_iteration.py`.
   - Released `del cache_results` in `app/execution.py` and added `Mapping` (`dict`) recursion + `untyped_storage()` deduplication in `app/comfy_execution/caching.py` (captured in `patches/comfyui_core.patch`).
 
@@ -257,6 +275,7 @@ Conducted a direct pixel-by-pixel audit against official Re:Zero TV anime charac
   - **Asynchronous Pipelined CPU Inspection in Batch Waves (`emilia_studio/engine.py`)**: Overlaps `QualityInspector.inspect_image` of item `i-1` on background threads while the GPU immediately executes item `i` across both Wave 1 and Wave 2.
   - **Persistent Ollama Prompt Cache + Physical Core `num_thread` (`emilia_studio/compiler.py`)**: Caches compiled tags by `(model, style, idea)` in memory and `temp/ollama_prompt_cache.json` (`<1 ms` hit vs `12–25s` cold CPU LLM load) and sets `"num_thread": min(10, cpu_count // 2)` alongside `"num_gpu": 0, "keep_alive": 0`.
   - **Zero-Waste Micro-Cleanups (`patches/impact_pack.patch`, `app/nodes.py`, `inspector.py`, `start-comfyui.ps1`)**: Short-circuits `make_sam_mask` / `make_sam_mask_segmented` before moving `358 MiB` SAM onto GPU when `len(segs[1]) == 0`; pre-downscales `>960px` (`2304×3456`) images to `640`-class resolution with exact bbox/keypoint coordinate rescaling in `QualityInspector`; uses lossless `compress_level=1` in headless `SaveImage`; adds `--mmap-torch-files` to `start-comfyui.ps1`.
+    - *Superseded in Phase 18:* intermediates (`01_`, `02_`, `eye_repair_`) use level 0; other headless outputs keep level 1.
 - **2. Four Opt-In High-Speed Inference Optimizations (`--fast` / `--fp16-upscaler` / `--fp16-vae` / `--fast-tiled-vae` / `--steps`)**:
   - **FP16 TensorCore `RealESRGAN` (`app/comfy_extras/nodes_upscale_model.py`, `EMILIA_FP16_UPSCALER=1`)**: Isolated microbenchmark on `02_refined_00074_.png` (`1152×1728 -> 4x`): **`25.28s` (FP32) $\to$ `2.45s` (FP16) (`-22.84s`, `10.34×` faster)**; `91.11%` pixels identical, `99.99%` within `1/255` (`mean_abs=0.089/255`).
   - **Standalone `sdxl-vae-fp16-fix.safetensors` (`319 MiB` on `D:`, SHA-256 `235745af8d86bf4a4c1b5b4f529868b37019a10f7c0b2e79ad0abca3a22bc6e1`)**: Registered in `models_manifest.json` (`experimental_models`), wired via `EmiliaWorkflowBuilder.inject_external_vae` + `--fp16-vae` when `--fp16-vae` or `--fast` is passed.
@@ -313,3 +332,56 @@ No sampler, prompt or model setting changed; both pinned pipelines still reprodu
 - **Accepted standalone-UNet preview**: installed the pinned official `sdxl_lightning_8step_unet.safetensors` (`5,135,149,736` bytes; manifest SHA-256 `471d8260fda0b17b8906feb24573ce64933d4b6b99ba7a1fa43ca051b994e869`) after a truncated transfer and successful resume. `render --profile ultra --preset rose-garden --preview`, seed `20261027`: `22.108s` execution, `43.66s` command wall, `832×1216`, one face, coherent full-length figure and garden arch visually observed, no mosaic artifacts. Appearance is photographic rather than production Emilia anime identity; this is intentionally a text-only layout scout, not an identity/style match. Receipt `preview/01_ultra_lightning8_unet_00001_.run.json`, decoded SHA-256 `65d82fc9ec2341d502a4a69f4859323149ed098cbed456917547fb7b04713cd4`, no finishing stage. Removed the rejected Lightning LoRA weight and throwaway repair script; retained image/verification evidence under ignored output directories.
 - **Release packaging**: rebuilt the wheel, Windows executable and source archive. The source-archive build exposed a missing `workflows/WORKFLOW_DECISIONS.txt` inclusion despite its presence in wheel/executable resource staging; added the explicit `MANIFEST.in` entry so a wheel built from the sdist has the same decision resource. No model weights or generated images are included.
 
+
+### Phase 19: Community-Doc Audit, Documentation Rewrite, Ultra Prompt Hygiene and Detailer Budgets (2026-11-20)
+
+- **Research**: subagents audited the Illustrious-XL v0.1 model card and technical report (arXiv:2409.19946), ComfyUI `RescaleCFG`/`PerturbedAttentionGuidance`/`DifferentialDiffusion` docs, cubiq IPAdapter Plus and ltdrdata Impact Pack sources and tutorials, against `config.py`, `compiler.py`, `workflows.py` and the pinned runtime. Findings that changed code: `QUALITY_TAGS` used Animagine score tags (`high score, great score`) that Illustrious never trained on; `"safe"` is not the Danbooru rating Illustrious uses (`general`); the ultra outfit text `thin purple border trim` and `yellow hawk emblem` act as bag-of-words triggers for Danbooru `purple border` and a bird; `guide_size × crop_factor` in both ultra detailers exceeded `max_size` 2–3×, so the face was sampled at ~400 px and hands at ~170–300 px inside a 1024 canvas; at hand denoise 0.30 on Karras the detailer starts at σ≈0.34, too late to change finger structure. Confirmed, unchanged: no `CLIPSetLastLayer` is needed (ComfyUI SDXL already uses the penultimate layer of both encoders); `V only` and per-layer `ease in-out` IPAdapter settings are appropriate.
+- **Documentation**: rewrote `README.md` / `README.en.md` (profile table, gate scope, full CLI and config reference, community tuning rationale, removed session-specific notes and stale counts), `AGENTS.md` (topology counts, per-profile isolation, CLIP-skip rule, gate scope), this file's summary and superseded markers, the `WORKFLOW_DECISIONS.txt` header and path map, and `config.example.toml` (every `EMILIA_*` variable, resource-relative workflow defaults).
+- **Code** (`quality` graphs untouched; `emilia workflows` parity holds for all five canonical graphs after regenerating the two ultra files):
+  - `config.py`: `QUALITY_TAGS = "masterpiece, best quality, absurdres, newest"`; `EMILIA_CANONICAL` rating `general`; outfit text `thin purple hem trim`, `pointed purple sleeve cuffs with yellow emblem`; rose-garden scene adds `outdoors`, `blue sky`; ultra negative adds `border, purple border, white border, framed, sitting, kneeling, lying, on back`.
+  - `compiler.py`: `drop_unrequested_posture_negatives` keeps `sitting, kneeling, lying, on back` only when the scene asks for standing or walking, so ideas that want her seated are never negated (`test_posture_bans_follow_the_requested_scene`).
+  - `workflows.py` `build_ultra_finish`: face `bbox_crop_factor` 1.6; hand detector `crop_factor` 2.0 and `post_dilation` 12; hand detailer 512/1024, denoise 0.40, `noise_mask_feather` 8 (Impact Pack then applies DifferentialDiffusion; the node is loaded under headless fast boot). FaceDetailer keeps `noise_mask_feather` 0.
+- **Same-native detailer A/B** (one Stage 2 process, natives `01_base_00024_` seed 20261027, `01_base_00012_` seed 20261111 frozen-bond, `01_base_00006_` seed 20261112 sanctuary; outputs `app/output/emilia/ab_finish/`): A = previous ultra finish, B = crop budgets only, C = B + soft hand mask at denoise 0.40 (adopted).
+
+  | Native | A (s) | B (s) | C (s) | Measured irises A → B/C |
+  | :--- | ---: | ---: | ---: | :--- |
+  | garden 20261027 | 84.1 | 75.0 | 64.0 | 0/2 → 1/2 |
+  | frozen-bond 20261111 | 94.9 | 103.7 | 79.5 | 2/2 → 2/2 |
+  | sanctuary 20261112 | 91.4 | 93.6 | 73.3 | 1/2 → 2/2 |
+
+  Visual crop review: B/C faces have sharper lashes, iris rings and line art than A; C hands show separated fingers and nails, and C removed a red stroke artifact A left on a sanctuary finger; no paste seams around soft-masked hands. All nine finals pass the CPU gate (1 face, hands detected). Timings are single runs on a shared machine, not a speed claim.
+- **Full ultra renders** (`emilia batch --profile ultra --preset rose-garden`, strict seed lock, `2304×3456`):
+
+  | Receipt | Seed | Prompt revision | Native / finish (s) | Observed composition | Pose gate |
+  | :--- | :--- | :--- | :--- | :--- | :--- |
+  | `03_finished_2x_00022_` (Phase 17) | 20261027 | before | 172.5 / 81.9 | purple frame border, yellow bird on her hand, lying on a marble floor under a rose wreath, seen from above | passed (2D blind spot) |
+  | `03_finished_2x_00023_` | 20261027 | leak fixes | 189.7 / 91.7 | no border or bird; seated on a stone ledge | passed (blind spot) |
+  | `03_finished_2x_00024_` | 20261028 | leak fixes | 149.2 / 67.5 | standing full body on a path, sky and horizon | passed |
+  | `03_finished_2x_00025_` | 20261029 | leak fixes | 151.7 / 83.7 | kneeling | rejected (ankle 0.11, hip 0.604) |
+  | `03_finished_2x_00026_` | 20261027 | + posture negatives | 159.2 / 70.1 | standing full body on the garden path | passed |
+  | `03_finished_2x_00027_` | 20261029 | + posture negatives | 145.6 / 79.3 | half-kneeling, one foot planted | passed (blind spot) |
+
+  Final decoded SHA-256: `00026` `f95dd9ccb179c9c1ca7d95288439a733967074517498139ab11b97534c912766` (native `a86572d7b9285e56508c2dc20fb51b8c071a1287569ab82b9aa5564ec669260c`); `00024` `c43876f80155c28836192e96c1f581399f3ebbe2fe7b6cad1617f308f44cab59`; `00027` `5fc191d2b78d08e08e5355ad0c70bda323b590c47c0dc6254ef179fe84f451e7`.
+- **Open limits**: posture negatives reduce but do not eliminate seated/kneeling seeds (20261029); the 2D pose gate cannot distinguish a seated figure with hanging legs or a half-kneel with a planted foot from standing. Seed 20261028 irises measured 247.9°/248.5°, just below the 250° violet band, so `--auto-gate` would route it through eye repair. The first A/B attempt failed with a Windows commit-limit OOM while unrelated processes held ~17 GB of commit; it succeeded after they were closed, without changing any memory flags.
+- **Verification**: `emilia setup --sync` ready (57 files synced); top-level `tests/` `253 passed, 1 warning` (new posture test included); runtime `app/tests-unit/comfy_test/` `158 passed, 1 warning`; `emilia doctor` exit 0; `emilia workflows` parity true for all five canonical graphs; `ledger ingest` indexed 175 receipts, `ledger stats` 176 runs. The `quality` canonical graphs are byte-for-byte unchanged and no runtime patch changed, so the `quality` reference hashes still apply; no new `quality` render was made.
+
+### Phase 20: Re-run of Failed Research, Hires-Bridge Aspect Fix and Body-Proportion Pose Gate (2026-11-21)
+
+- **Re-run research**: the two Phase 19 research subagents that failed with a billing error were re-run, plus a pose-gate investigation.
+  - *Doc audit* of the rewritten docs: every default, count, flag and exit code matched the code; four wording errors were fixed (posture-negative condition in both READMEs, an unmarked superseded Phase 8 hand-detailer line here, eye-repair `upscale=False` scope in `WORKFLOW_DECISIONS.txt`, the face reference path in `AGENTS.md`).
+  - *ComfyUI core / bridge*: the ultra bridge stretched pass 1 (832x1216, not 2:3) to 1152x1728 with `crop: disabled`, making every ultra figure 2.6% taller. Latent upscale (`bislerp`, `nearest-exact`) needs denoise >= 0.55 on SDXL (cubiq upscale study, ComfyUI issue #1116, NNLatentUpscale tables), so the pixel bridge stays. Already-default on this GPU: PyTorch SDPA (memory-efficient kernel on sm75), 2-stream async offload, dynamic VRAM. No runtime flag or node speeds things up while keeping `quality` bit-exact; candidates (`fp16_accumulation`, EasyCache on pass 1, AYS) change pixels and stay unadopted.
+  - *Pose gate*: 42 images measured with the CPU pose model and checked visually (`temp/pose_research/features.csv`). Corrections: several images previously counted as standing (`03_finished_2x_00015_`..`00017_`, `00022_`) are one lying-from-above composition; knee angles read 161-178 deg for every class in frontal views and cannot separate sitting.
+- **Code**:
+  - `build_ultra_native` node 51: `crop: center` (ComfyUI `common_upscale` trims 11 px per side of the base, residual aspect error 0.09%). Applies to the anime bridge too. Ultra canonical native regenerated.
+  - `analyze_pose_completeness`: chooses the face-containing pose box with the highest summed hip/knee/ankle confidence instead of the first match (the detector often lists a partial upper-body box first). New `full_body` rules in face heights from the chosen box: below-hip < 3.05; height < 6.3 with both shin/thigh vertical drops >= 1.6 and all six leg keypoints >= 0.5 confidence; height < 5 when hips are below 0.5 confidence. Thresholds are class constants (`POSE_*`). New receipt fields: `heads_tall`, `below_hip_face_heights`, `shin_thigh_ratios`.
+  - Tests: hanging-legs and half-kneel shapes that pass the old position checks; best-box selection over a leading partial box.
+- **Corpus result** (42 images): seated-on-ledge `00023` and half-kneel `00027` (both passed before) are rejected; every other seated/kneeling image stays rejected; all correctly detected standing images pass, and best-box selection additionally clears `ab_skirt/exp4_balcony` (previously rejected on a truncated box). Remaining errors: standing shot from above (`00013`) is rejected; lying from above (`00015`..`00017`, `00022`) passes; `evaluation/set20260923_03` stays rejected by the pre-existing ankle-confidence check. Each new rule was fitted on one positive example.
+- **Live check** (`emilia batch --profile ultra --preset rose-garden --seeds 20261029 20261027 --auto-gate`, run before the best-box fix):
+
+  | Receipt | Requested seed | Attempts (native s) | Finish (s) | Outcome |
+  | :--- | :--- | :--- | :--- | :--- |
+  | `03_finished_2x_00028_` | 20261029 | 20261029 rejected `below_hip 2.36` (262.9), 20262029 accepted (150.2) | 98.0 | standing full body, final SHA-256 `9f2543d321e075cf7b8f2c7020f4b95db22f19de04d5b350cbc1a269a14f255c` |
+  | `03_finished_2x_00029_` | 20261027 | 20261027 rejected (156.0), 20262027 accepted (148.8) | 105.7 | standing full body, final SHA-256 `278dc1fafc712890421a8cf21d91750160196421997a5eb2c5e00d37b83ed78f` |
+
+  The 20261027 native (`01_base_00035_`, standing, SHA-256 `2f598c58bf7e26e5b0f9f2133ec65dab898c18b622f129869dc910e68d28ca4b`) was a false reject: the gate had judged a partial box (bottom at y=702, ankle confidence 0.02) while a full-figure box with ankle confidence 0.86 existed. Re-inspected after the best-box fix it is accepted (`heads_tall 7.10`, `below_hip 3.88`); the kneeling `01_base_00033_` stays rejected and both retries stay accepted. Both accepted finals show no vertical stretch.
+- **Verification**: `emilia setup --sync` ready; top-level `tests/` `255 passed, 1 warning`; runtime `app/tests-unit/comfy_test/` `158 passed, 1 warning`; `emilia doctor` exit 0; `emilia workflows` parity true for all five canonical graphs; `ledger stats` 178 runs. `quality` graphs and runtime patches are unchanged.
