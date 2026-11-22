@@ -8,6 +8,7 @@ scheduled task (see install-gpu-profile-task.ps1) runs `apply` as SYSTEM to rest
 from __future__ import annotations
 
 import argparse
+import contextlib
 import ctypes
 import datetime
 import sys
@@ -16,6 +17,7 @@ from typing import Any
 
 import pynvml
 
+EXPECTED_GPU_SUBSTRING = "CMP 40HX"
 POWER_LIMIT_MW = 220_000
 LOCKED_CLOCKS_MHZ = (300, 1980)
 FAN_PERCENT = 100
@@ -125,8 +127,18 @@ def _state(handle: Any, nvapi: NvApi) -> dict[str, int]:
     }
 
 
+def _device_name(handle: Any) -> str:
+    raw = pynvml.nvmlDeviceGetName(handle)
+    return raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+
+
 def _apply(handle: Any, nvapi: NvApi) -> list[str]:
     """Write only settings that drifted; locked clocks have no NVML getter and are always rewritten."""
+    gpu_name = _device_name(handle)
+    if EXPECTED_GPU_SUBSTRING.casefold() not in gpu_name.casefold():
+        raise RuntimeError(
+            f"Refusing to apply {EXPECTED_GPU_SUBSTRING} tuning profile to unexpected GPU 0: {gpu_name!r}"
+        )
     changes: list[str] = []
     if pynvml.nvmlDeviceGetPowerManagementLimit(handle) != POWER_LIMIT_MW:
         pynvml.nvmlDeviceSetPowerManagementLimit(handle, POWER_LIMIT_MW)
@@ -180,7 +192,8 @@ def main() -> int:
             pynvml.nvmlShutdown()
     except Exception as exc:
         if command != "status":
-            _log(f"{command} FAILED: {exc!r}")
+            with contextlib.suppress(OSError):
+                _log(f"{command} FAILED: {exc!r}")
         print(f"{command} failed: {exc!r}", file=sys.stderr)
         return 1
     return 0

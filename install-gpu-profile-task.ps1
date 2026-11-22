@@ -54,10 +54,43 @@ function Assert-LocalPath {
     return $Full
 }
 
+function Get-ItemAcl {
+    param([IO.FileSystemInfo]$Item, [Security.AccessControl.AccessControlSections]$Sections)
+    if ('System.IO.FileSystemAclExtensions' -as [type]) {
+        if ($Item -is [IO.DirectoryInfo]) {
+            return [System.IO.FileSystemAclExtensions]::GetAccessControl($Item, $Sections)
+        }
+        return [System.IO.FileSystemAclExtensions]::GetAccessControl([IO.FileInfo]$Item, $Sections)
+    }
+    return $Item.GetAccessControl($Sections)
+}
+
+function Set-ItemAcl {
+    param([IO.FileSystemInfo]$Item, [Security.AccessControl.FileSystemSecurity]$Acl)
+    if ('System.IO.FileSystemAclExtensions' -as [type]) {
+        if ($Item -is [IO.DirectoryInfo]) {
+            [System.IO.FileSystemAclExtensions]::SetAccessControl($Item, [Security.AccessControl.DirectorySecurity]$Acl)
+        } else {
+            [System.IO.FileSystemAclExtensions]::SetAccessControl([IO.FileInfo]$Item, [Security.AccessControl.FileSecurity]$Acl)
+        }
+        return
+    }
+    $Item.SetAccessControl($Acl)
+}
+
+function New-ProtectedDirectory {
+    param([string]$Path, [Security.AccessControl.DirectorySecurity]$Acl)
+    if ('System.IO.FileSystemAclExtensions' -as [type]) {
+        [System.IO.FileSystemAclExtensions]::CreateDirectory($Acl, $Path) | Out-Null
+        return
+    }
+    [IO.Directory]::CreateDirectory($Path, $Acl) | Out-Null
+}
+
 function Assert-ProtectedItem {
     param([string]$Path, [int]$Mask = $WriteMask)
     $Item = Get-Item -LiteralPath $Path -Force
-    $Acl = $Item.GetAccessControl([Security.AccessControl.AccessControlSections]'Access,Owner')
+    $Acl = Get-ItemAcl $Item ([Security.AccessControl.AccessControlSections]'Access,Owner')
     if ($TrustedSids -notcontains $Acl.GetOwner([Security.Principal.SecurityIdentifier]).Value) {
         throw "Untrusted owner on precreated path: $Path"
     }
@@ -125,7 +158,7 @@ function New-ProfileAcl {
 function Set-ProfileTreeAcl {
     param([string]$Path)
     foreach ($Item in Get-PlainTree $Path) {
-        $Item.SetAccessControl((New-ProfileAcl ([bool]$Item.PSIsContainer)))
+        Set-ItemAcl $Item (New-ProfileAcl ([bool]$Item.PSIsContainer))
     }
 }
 
@@ -261,7 +294,7 @@ if (-not $AllowUserWritable) {
         Set-ProfileTreeAcl $SafeRoot
     } else {
         # Atomic protected creation: no interval with ProgramData's inherited user-create ACEs.
-        [IO.Directory]::CreateDirectory($SafeRoot, (New-ProfileAcl $true)) | Out-Null
+        New-ProtectedDirectory $SafeRoot (New-ProfileAcl $true)
         Assert-ProtectedItem $SafeRoot
     }
     $Versions = Join-Path $SafeRoot 'versions'
@@ -273,10 +306,19 @@ if (-not $AllowUserWritable) {
     $SourceEnv = Split-Path -Parent $Python
     $CopyItems = @(Get-ChildItem -LiteralPath $SourceEnv -File | Where-Object { $_.Extension -eq '.dll' })
     $CopyItems += Get-Item -LiteralPath $Python
+    $CondaLibBin = Join-Path $SourceEnv 'Library\bin'
+    if (Test-Path -LiteralPath $CondaLibBin -PathType Container) {
+        $null = Assert-LocalPath $CondaLibBin
+        # Conda places libffi DLLs required by DLLs\_ctypes.pyd under Library\bin.
+        $CopyItems += @(Get-ChildItem -LiteralPath $CondaLibBin -File -Filter '*ffi*.dll')
+    }
     foreach ($Item in $CopyItems) {
         $null = Assert-LocalPath $Item.FullName
         $Name = if ($Item.FullName -eq $Python) { 'python.exe' } else { $Item.Name }
-        Copy-Item -LiteralPath $Item.FullName -Destination (Join-Path $RuntimeDest $Name)
+        $DestFile = Join-Path $RuntimeDest $Name
+        if (-not (Test-Path -LiteralPath $DestFile)) {
+            Copy-Item -LiteralPath $Item.FullName -Destination $DestFile
+        }
     }
     foreach ($Directory in @('DLLs', 'Lib')) {
         $SourceDir = Assert-LocalPath (Join-Path $SourceEnv $Directory)
@@ -296,6 +338,10 @@ if (-not $AllowUserWritable) {
     Copy-Item -LiteralPath $SourceScript -Destination $Script
     Set-ProfileTreeAcl $Working
     $Python = Join-Path $RuntimeDest 'python.exe'
+    & $Python -I -S -c 'import ctypes, pynvml'
+    if ($LASTEXITCODE -ne 0) {
+        throw "Staged isolated Python runtime failed ctypes/pynvml import check (exit $LASTEXITCODE)."
+    }
 } else {
     Write-Warning 'UNSAFE opt-out: SYSTEM will run your mutable interpreter and script. Audit will fail this configuration.'
 }

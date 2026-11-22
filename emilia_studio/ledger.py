@@ -69,8 +69,9 @@ def _benchmark_row(data: dict[str, Any], round_num: int | None) -> dict[str, Any
     hashes = data.get("pixel_hashes") or {}
     peak_rss = data.get("peak_sampled_rss")
     min_ram = data.get("min_available_ram")
+    seed = data.get("seed") if data.get("seed") is not None else receipt.get("seed")
     return {
-        "seed": data.get("seed") or receipt.get("seed"),
+        "seed": seed,
         "mode": "benchmark",
         "guidance": receipt.get("guidance", "baseline"),
         "native_path": receipt.get("native"),
@@ -251,7 +252,7 @@ class ExperimentLedger:
             rows_a = {r["seed"]: dict(r) for r in conn.execute("SELECT * FROM runs WHERE round_num = ?", (round_a,)).fetchall()}
             rows_b = {r["seed"]: dict(r) for r in conn.execute("SELECT * FROM runs WHERE round_num = ?", (round_b,)).fetchall()}
 
-            common_seeds = sorted(set(rows_a.keys()) & set(rows_b.keys()))
+            common_seeds = sorted(s for s in (set(rows_a.keys()) & set(rows_b.keys())) if s is not None)
             exact_matches = 0
             comparisons = []
             for s in common_seeds:

@@ -36,8 +36,7 @@ class WorkflowSpec:
     graph: Dict[str, Any]
     visual_template: Optional[Path] = None
 
-_RAW_WORKFLOW_CACHE: dict[str, str] = {}
-_PARSED_WORKFLOW_CACHE: dict[str, Dict[str, Any]] = {}
+_PARSED_WORKFLOW_CACHE: dict[tuple[str, int, int], Dict[str, Any]] = {}
 
 
 
@@ -76,14 +75,12 @@ class EmiliaWorkflowBuilder:
 
     def _load_api(self, name: str) -> Dict[str, Any]:
         path = self.config.workflows_dir / name
-        key = str(path.resolve())
+        resolved = path.resolve()
+        st = resolved.stat()
+        key = (str(resolved), st.st_mtime_ns, st.st_size)
         parsed = _PARSED_WORKFLOW_CACHE.get(key)
         if parsed is None:
-            raw = _RAW_WORKFLOW_CACHE.get(key)
-            if raw is None:
-                raw = path.read_text(encoding="utf-8")
-                _RAW_WORKFLOW_CACHE[key] = raw
-            parsed = json.loads(raw)
+            parsed = json.loads(resolved.read_text(encoding="utf-8"))
             _PARSED_WORKFLOW_CACHE[key] = parsed
         return _fast_clone_json(parsed)
 
@@ -160,10 +157,10 @@ class EmiliaWorkflowBuilder:
     ) -> Dict[str, Any]:
         graph = self._load_api("emilia_ipadapter_highres_upscale.api.json")
         graph["1"]["inputs"]["image"] = image_path
-        graph["21"]["inputs"]["seed"] = seed + 3
+        graph["21"]["inputs"]["seed"] = (seed + 3) & 0xFFFFFFFFFFFFFFFF
         graph["21"]["inputs"]["denoise"] = face_denoise
         graph["21"]["inputs"]["steps"] = face_steps
-        graph["28"]["inputs"]["seed"] = seed + 4
+        graph["28"]["inputs"]["seed"] = (seed + 4) & 0xFFFFFFFFFFFFFFFF
         graph["28"]["inputs"]["denoise"] = hand_denoise
         graph["28"]["inputs"]["steps"] = hand_steps
         if upscale_factor != 2.0 and "15" in graph and "inputs" in graph["15"]:
@@ -210,6 +207,10 @@ class EmiliaWorkflowBuilder:
         The LoRA never drops below 0.25 here, so zero-LoRA alternate outfits still
         get identity guidance while the eyes are repainted.
         """
+        if lora_name is not None:
+            _model_name("lora_name", lora_name)
+        if lora_strength is not None:
+            _range("lora_strength", lora_strength, -100.0, 100.0)
         graph = self.build_eye_repair(image_path=image_path, seed=seed, upscale=False)
         native_lora = native_graph["10"]["inputs"]
         strength = max(0.25, float(native_lora["strength_model"] if lora_strength is None else lora_strength))
@@ -647,7 +648,7 @@ class EmiliaWorkflowBuilder:
                 "positive": ["61", 0],
                 "negative": ["7", 0],
                 "latent_image": ["52", 0],
-                "seed": seed + 1,
+                "seed": (seed + 1) & 0xFFFFFFFFFFFFFFFF,
                 "steps": hires_steps,
                 "cfg": cfg_hires,
                 "sampler_name": "dpmpp_2m",
@@ -938,7 +939,7 @@ class EmiliaWorkflowBuilder:
             garment_inputs = deepcopy(graph["28"]["inputs"])
             garment_inputs.update(
                 image=refined_image, segs=["70", 0], positive=["71", 0],
-                negative=["72", 0], seed=seed + 5,
+                negative=["72", 0], seed=(seed + 5) & 0xFFFFFFFFFFFFFFFF,
                 denoise=garment_denoise, steps=garment_steps,
             )
             graph["73"] = {

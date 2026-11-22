@@ -83,6 +83,10 @@ class _ExternalWorker:
             self._proc.kill()
         with contextlib.suppress(subprocess.TimeoutExpired):
             self._proc.wait(timeout=5)
+        for stream in (self._proc.stdin, self._proc.stdout, self._proc.stderr):
+            if stream is not None:
+                with contextlib.suppress(OSError):
+                    stream.close()
 
     def _fail(self, message: str) -> InspectionRuntimeError:
         """Stop the worker (no stale answer may reach a later request) and attach its last stderr lines."""
@@ -105,13 +109,13 @@ class _ExternalWorker:
                 raise self._fail(f"CPU YOLO worker communication failed: {exc}") from exc
             if line is None:
                 raise self._fail("CPU YOLO worker exited before answering.")
-        try:
-            response = json.loads(line)
-        except ValueError as exc:
-            raise InspectionRuntimeError("CPU YOLO worker returned invalid JSON.") from exc
-        if not isinstance(response, dict):
-            raise InspectionRuntimeError("CPU YOLO worker returned an invalid response.")
-        return response
+            try:
+                response = json.loads(line)
+            except ValueError as exc:
+                raise self._fail("CPU YOLO worker returned invalid JSON.") from exc
+            if not isinstance(response, dict):
+                raise self._fail("CPU YOLO worker returned an invalid response.")
+            return response
 
 
 _EXTERNAL_WORKERS: dict[str, _ExternalWorker] = {}
@@ -505,8 +509,13 @@ class QualityInspector:
             sy = float(h_orig) / float(small_h)
 
         if local:
-            with _YOLO_LOCK:
-                data: Any = inspection_worker.run_detection(det_img, **request)
+            try:
+                with _YOLO_LOCK:
+                    data: Any = inspection_worker.run_detection(det_img, **request)
+            except InspectionRuntimeError:
+                raise
+            except Exception as exc:
+                raise InspectionRuntimeError(f"CPU YOLO inspection failed: {exc}") from exc
         else:
             if det_img is rgb and image_path is not None and image_path.is_file():
                 request["image_path"] = str(image_path.resolve())
@@ -882,12 +891,13 @@ class QualityInspector:
             result["available"] = True
             l_hip, r_hip = matched_kpts[11], matched_kpts[12]
             l_ankle, r_ankle = matched_kpts[15], matched_kpts[16]
-            hip_y = min(float(l_hip[1]), float(r_hip[1])) / float(h)
+            valid_hip_ys = [float(pt[1]) for pt in (l_hip, r_hip) if float(pt[2]) > 0.0]
+            hip_y = (min(valid_hip_ys) / float(h)) if valid_hip_ys else None
             ankle_y = max(float(l_ankle[1]), float(r_ankle[1])) / float(h)
             max_ankle_conf = max(float(l_ankle[2]), float(r_ankle[2]))
-            leg_span = max(0.0, ankle_y - hip_y)
+            leg_span = max(0.0, ankle_y - hip_y) if hip_y is not None else 0.0
             result["max_ankle_confidence"] = round(max_ankle_conf, 4)
-            result["hip_y_ratio"] = round(hip_y, 4)
+            result["hip_y_ratio"] = round(hip_y, 4) if hip_y is not None else None
             result["ankle_y_ratio"] = round(ankle_y, 4)
             result["leg_span_ratio"] = round(leg_span, 4)
             k = matched_kpts
@@ -914,7 +924,7 @@ class QualityInspector:
                     reasons.append(
                         f"max_ankle_confidence={max_ankle_conf:.3f} below 0.30 (cropped feet or kneeling/seated pose)"
                     )
-                if hip_y > 0.60:
+                if hip_y is not None and hip_y > 0.60:
                     reasons.append(
                         f"hip_y_ratio={hip_y:.3f} exceeds 0.60 (pelvis too low in frame for standing full_body)"
                     )
@@ -943,7 +953,7 @@ class QualityInspector:
                     result["standing_pose"] = False
                     result["reasons"] = reasons
         elif detector_source == "yolo_cpu" and framing == "full_body":
-            result["available"] = True
+            result["available"] = bool(self.pose_model_path.is_file())
             if fh_ratio > 0.165:
                 result["full_body_complete"] = False
                 result["standing_pose"] = False
@@ -1020,93 +1030,26 @@ class QualityInspector:
                 reasons=["Image file does not exist"],
             )
 
+        if self.use_yolo and require_full_body_pose and framing == "full_body" and not self.pose_model_path.is_file():
+            raise InspectionRuntimeError(f"Required YOLO pose model is missing: {self.pose_model_path}")
+
+        im: Image.Image | None = None
         try:
-            with Image.open(path) as im:
-                im.load()
-                width, height = im.size
-                if im.mode == "RGB":
-                    rgb_im = im
-                    arr = np.asarray(rgb_im)
-                    pixel_sha256 = hashlib.sha256(memoryview(arr)).hexdigest()
-                else:
-                    pixel_sha256 = hashlib.sha256(im.tobytes()).hexdigest()
-                    rgb_im = im.convert("RGB")
-                    arr = np.asarray(rgb_im)
-
-                dimensions_match = True
-                reasons: list[str] = []
-                if expected_size is not None and (width, height) != tuple(expected_size):
-                    dimensions_match = False
-                    reasons.append(
-                        f"Dimensions {(width, height)} do not match expected {expected_size}"
-                    )
-
-                if arr.dtype == np.uint8 and arr.size > 0:
-                    non_nan = True
-                    counts = np.asarray(rgb_im.histogram(), dtype=np.float64).reshape(-1, 256).sum(axis=0)
-                    vals = np.arange(256, dtype=np.float64)
-                    n_vals = float(arr.size)
-                    mean_rgb = float(np.dot(counts, vals) / n_vals)
-                    std_rgb = float(np.sqrt(np.dot(counts, (vals - mean_rgb) ** 2) / n_vals))
-                    nz = np.flatnonzero(counts)
-                    min_rgb = int(nz[0])
-                    max_rgb = int(nz[-1])
-                else:
-                    if np.issubdtype(arr.dtype, np.integer):
-                        non_nan = True
-                    else:
-                        non_nan = bool(np.isfinite(arr).all())
-                    mean_rgb = float(arr.mean(dtype=np.float64)) if (non_nan and arr.size > 0) else 0.0
-                    std_rgb = float(arr.std(dtype=np.float64)) if (non_nan and arr.size > 0) else 0.0
-                    min_rgb = int(arr.min()) if arr.size > 0 else 0
-                    max_rgb = int(arr.max()) if arr.size > 0 else 0
-                dynamic_range = float(max_rgb - min_rgb)
-                non_blank = bool(non_nan and std_rgb > 1.0 and dynamic_range >= 10.0)
-
-                if not non_nan:
-                    reasons.append("Image contains NaN or infinite pixel values")
-                if not non_blank:
-                    reasons.append(
-                        f"Image appears blank or flat (std={std_rgb:.2f}, range={dynamic_range:.1f})"
-                    )
-
-                detections = self.detect_anatomy(
-                    rgb_im, run_pose=True, image_path=path
-                )
-                face_boxes, face_confs = detections.face_boxes, detections.face_confidences
-                hand_boxes, hand_confs = detections.hand_boxes, detections.hand_confidences
-                detector_source = detections.source
-                face_count = len(face_boxes)
-                hand_count = len(hand_boxes)
-                multiple_subjects = bool(solo_prompt and face_count > 1)
-
-                primary_face = face_boxes[0] if face_boxes else None
-                iris = self.analyze_iris_color(
-                    rgb_im,
-                    face_bbox=primary_face,
-                    rgb_array=arr,
-                    pose_keypoints=detections.pose_keypoints,
-                    pose_boxes=detections.pose_boxes,
-                    _detect_if_missing=False,
-                )
-                iris["anatomy_detector_source"] = detector_source
-                try:
-                    garment = self.analyze_garment_color(
-                        rgb_im, face_boxes if detector_source == "yolo_cpu" else [], rgb_array=arr,
-                    )
-                except Exception as exc:
-                    # Optional color diagnostics must never invalidate decoded output.
-                    garment = {
-                        "available": False, "advisory_only": True,
-                        "method": "face_relative_geometry_color_prior",
-                        "reason": f"Color diagnostics unavailable: {type(exc).__name__}",
-                        "brooch": {"available": False}, "garment": {"available": False},
-                    }
-                pose_info = self.analyze_pose_completeness(rgb_im, detections, framing=framing)
-                corner_info = self.analyze_corner_artifacts(arr)
-        except InspectionRuntimeError:
-            raise
+            im = Image.open(path)
+            im.load()
+            width, height = im.size
+            if im.mode == "RGB":
+                rgb_im = im
+                arr = np.asarray(rgb_im)
+                pixel_sha256 = hashlib.sha256(memoryview(arr)).hexdigest()
+            else:
+                pixel_sha256 = hashlib.sha256(im.tobytes()).hexdigest()
+                rgb_im = im.convert("RGB")
+                arr = np.asarray(rgb_im)
         except Exception as exc:
+            if im is not None:
+                with contextlib.suppress(Exception):
+                    im.close()
             return InspectionReport(
                 image_path=str(path),
                 exists=True,
@@ -1118,6 +1061,83 @@ class QualityInspector:
                 effective_action="accept" if strict_seed_lock else "reject_seed",
                 reasons=[f"Failed to decode PNG: {exc}"],
             )
+
+        try:
+            dimensions_match = True
+            reasons: list[str] = []
+            if expected_size is not None and (width, height) != tuple(expected_size):
+                dimensions_match = False
+                reasons.append(
+                    f"Dimensions {(width, height)} do not match expected {expected_size}"
+                )
+
+            if arr.dtype == np.uint8 and arr.size > 0:
+                non_nan = True
+                counts = np.asarray(rgb_im.histogram(), dtype=np.float64).reshape(-1, 256).sum(axis=0)
+                vals = np.arange(256, dtype=np.float64)
+                n_vals = float(arr.size)
+                mean_rgb = float(np.dot(counts, vals) / n_vals)
+                std_rgb = float(np.sqrt(np.dot(counts, (vals - mean_rgb) ** 2) / n_vals))
+                nz = np.flatnonzero(counts)
+                min_rgb = int(nz[0])
+                max_rgb = int(nz[-1])
+            else:
+                if np.issubdtype(arr.dtype, np.integer):
+                    non_nan = True
+                else:
+                    non_nan = bool(np.isfinite(arr).all())
+                mean_rgb = float(arr.mean(dtype=np.float64)) if (non_nan and arr.size > 0) else 0.0
+                std_rgb = float(arr.std(dtype=np.float64)) if (non_nan and arr.size > 0) else 0.0
+                min_rgb = int(arr.min()) if arr.size > 0 else 0
+                max_rgb = int(arr.max()) if arr.size > 0 else 0
+            dynamic_range = float(max_rgb - min_rgb)
+            non_blank = bool(non_nan and std_rgb > 1.0 and dynamic_range >= 10.0)
+
+            if not non_nan:
+                reasons.append("Image contains NaN or infinite pixel values")
+            if not non_blank:
+                reasons.append(
+                    f"Image appears blank or flat (std={std_rgb:.2f}, range={dynamic_range:.1f})"
+                )
+
+            detections = self.detect_anatomy(
+                rgb_im, run_pose=True, image_path=path
+            )
+            face_boxes, face_confs = detections.face_boxes, detections.face_confidences
+            hand_boxes, hand_confs = detections.hand_boxes, detections.hand_confidences
+            detector_source = detections.source
+            face_count = len(face_boxes)
+            hand_count = len(hand_boxes)
+            multiple_subjects = bool(solo_prompt and face_count > 1)
+
+            primary_face = face_boxes[0] if face_boxes else None
+            iris = self.analyze_iris_color(
+                rgb_im,
+                face_bbox=primary_face,
+                rgb_array=arr,
+                pose_keypoints=detections.pose_keypoints,
+                pose_boxes=detections.pose_boxes,
+                _detect_if_missing=False,
+            )
+            iris["anatomy_detector_source"] = detector_source
+            try:
+                garment = self.analyze_garment_color(
+                    rgb_im, face_boxes if detector_source == "yolo_cpu" else [], rgb_array=arr,
+                )
+            except Exception as exc:
+                # Optional color diagnostics must never invalidate decoded output.
+                garment = {
+                    "available": False, "advisory_only": True,
+                    "method": "face_relative_geometry_color_prior",
+                    "reason": f"Color diagnostics unavailable: {type(exc).__name__}",
+                    "brooch": {"available": False}, "garment": {"available": False},
+                }
+            pose_info = self.analyze_pose_completeness(rgb_im, detections, framing=framing)
+            corner_info = self.analyze_corner_artifacts(arr)
+        finally:
+            if im is not None:
+                with contextlib.suppress(Exception):
+                    im.close()
         if face_count == 0:
             recommended_action = "reject_seed"
             reasons.append("No face detected in candidate image")

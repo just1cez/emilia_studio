@@ -53,11 +53,11 @@ def _add_pipeline_args(parser: argparse.ArgumentParser, *, default_profile: str,
         default=default_profile,
         help="quality: bit-exact 1152x1728 baseline; ultra: multi-scale 832->1152->2304 Hires.fix + canonical outfit lock",
     )
-    # `idea` always routes an outfit; elsewhere an unset flag means "no creative routing".
-    parser.add_argument("--outfit", choices=tuple(EMILIA_OUTFIT_MODES), default="royal" if idea else None, help="Emilia outfit mode (ultra profile)")
-    parser.add_argument("--angle", choices=tuple(EMILIA_ANGLE_SPECS), default="auto" if idea else None, help="Camera angle & pose reference routing (ultra profile)")
+    # Creative options default to None so quality profile rejects explicit ultra flags uniformly.
+    parser.add_argument("--outfit", choices=tuple(EMILIA_OUTFIT_MODES), default=None, help="Emilia outfit mode (ultra profile)")
+    parser.add_argument("--angle", choices=tuple(EMILIA_ANGLE_SPECS), default=None, help="Camera angle & pose reference routing (ultra profile)")
     parser.add_argument("--puck", action="store_true", help="Include Puck fairy cat companion (ultra profile)")
-    parser.add_argument("--magic", choices=tuple(EMILIA_MAGIC_TAGS), default="none" if idea else None, help="Ice magic effect (ultra profile)")
+    parser.add_argument("--magic", choices=tuple(EMILIA_MAGIC_TAGS), default=None, help="Ice magic effect (ultra profile)")
     parser.add_argument("--auto-gate", action="store_true", help="Enable automatic seed retry, full-body pose gate, and eye-repair gate")
     parser.add_argument("--max-retries", type=int, default=2, help="Max seed retries when auto-gate rejects anatomy")
 
@@ -150,8 +150,11 @@ def _apply_ultra_tuning(
 
 def _pipeline_kwargs(args: argparse.Namespace, config: StudioConfig) -> dict[str, Any]:
     """Engine options that depend only on the shared pipeline flags."""
+    port = args.port if args.port is not None else config.quality_port
+    if not 1 <= port <= 65535:
+        raise ValueError("--port must be an integer between 1 and 65535")
     return {
-        "port": args.port if args.port is not None else config.quality_port,
+        "port": port,
         "pag": args.pag,
         "profile": args.profile,
         "strict_seed_lock": not args.auto_gate,
@@ -226,7 +229,7 @@ def build_parser() -> argparse.ArgumentParser:
         "batch",
         help="Render multiple seeds using same-stage process reuse while keeping Stage 1 and Stage 2 isolated.",
     )
-    p_batch.add_argument("--seeds", type=int, nargs="*", default=None, help="Explicit list of seeds")
+    p_batch.add_argument("--seeds", type=int, nargs="+", default=None, help="Explicit list of seeds")
     p_batch.add_argument("--seed", type=int, default=None, help=f"Starting seed when --count is used (defaults to preset seed or {DEFAULT_SEED})")
     p_batch.add_argument("--count", type=int, default=2, help="Number of seeds to generate when --seeds is omitted")
     _add_scene_args(p_batch)
@@ -323,6 +326,14 @@ def _cmd_batch(args: argparse.Namespace, config: StudioConfig) -> int:
 def _cmd_idea(args: argparse.Namespace, config: StudioConfig) -> int:
     pipeline = _pipeline_kwargs(args, config)
     idea_text = " ".join(args.idea).strip()
+    if not idea_text:
+        raise ValueError("Idea text must not be empty")
+    creative = args.puck or any(getattr(args, attr) is not None for attr in _CREATIVE_ARGS)
+    if creative and args.profile != "ultra":
+        raise ValueError("Creative and ultra tuning flags (--outfit, --angle, --puck, --magic, --garment-region, etc.) require --profile ultra")
+    outfit = args.outfit or "royal"
+    angle = args.angle or "auto"
+    magic = args.magic or "none"
     compiler = OllamaPromptCompiler(config=config)
     compiler.ensure_ollama()
     is_ultra = args.profile == "ultra"
@@ -331,14 +342,15 @@ def _cmd_idea(args: argparse.Namespace, config: StudioConfig) -> int:
         style=args.style,
         highres_quality_mode=True,
         ultra_mode=is_ultra,
-        outfit=args.outfit,
+        outfit=outfit,
         companion="puck" if args.puck else "none",
-        magic=args.magic,
-        angle=args.angle,
+        magic=magic,
+        angle=angle,
     )
     conditioning = "text-only preview" if args.preview else f"IPAdapter={spec.recommended_ipadapter_weight}"
+    meta = f"outfit={outfit}, angle={angle}, " if is_ultra else ""
     print(
-        f"编译完成 [{args.profile}/{spec.framing}, outfit={args.outfit}, angle={args.angle}, {conditioning}]:\n{spec.positive_prompt}",
+        f"编译完成 [{args.profile}/{spec.framing}, {meta}{conditioning}]:\n{spec.positive_prompt}",
         flush=True,
     )
     ipadapter_weight = None if args.preview else spec.recommended_ipadapter_weight
@@ -346,10 +358,19 @@ def _cmd_idea(args: argparse.Namespace, config: StudioConfig) -> int:
     finish_options: dict[str, Any] | None = None
     if is_ultra:
         if args.preview:
-            native_options = {"framing": spec.framing, "camera_angle": args.angle}
-        else:
-            outfit_weight, native_options, finish_options = outfit_stage_options(args.outfit, spec.framing, args.angle)
+            native_options = {"framing": spec.framing, "camera_angle": angle}
+        elif spec.is_emilia:
+            outfit_weight, native_options, finish_options = outfit_stage_options(outfit, spec.framing, angle)
             ipadapter_weight = max(ipadapter_weight, outfit_weight)
+        else:
+            native_options = {
+                "framing": spec.framing,
+                "camera_angle": angle,
+                "lora_strength_base": 0.0,
+                "skirt_ipadapter_weight": 0.0,
+            }
+            finish_options = {"lora_strength": 0.0}
+            ipadapter_weight = 0.0
         native_options, finish_options = _apply_ultra_tuning(args, native_options, finish_options)
     engine = EmiliaRenderEngine(config=config)
     asyncio.run(
@@ -388,6 +409,8 @@ def _cmd_ledger(args: argparse.Namespace, config: StudioConfig) -> int:
         ledger.ingest_existing_artifacts()
         print(json.dumps(ledger.get_summary_stats(), indent=2))
     elif args.action == "recent":
+        if args.limit < 1:
+            raise ValueError("--limit must be positive")
         print(json.dumps(ledger.list_recent_runs(limit=args.limit), indent=2, ensure_ascii=False))
     elif args.action == "compare":
         ledger.ingest_existing_artifacts()
@@ -408,6 +431,9 @@ def _cmd_workflows(args: argparse.Namespace, config: StudioConfig) -> int:
         "builder_parity": parity,
     }
     if args.sync_visual and config.visual_workflows_dir.is_dir():
+        bundled_visual = config.resources_dir / "workflows" / "visual"
+        if getattr(sys, "frozen", False) and config.visual_workflows_dir.resolve() == bundled_visual.resolve():
+            raise ValueError("--sync-visual requires a writable --visual-workflows-dir or EMILIA_VISUAL_WORKFLOWS_DIR outside bundled resources")
         visual_pairs = [
             (builder.build_highres_native(seed=DEFAULT_SEED, pag=False), "Emilia_08_HighRes_Quality_Base_8GB.json"),
             (builder.build_highres_finish("emilia_quality_selected_native.png", seed=DEFAULT_SEED, pag=False), "Emilia_09_Quality_Finish_2x.json"),
@@ -524,7 +550,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        config = load_config(args.config)
+        if args.command == "config" and args.action == "path":
+            config = None
+        elif args.command == "config" and args.action == "init":
+            try:
+                config = load_config(args.config)
+            except FileNotFoundError:
+                config = StudioConfig()
+        else:
+            config = load_config(args.config)
         result = handle(args, config, main, parser)
         if result is not None:
             return result

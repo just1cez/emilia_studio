@@ -80,6 +80,7 @@
       "size_bytes": 17938799,
       "stage": "finish",
       "download_url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
+      "sha256": "f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da",
       "source_url": "https://github.com/xinntao/Real-ESRGAN/releases/tag/v0.2.2.4",
       "purpose": "4x anime upscaler (followed by 0.5x Lanczos downsample to 2304x3456)"
     },
@@ -90,6 +91,7 @@
       "size_bytes": 375042383,
       "stage": "finish",
       "download_url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+      "sha256": "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912",
       "source_url": "https://github.com/facebookresearch/segment-anything#model-checkpoints",
       "purpose": "Segment Anything mask refinement for hand detailing"
     },
@@ -181,6 +183,12 @@
       "relative_path": "input/official_face_center_clean.png",
       "size_bytes": 124058,
       "purpose": "Canonical IPAdapter reference image for Stage 1 native generation"
+    },
+    {
+      "name": "Official Emilia Three-Quarter Face Reference",
+      "relative_path": "input/emilia_official_face_3q.png",
+      "size_bytes": 163721,
+      "purpose": "Official three-quarter face reference for ultra paired/angled IPAdapter conditioning"
     },
     {
       "name": "Official Emilia Skirt & Bodice Reference Sheet",

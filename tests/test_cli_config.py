@@ -171,3 +171,36 @@ def test_source_checkout_keeps_legacy_workspace(monkeypatch: pytest.MonkeyPatch,
     assert loaded.resources_dir == checkout
     assert loaded.workflows_dir == checkout / "workflows" / "api"
     assert loaded.ledger_db_path == checkout / "workflows" / "studio_ledger.sqlite3"
+
+
+def test_empty_env_config_and_explicit_new_config_init_and_set_hygiene(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys) -> None:
+    from emilia_studio.cli import main
+
+    monkeypatch.setenv("EMILIA_CONFIG_TOML", "")
+    assert configuration.load_config().comfy_port == 8188
+
+    new_cfg = tmp_path / "custom" / "emilia.toml"
+    assert main(["--config", str(new_cfg), "config", "path"]) == 0
+    assert str(new_cfg.resolve()) in capsys.readouterr().out
+
+    rel_app = tmp_path / "rel_app"
+    rel_app.mkdir()
+    monkeypatch.chdir(tmp_path)
+    assert main(["--config", str(new_cfg), "config", "init", "--root-dir", str(tmp_path), "--app-dir", "./rel_app"]) == 0
+    capsys.readouterr()
+    loaded = configuration.load_config(new_cfg)
+    assert loaded.app_dir == rel_app.resolve()
+
+    # Transient env overrides must not be silently baked into config.toml on `config set`.
+    monkeypatch.setenv("EMILIA_COMFY_PORT", "9999")
+    assert main(["--config", str(new_cfg), "config", "set", "quality_port", "8210"]) == 0
+    parsed = tomllib.loads(new_cfg.read_text(encoding="utf-8"))
+    assert parsed["services"]["quality_port"] == 8210
+    assert parsed["services"]["comfy_port"] == 8188
+
+    # Frozen `config set conda_python` must still reject self-executable recursion.
+    fake_exe = tmp_path / "emilia.exe"
+    fake_exe.touch()
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_exe))
+    assert main(["--config", str(new_cfg), "config", "set", "conda_python", str(fake_exe)]) == 1

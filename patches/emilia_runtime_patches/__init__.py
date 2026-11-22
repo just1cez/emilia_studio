@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import cv2
 import torch
 from PIL import Image
 
@@ -38,6 +37,23 @@ SEG = namedtuple(
 )
 
 
+def _ipadapter_excluded_by_whitelist() -> bool:
+    """Return True when ComfyUI was started with a custom-node whitelist excluding IPAdapter."""
+    argv = sys.argv
+    if "--disable-all-custom-nodes" not in argv:
+        return False
+    try:
+        idx = argv.index("--whitelist-custom-nodes")
+    except ValueError:
+        return True
+    whitelisted: set[str] = set()
+    for arg in argv[idx + 1 :]:
+        if arg.startswith("-"):
+            break
+        whitelisted.add(arg.lower())
+    return "comfyui-ipadapter-plus" not in whitelisted
+
+
 def _resolve_cross_attention_patch_module() -> Any | None:
     """Locate CrossAttentionPatch from comfyui-ipadapter-plus despite hyphenated package directory."""
     for mod_name, mod in list(sys.modules.items()):
@@ -46,6 +62,8 @@ def _resolve_cross_attention_patch_module() -> Any | None:
         ):
             if hasattr(mod, "ipadapter_attention") and hasattr(mod, "Attn2Replace"):
                 return mod
+    if _ipadapter_excluded_by_whitelist():
+        return None
     try:
         custom_nodes_dir = Path(folder_paths.__file__).resolve().parent / "custom_nodes"
         candidate = custom_nodes_dir / "comfyui-ipadapter-plus" / "CrossAttentionPatch.py"
@@ -382,6 +400,8 @@ class EmiliaRelativeGarmentSEGS:
         if not bool(torch.isfinite(mask).all()):
             return empty
         # Count before resizing as well: downsampling must not merge faces.
+        import cv2
+
         binary = (mask.numpy() > 0.1).astype(np.uint8)
         count, _, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
         if count != 2:
@@ -465,7 +485,11 @@ NODE_DISPLAY_NAME_MAPPINGS: dict[str, str] = {
     "EmiliaRelativeGarmentSEGS": "Emilia Garment Geometry Prior (not segmentation)",
     "EmiliaCheckpointConditioning": "Emilia Checkpoint CLIP/VAE Only",
 }
-_inactive = sorted(name for name, active in apply_all_patches().items() if not active)
+_inactive = sorted(
+    name
+    for name, active in apply_all_patches().items()
+    if not active and not (name == "ipadapter_attention_copy_removal" and _ipadapter_excluded_by_whitelist())
+)
 if _inactive:
     logging.warning(
         "Emilia runtime patches inactive (source patch not applied or source unreadable): %s",

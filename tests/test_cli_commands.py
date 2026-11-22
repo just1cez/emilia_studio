@@ -229,3 +229,24 @@ def test_fast_flag_preset_routes_to_quality_and_ultra(monkeypatch, capsys):
     assert captured['fp16_upscaler'] is True
     assert captured['fp16_vae'] is True
     assert captured['fast_tiled_vae'] is True
+
+
+def test_cli_validation_guards_and_bridge_flag_boundaries(tmp_path, monkeypatch, capsys):
+    import ollama_comfyui_bridge as bridge
+
+    assert main(['idea', '   ']) == 1
+    assert main(['idea', '--profile', 'quality', '--outfit', 'cloak', '爱蜜莉雅微笑']) == 1
+    assert 'require --profile ultra' in capsys.readouterr().err
+    assert main(['render', '--port', '0']) == 1
+    assert main(['ledger', 'recent', '--limit', '0']) == 1
+    assert main(['clean', '--older-than-hours', 'nan']) == 1
+
+    args_dash = bridge.parse_args(['--mode', 'ultra', '--', '-dash-idea'])
+    cmd = bridge._idea_command(args_dash, '-dash-idea')
+    assert cmd[-2:] == ['--', '-dash-idea']
+
+    import pytest
+    with pytest.raises(bridge.BridgeError, match='--width'):
+        bridge.main(['--mode', 'ultra', '--width', '832', '爱蜜莉雅'])
+    with pytest.raises(bridge.BridgeError, match='--mode fast'):
+        bridge.main(['--mode', 'fast', '--pag', '爱蜜莉雅'])

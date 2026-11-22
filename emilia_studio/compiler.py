@@ -193,7 +193,7 @@ class OllamaPromptCompiler:
             )
             creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             with log_path.open("a", encoding="utf-8") as log:
-                subprocess.Popen(
+                proc = subprocess.Popen(
                     [str(executable), "serve"],
                     cwd=str(executable.parent),
                     env=child_env,
@@ -205,6 +205,8 @@ class OllamaPromptCompiler:
                 )
             deadline = time.monotonic() + 90
             while time.monotonic() < deadline:
+                if proc.poll() is not None:
+                    raise BridgeError(f"Ollama 进程提前退出（exit={proc.returncode}）；请查看 {log_path}")
                 time.sleep(0.25)
                 tags = self.probe_ollama()
                 if tags is not None:
@@ -377,20 +379,27 @@ class OllamaPromptCompiler:
                         cache_file.parent.mkdir(parents=True, exist_ok=True)
                         existing_disk: dict[str, str] = {}
                         if cache_file.is_file():
-                            loaded = json.loads(cache_file.read_text(encoding="utf-8"))
-                            if isinstance(loaded, dict):
-                                existing_disk = {str(k): str(v) for k, v in loaded.items() if isinstance(v, str)}
+                            try:
+                                loaded = json.loads(cache_file.read_text(encoding="utf-8"))
+                                if isinstance(loaded, dict):
+                                    existing_disk = {str(k): str(v) for k, v in loaded.items() if isinstance(v, str)}
+                            except (OSError, ValueError):
+                                pass
                         existing_disk[cache_key] = raw_tags
-                        cache_file.write_text(
+                        tmp_cache = cache_file.with_name(f"{cache_file.name}.{os.getpid()}.tmp")
+                        tmp_cache.write_text(
                             json.dumps(existing_disk, ensure_ascii=False, indent=2),
                             encoding="utf-8",
                         )
+                        os.replace(tmp_cache, cache_file)
                     except OSError:
                         pass
         emilia_flag = is_emilia_request(idea, self.config.emilia_aliases)
         framing, ipa_weight = self.infer_composition_hints(
             idea, raw_tags, ultra_mode=(highres_quality_mode and ultra_mode), outfit=outfit
         )
+        if not emilia_flag:
+            ipa_weight = 0.0
 
         if emilia_flag:
             if highres_quality_mode and ultra_mode:

@@ -1,18 +1,43 @@
 # Shared by the root launchers. Resolution order mirrors emilia_studio.config.load_config:
-# EMILIA_CONDA_PYTHON, then conda_python from the user config, then from the checkout
-# config.toml, then a local .\env interpreter.
+# EMILIA_CONDA_PYTHON, then conda_python from EMILIA_CONFIG_TOML, then user config
+# (EMILIA_CONFIG_DIR or %APPDATA%\EmiliaStudio\config.toml), then checkout config.toml,
+# then a local .\env interpreter. Relative paths in TOML resolve beside that TOML file.
 function Resolve-EmiliaPython {
     param([Parameter(Mandatory)][string]$Root)
 
-    $Candidates = @($env:EMILIA_CONDA_PYTHON)
+    $Candidates = @()
+    if ($env:EMILIA_CONDA_PYTHON) {
+        $Candidates += $env:EMILIA_CONDA_PYTHON
+    }
     $Configs = @()
-    if ($env:APPDATA) { $Configs += Join-Path $env:APPDATA 'EmiliaStudio\config.toml' }
-    $Configs += Join-Path $Root 'config.toml'
+    if ($env:EMILIA_CONFIG_TOML -and $env:EMILIA_CONFIG_TOML.Trim()) {
+        $Configs += $env:EMILIA_CONFIG_TOML.Trim()
+    } else {
+        if ($env:EMILIA_CONFIG_DIR -and $env:EMILIA_CONFIG_DIR.Trim()) {
+            $Configs += Join-Path $env:EMILIA_CONFIG_DIR.Trim() 'config.toml'
+        } elseif ($env:APPDATA) {
+            $Configs += Join-Path $env:APPDATA 'EmiliaStudio\config.toml'
+        }
+        $Configs += Join-Path $Root 'config.toml'
+    }
     foreach ($Config in $Configs) {
         if (Test-Path -LiteralPath $Config -PathType Leaf) {
-            $Match = Select-String -LiteralPath $Config -Pattern '^\s*conda_python\s*=\s*"([^"]+)"' |
+            $Match = Select-String -LiteralPath $Config -Pattern "^\s*conda_python\s*=\s*(?:`"((?:[^`"\\]|\\.)*)`"|'([^']*)')" |
                 Select-Object -First 1
-            if ($Match) { $Candidates += $Match.Matches[0].Groups[1].Value }
+            if ($Match) {
+                $Raw = if ($Match.Matches[0].Groups[1].Success) {
+                    $Match.Matches[0].Groups[1].Value -replace '\\\\', '\' -replace '\\"', '"'
+                } else {
+                    $Match.Matches[0].Groups[2].Value
+                }
+                if ($Raw) {
+                    if (-not [IO.Path]::IsPathRooted($Raw)) {
+                        $ConfigDir = Split-Path -Parent ([IO.Path]::GetFullPath($Config))
+                        $Raw = [IO.Path]::GetFullPath((Join-Path $ConfigDir $Raw))
+                    }
+                    $Candidates += $Raw
+                }
+            }
         }
     }
     $Candidates += Join-Path $Root 'env\python.exe'

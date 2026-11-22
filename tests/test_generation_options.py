@@ -1,4 +1,5 @@
 """Creative control boundaries rather than snapshots of incidental wording."""
+import json
 import pytest
 from emilia_studio.compiler import OllamaPromptCompiler
 from emilia_studio.config import load_config
@@ -139,3 +140,30 @@ def test_posture_bans_follow_the_requested_scene():
     default = set(builder.build_ultra_native()['7']['inputs']['text'].split(', '))
     assert 'sitting' not in custom and 'purple border' in custom
     assert {'sitting', 'kneeling', 'lying', 'on back'} <= default
+
+
+def test_corrupt_ollama_cache_recovers_and_non_emilia_disables_ipa_and_url_scheme_guard(tmp_path, monkeypatch):
+    from emilia_studio import compiler as compiler_mod
+    from emilia_studio.tui import download_file_with_progress
+    import gpu_profile
+
+    cfg = load_config()
+    cfg.temp_dir = tmp_path
+    cache_file = tmp_path / 'ollama_prompt_cache.json'
+    cache_file.write_text('{truncated', encoding='utf-8')
+    monkeypatch.setattr(
+        compiler_mod, 'http_json',
+        lambda *a, **kw: {'message': {'content': 'landscape, snow mountains, clear sky'}},
+    )
+    comp = OllamaPromptCompiler(cfg)
+    spec = comp.compile_idea('雪山风景画', use_cache=True)
+    assert spec.is_emilia is False
+    assert spec.recommended_ipadapter_weight == 0.0
+    assert json.loads(cache_file.read_text(encoding='utf-8'))
+
+    with pytest.raises(ValueError, match='scheme'):
+        download_file_with_progress('file:///etc/passwd', tmp_path / 'x.bin')
+
+    monkeypatch.setattr(gpu_profile.pynvml, 'nvmlDeviceGetName', lambda h: b'NVIDIA GeForce RTX 4090')
+    with pytest.raises(RuntimeError, match='CMP 40HX'):
+        gpu_profile._apply(object(), object())

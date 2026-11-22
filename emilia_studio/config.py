@@ -137,12 +137,20 @@ _POSTURE_NEGATIVES = frozenset({"sitting", "kneeling", "lying", "on back"})
 _UPRIGHT_CUES = ("standing", "walking")
 
 
+def requests_upright_pose(scene_and_pose_tags: str | None) -> bool:
+    """Whether the prompt/scene requests a standing or walking figure.
+
+    ``None`` means the built-in standing scene.
+    """
+    return scene_and_pose_tags is None or any(cue in scene_and_pose_tags.casefold() for cue in _UPRIGHT_CUES)
+
+
 def drop_unrequested_posture_negatives(negative: str, scene_and_pose_tags: str | None) -> str:
     """Remove the upright-only posture bans unless the scene requests standing or walking.
 
     ``None`` means the built-in standing scene: the bans stay.
     """
-    if scene_and_pose_tags is None or any(cue in scene_and_pose_tags.casefold() for cue in _UPRIGHT_CUES):
+    if requests_upright_pose(scene_and_pose_tags):
         return negative
     return ", ".join(t.strip() for t in negative.split(",") if t.strip() and t.strip().casefold() not in _POSTURE_NEGATIVES)
 
@@ -857,7 +865,7 @@ class StudioConfig:
             value = getattr(self, key)
             resolved = shutil.which(str(value)) if value is not None else None
             if resolved or (value is not None and value.is_absolute()):
-                paths[key] = Path(resolved) if resolved else value
+                paths[key] = Path(resolved).expanduser().resolve() if resolved else value
         lines = [
             "# Emilia Studio configuration; relative paths resolve beside this file.",
             "[paths]",
@@ -899,13 +907,17 @@ def _flatten_toml(data: dict[str, Any]) -> dict[str, Any]:
     return flat
 
 
-def load_config(config_path: str | Path | None = None) -> StudioConfig:
+def load_config(config_path: str | Path | None = None, *, include_env: bool = True) -> StudioConfig:
     """Load explicit/env config, then user config, then this checkout's config.
 
-    Environment values override TOML values. Relative TOML paths are anchored
-    to the selected file, not the process's current working directory.
+    Environment values override TOML values unless ``include_env`` is False.
+    Relative TOML paths are anchored to the selected file, not the process's
+    current working directory.
     """
-    selected = config_path if config_path is not None else os.environ.get("EMILIA_CONFIG_TOML")
+    env_cfg = os.environ.get("EMILIA_CONFIG_TOML") if include_env else None
+    if isinstance(env_cfg, str) and not env_cfg.strip():
+        env_cfg = None
+    selected = config_path if config_path is not None else env_cfg
     if selected is None:
         user_config = get_user_config_dir() / "config.toml"
         source = get_source_checkout_dir()
@@ -955,17 +967,18 @@ def load_config(config_path: str | Path | None = None) -> StudioConfig:
                 value = cfg_file.parent / value
             value = value.resolve()
         kwargs[key] = value
-    int_fields = {"comfy_port", "quality_port"}
-    float_fields = {"stage_timeout_s", "stall_timeout_s"}
-    for key, variable in env_map.items():
-        value = os.environ.get(variable)
-        if value:
-            if key in path_fields:
-                kwargs[key] = Path(value).expanduser()
-            elif key in int_fields:
-                kwargs[key] = int(value)
-            elif key in float_fields:
-                kwargs[key] = float(value)
-            else:
-                kwargs[key] = value
+    if include_env:
+        int_fields = {"comfy_port", "quality_port"}
+        float_fields = {"stage_timeout_s", "stall_timeout_s"}
+        for key, variable in env_map.items():
+            value = os.environ.get(variable)
+            if value:
+                if key in path_fields:
+                    kwargs[key] = Path(value).expanduser()
+                elif key in int_fields:
+                    kwargs[key] = int(value)
+                elif key in float_fields:
+                    kwargs[key] = float(value)
+                else:
+                    kwargs[key] = value
     return StudioConfig(**kwargs)

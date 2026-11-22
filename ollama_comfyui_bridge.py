@@ -242,10 +242,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="anime",
         help="生成风格提示，默认为日系动画原画风格",
     )
-    parser.add_argument("--outfit", choices=tuple(EMILIA_OUTFIT_MODES), default="royal", help="爱蜜莉雅服装模式")
-    parser.add_argument("--angle", choices=tuple(EMILIA_ANGLE_SPECS), default="auto", help="镜头视角与姿态参考路由")
-    parser.add_argument("--puck", action="store_true", help="加入帕克猫精灵同行")
-    parser.add_argument("--magic", choices=tuple(EMILIA_MAGIC_TAGS), default="none", help="冰魔法粒子光效")
+    parser.add_argument("--outfit", choices=tuple(EMILIA_OUTFIT_MODES), default=None, help="爱蜜莉雅服装模式 (ultra)")
+    parser.add_argument("--angle", choices=tuple(EMILIA_ANGLE_SPECS), default=None, help="镜头视角与姿态参考路由 (ultra)")
+    parser.add_argument("--puck", action="store_true", help="加入帕克猫精灵同行 (ultra)")
+    parser.add_argument("--magic", choices=tuple(EMILIA_MAGIC_TAGS), default=None, help="冰魔法粒子光效 (ultra)")
     parser.add_argument("--fp16-upscaler", action="store_true", help="启用 FP16 TensorCore 极速超分")
     parser.add_argument("--fp16-vae", action="store_true", help="使用 sdxl-vae-fp16-fix 半精度 VAE")
     parser.add_argument("--fast-tiled-vae", action="store_true", help="使用单轮羽化分块 VAE 解码/编码")
@@ -255,10 +255,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def _idea_command(args: argparse.Namespace, idea: str) -> list[str]:
     """The equivalent ``emilia idea`` invocation for the two-stage modes."""
-    command = [
-        "idea", idea, "--profile", args.mode, "--style", args.style,
-        "--outfit", args.outfit, "--angle", args.angle, "--magic", args.magic,
-    ]
+    command = ["idea", "--profile", args.mode, "--style", args.style]
+    if args.mode == "ultra":
+        command += [
+            "--outfit", args.outfit or "royal",
+            "--angle", args.angle or "auto",
+            "--magic", args.magic or "none",
+        ]
+    else:
+        for option, value in (("--outfit", args.outfit), ("--angle", args.angle), ("--magic", args.magic)):
+            if value is not None:
+                command += [option, value]
     for option, value in (("--seed", args.seed), ("--steps", args.steps)):
         if value is not None:
             command += [option, str(value)]
@@ -269,6 +276,7 @@ def _idea_command(args: argparse.Namespace, idea: str) -> list[str]:
     ):
         if enabled:
             command.append(flag)
+    command += ["--", idea]
     return command
 
 
@@ -278,7 +286,27 @@ def main(argv: list[str] | None = None) -> int:
     if not idea:
         raise BridgeError("请输入中文生图想法")
     if args.mode in ("ultra", "quality"):
+        if args.width is not None or args.height is not None:
+            raise BridgeError("--width 与 --height 仅支持 --mode fast")
         return emilia_main(_idea_command(args, idea))
+    unsupported_fast = [
+        flag
+        for flag, active in (
+            ("--pag", args.pag),
+            ("--auto-gate", args.auto_gate),
+            ("--outfit", args.outfit is not None),
+            ("--angle", args.angle is not None),
+            ("--puck", args.puck),
+            ("--magic", args.magic is not None),
+            ("--fp16-upscaler", args.fp16_upscaler),
+            ("--fp16-vae", args.fp16_vae),
+            ("--fast-tiled-vae", args.fast_tiled_vae),
+            ("--fast-finish", args.fast_finish),
+        )
+        if active
+    ]
+    if unsupported_fast:
+        raise BridgeError(f"--mode fast 不支持以下参数：{', '.join(unsupported_fast)}")
 
     if APP is None or not PYTHON.is_file() or not (APP / "main.py").is_file():
         raise BridgeError(f"ComfyUI 安装不完整：{PYTHON} / {APP}")

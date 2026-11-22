@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import shlex
 import subprocess
@@ -168,13 +169,19 @@ def handle(args, config, main, parser):
                 raise ValueError(f'Config exists: {target}; use config set or init --force')
             from .config import StudioConfig
             root = args.root_dir.expanduser().resolve() if args.root_dir else config.root_dir
-            config = StudioConfig(root_dir=root, app_dir=args.app_dir, conda_python=args.python or config.conda_python)
+            app_dir = args.app_dir.expanduser().resolve() if args.app_dir else None
+            python = args.python.expanduser().resolve() if args.python else config.conda_python
+            config = StudioConfig(root_dir=root, app_dir=app_dir, conda_python=python)
         else:
             if args.key is None or args.value is None:
                 raise ValueError('Usage: config set KEY VALUE')
+            from .config import _external_python, load_config
+            config = load_config(target if target.is_file() else None, include_env=False)
             value = args.value
             if args.key in PATH_KEYS:
                 value = Path(value).expanduser().resolve()
+                if args.key == 'conda_python':
+                    value = _external_python(value)
             elif args.key.endswith('_port'):
                 value = int(value)
                 if not 1 <= value <= 65535:
@@ -316,7 +323,7 @@ def handle(args, config, main, parser):
                 ['Resolution', f'{rep_a.width}x{rep_a.height}', f'{rep_b.width}x{rep_b.height}'],
                 ['Pixel SHA256', rep_a.pixel_sha256[:16] + '...', rep_b.pixel_sha256[:16] + '...'],
                 ['Exact Match', 'YES' if comparison['pixel_identical'] else 'NO', 'YES' if comparison['pixel_identical'] else 'NO'],
-                ['Seed', str(metrics_a['seed'] or '-'), str(metrics_b['seed'] or '-')],
+                ['Seed', '-' if metrics_a['seed'] is None else str(metrics_a['seed']), '-' if metrics_b['seed'] is None else str(metrics_b['seed'])],
                 ['Iris Hue (L/R)', *(f"{_deg(m['left_eye_hue_deg'])} / {_deg(m['right_eye_hue_deg'])}" for m in (metrics_a, metrics_b))],
                 ['Heterochromia', _deg(metrics_a['heterochromia_score']), _deg(metrics_b['heterochromia_score'])],
                 ['Gate Passed', 'PASS' if metrics_a['passed'] else 'FAIL', 'PASS' if metrics_b['passed'] else 'FAIL'],
@@ -332,7 +339,7 @@ def handle(args, config, main, parser):
             if candidate.name.endswith('.run.json'):
                 receipt_file = candidate
                 rec_data = json.loads(receipt_file.read_text(encoding='utf-8'))
-                img_file = Path(rec_data.get('final') or rec_data.get('native') or '')
+                img_file = Path(rec_data.get('final') or rec_data.get('selected_native') or rec_data.get('native') or '')
             else:
                 img_file = candidate
                 receipt_file = candidate.with_suffix('.run.json')
@@ -388,7 +395,7 @@ def handle(args, config, main, parser):
         recent = ledger.list_recent_runs(limit=args.limit)
         rows = [
             [
-                str(r.get('seed') or '-'),
+                '-' if r.get('seed') is None else str(r.get('seed')),
                 str(r.get('mode') or '-'),
                 f"{(r.get('native_seconds') or 0.0):.1f}s",
                 f"{(r.get('finish_seconds') or 0.0):.1f}s",
@@ -400,8 +407,8 @@ def handle(args, config, main, parser):
         print(render_table(['Seed', 'Mode', 'Native', 'Finish', 'Total', 'Gate'], rows, title=f"Benchmark Summary (Total Runs: {stats.get('total_runs', 0)})"))
         return 0
     if cmd == 'clean':
-        if args.older_than_hours < 0:
-            raise ValueError('--older-than-hours must be non-negative')
+        if not math.isfinite(args.older_than_hours) or args.older_than_hours < 0:
+            raise ValueError('--older-than-hours must be a finite non-negative number')
         temp_root = (config.temp_dir or (config.root_dir / 'temp')).resolve()
         if not temp_root.is_dir():
             print(json.dumps({'temp_dir': str(temp_root), 'removed_count': 0, 'freed_bytes': 0}, indent=2))
@@ -427,13 +434,22 @@ def handle(args, config, main, parser):
                 continue
             size = sum(f.stat().st_size for f in entry.rglob('*') if f.is_file())
             candidates.append((entry, size))
-        freed = sum(sz for _, sz in candidates)
-        removed = []
-        for folder, _ in candidates:
+        freed = 0
+        removed: list[str] = []
+        failed: list[str] = []
+        for folder, size in candidates:
+            if args.dry_run:
+                removed.append(str(folder))
+                freed += size
+                continue
+            try:
+                shutil.rmtree(folder)
+            except OSError:
+                failed.append(str(folder))
+                continue
             removed.append(str(folder))
-            if not args.dry_run:
-                shutil.rmtree(folder, ignore_errors=True)
-        print(json.dumps({
+            freed += size
+        payload = {
             'temp_dir': str(temp_root),
             'dry_run': bool(args.dry_run),
             'removed_count': len(removed),
@@ -441,7 +457,10 @@ def handle(args, config, main, parser):
             'freed_human': format_bytes(freed),
             'folders': removed,
             'skipped_active': active,
-        }, indent=2))
+        }
+        if failed:
+            payload['failed'] = failed
+        print(json.dumps(payload, indent=2))
         return 0
     if cmd in ('doctor', 'pull'):
         manifest = json.loads(config.manifest_path.read_text(encoding='utf-8'))

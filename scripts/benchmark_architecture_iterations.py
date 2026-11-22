@@ -35,7 +35,7 @@ def main():
     for seed in SEEDS:
         record_path = directory / f'{seed}.json'
         if record_path.exists():
-            record = json.loads(record_path.read_text())
+            record = json.loads(record_path.read_text(encoding='utf-8'))
             if record.get('success') and Path(record['receipt']['final']).exists():
                 print(f'SKIP verified seed {seed}', flush=True)
                 continue

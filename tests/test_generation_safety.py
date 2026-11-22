@@ -583,3 +583,91 @@ def test_pose_completeness_uses_the_best_supported_box_for_the_face():
     )
     assert info["full_body_complete"] is True, info["reasons"]
     assert info["max_ankle_confidence"] == 0.85
+
+
+def test_stage_server_clears_inherited_fast_env_vars_and_pose_gate_respects_seated_prompt(tmp_path, monkeypatch):
+    from emilia_studio.config import StudioConfig
+    from emilia_studio.engine import RuntimeFlags
+
+    monkeypatch.setenv("EMILIA_FP16_UPSCALER", "1")
+    monkeypatch.setenv("EMILIA_FAST_TILED_VAE", "1")
+    captured_env: dict[str, str] = {}
+
+    class FakeProc:
+        def poll(self):
+            return 0
+
+    def fake_popen(cmd, *, env=None, **kwargs):
+        captured_env.update(env or {})
+        raise RuntimeError("stop-after-env-capture")
+
+    monkeypatch.setattr("emilia_studio.engine.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("emilia_studio.engine._assert_port_available", lambda host, port: None)
+    cfg = StudioConfig(root_dir=tmp_path, app_dir=tmp_path / "app", conda_python=Path(sys.executable))
+    (tmp_path / "app").mkdir()
+    engine = EmiliaRenderEngine(config=cfg)
+    with pytest.raises(RuntimeError, match="stop-after-env-capture"):
+        asyncio.run(engine._stage_server("native", tmp_path, 8199, RuntimeFlags()).__aenter__())
+    assert "EMILIA_FP16_UPSCALER" not in captured_env
+    assert "EMILIA_FAST_TILED_VAE" not in captured_env
+
+    plan_seated = engine._plan(
+        port=8199, pag=False, profile="ultra",
+        positive_prompt="1girl, emilia, sitting on a garden bench", negative_prompt=None,
+        ipadapter_weight=0.18, user_idea=None, strict_seed_lock=False, auto_eye_repair=True,
+        max_seed_retries=2, native_options={"framing": "full_body"}, finish_options=None,
+        native_steps=None, face_steps=None, hand_steps=None, flags=RuntimeFlags(),
+    )
+    assert plan_seated.require_pose is False
+    plan_standing = engine._plan(
+        port=8199, pag=False, profile="ultra",
+        positive_prompt="1girl, emilia, standing on a garden path", negative_prompt=None,
+        ipadapter_weight=0.18, user_idea=None, strict_seed_lock=False, auto_eye_repair=True,
+        max_seed_retries=2, native_options={"framing": "full_body"}, finish_options=None,
+        native_steps=None, face_steps=None, hand_steps=None, flags=RuntimeFlags(),
+    )
+    assert plan_standing.require_pose is True
+
+
+def test_single_missing_hip_still_triggers_low_pelvis_and_local_yolo_error_propagates(tmp_path, monkeypatch):
+    from emilia_studio import inspection_worker
+    from emilia_studio.inspector import InspectionRuntimeError, _ExternalWorker
+
+    inspector = QualityInspector(use_yolo=False)
+    canvas = Image.new("RGB", (1152, 1728))
+    head = [[576.0, 200.0, 0.99]] * 11
+    # Left hip missing (0, 0, 0), right hip low at y=1200 (0.694 > 0.60).
+    kpts = head + [
+        [0.0, 0.0, 0.0], [520.0, 1200.0, 0.90],
+        [620.0, 1380.0, 0.90], [520.0, 1380.0, 0.90],
+        [620.0, 1600.0, 0.85], [520.0, 1600.0, 0.85],
+    ]
+    info = inspector.analyze_pose_completeness(
+        canvas,
+        Detections(face_boxes=[(450.0, 120.0, 680.0, 320.0)], pose_boxes=[(200.0, 80.0, 900.0, 1650.0)], pose_keypoints=[kpts]),
+        framing="full_body",
+    )
+    assert info["full_body_complete"] is False
+    assert any("hip_y_ratio" in r for r in info["reasons"])
+
+    # In-process YOLO failure must raise InspectionRuntimeError, not fake valid_png=False.
+    img = tmp_path / "ok.png"
+    _fixture_image(img, (256, 384), "accept")
+    bbox_dir = tmp_path / "app" / "models" / "ultralytics" / "bbox"
+    bbox_dir.mkdir(parents=True)
+    (bbox_dir / "face_yolov8n.pt").write_bytes(b"pt")
+    (bbox_dir / "hand_yolov8n.pt").write_bytes(b"pt")
+    yolo_inspector = QualityInspector(app_dir=tmp_path / "app", use_yolo=True)
+    yolo_inspector._local_yolo = True
+    monkeypatch.setattr(inspection_worker, "run_detection", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("corrupt weights")))
+    with pytest.raises(InspectionRuntimeError, match="corrupt weights"):
+        yolo_inspector.inspect_image(img)
+
+    # External worker must terminate itself when stdout emits invalid JSON.
+    worker = _ExternalWorker([sys.executable, "-u", "-c", "import sys; sys.stdin.readline(); print('not-json', flush=True); sys.stdin.readline()"])
+    try:
+        with pytest.raises(InspectionRuntimeError, match="invalid JSON"):
+            worker.request({"cmd": "ping"}, timeout=5.0)
+        assert not worker.alive
+    finally:
+        worker.close()

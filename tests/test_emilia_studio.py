@@ -32,7 +32,7 @@ from emilia_studio.config import StudioConfig, load_config
 from emilia_studio.engine import EmiliaRenderEngine
 from emilia_studio.inspector import QualityInspector
 from emilia_studio.ledger import ExperimentLedger
-from emilia_studio.workflows import EmiliaWorkflowBuilder, _RAW_WORKFLOW_CACHE
+from emilia_studio.workflows import EmiliaWorkflowBuilder, _PARSED_WORKFLOW_CACHE
 
 
 def test_config_loading_and_paths() -> None:
@@ -295,7 +295,7 @@ def test_workflow_cache_and_upscale_factor() -> None:
     assert g_default["15"]["inputs"]["scale_by"] == 0.5
     g_custom = builder.build_highres_finish("test.png", seed=20261027, upscale_factor=3.0)
     assert g_custom["15"]["inputs"]["scale_by"] == 0.75
-    assert len(_RAW_WORKFLOW_CACHE) >= 1
+    assert len(_PARSED_WORKFLOW_CACHE) >= 1
 
 
 def test_lanczos_and_sigma_cache_bit_exact() -> None:

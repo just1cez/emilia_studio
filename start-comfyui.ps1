@@ -18,6 +18,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $App 'main.py') -PathType Leaf)) {
 $env:PIP_CACHE_DIR = Join-Path $Root 'cache\pip'
 $env:TEMP = Join-Path $Root 'temp'
 $env:TMP = $env:TEMP
+New-Item -ItemType Directory -Path $env:TEMP -Force | Out-Null
+New-Item -ItemType Directory -Path $env:PIP_CACHE_DIR -Force | Out-Null
 
 Set-Location -LiteralPath $App
 & $Python (Join-Path $App 'main.py') --listen $Listen --port $Port --reserve-vram 0.8 --fp32-vae --disable-pinned-memory --mmap-torch-files --preview-method latent2rgb --disable-api-nodes

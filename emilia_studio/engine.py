@@ -20,7 +20,7 @@ from typing import Any
 
 import aiohttp
 
-from .config import StudioConfig, load_config
+from .config import StudioConfig, load_config, requests_upright_pose
 from .inspector import InspectionReport, QualityInspector
 from .ledger import ExperimentLedger
 from .workflows import (
@@ -392,7 +392,13 @@ class EmiliaRenderEngine:
             async with session.post(
                 f"{base_url}/prompt", json={"prompt": graph, "client_id": client_id}
             ) as response:
-                submitted = await response.json()
+                try:
+                    submitted = await response.json(content_type=None)
+                except Exception:
+                    body = (await response.text())[:500]
+                    raise RuntimeError(
+                        f"{stage}: ComfyUI returned HTTP {response.status} with non-JSON body: {body}"
+                    ) from None
                 if response.status != 200:
                     # Missing models and invalid inputs surface here, named per node.
                     raise RuntimeError(
@@ -556,6 +562,8 @@ class EmiliaRenderEngine:
             DO_NOT_TRACK="1",
             EMILIA_HEADLESS_FAST_BOOT="1",
         )
+        environment.pop("EMILIA_FP16_UPSCALER", None)
+        environment.pop("EMILIA_FAST_TILED_VAE", None)
         if flags.fp16_upscaler:
             environment["EMILIA_FP16_UPSCALER"] = "1"
         if flags.fast_tiled_vae:
@@ -703,9 +711,16 @@ class EmiliaRenderEngine:
                     if any(item.rejection is None for item in items):
                         await self._finish_wave(plan, items, run_dir)
             finally:
+                persist_error: Exception | None = None
                 for item in items:
                     if item.settled:
-                        self._persist(plan, item, run_dir)
+                        try:
+                            self._persist(plan, item, run_dir)
+                        except Exception as exc:
+                            if persist_error is None:
+                                persist_error = exc
+                if persist_error is not None:
+                    raise persist_error
         return [item.receipt for item in items if item.receipt is not None]
 
     def _plan(
@@ -787,7 +802,9 @@ class EmiliaRenderEngine:
             max_seed_retries=max_seed_retries, native_options=native_options, finish_options=finish_options,
             native_steps=native_steps, face_steps=face_steps, hand_steps=hand_steps, flags=flags,
             framing=framing,
-            require_pose=bool(is_ultra and not strict_seed_lock and framing == "full_body"),
+            require_pose=bool(
+                is_ultra and not strict_seed_lock and framing == "full_body" and requests_upright_pose(positive_prompt)
+            ),
             preview=bool(preview),
         )
 
@@ -839,14 +856,15 @@ class EmiliaRenderEngine:
         return self._with_runtime_vae(plan, graph)
 
     def _eye_repair_graph(self, plan: _RenderPlan, item: _RenderItem, image_ref: str) -> dict[str, Any]:
+        repair_seed = (item.seed + 9) & 0xFFFFFFFFFFFFFFFF
         if plan.is_ultra:
             graph = self.builder.build_ultra_eye_repair(
-                image_path=image_ref, seed=item.seed + 9, native_graph=item.native_graph,
+                image_path=image_ref, seed=repair_seed, native_graph=item.native_graph,
                 lora_name=plan.finish_options.get("lora_name"),
                 lora_strength=plan.finish_options.get("lora_strength"),
             )
         else:
-            graph = self.builder.build_eye_repair(image_path=image_ref, seed=item.seed + 9, upscale=False)
+            graph = self.builder.build_eye_repair(image_path=image_ref, seed=repair_seed, upscale=False)
         return self._with_runtime_vae(plan, graph)
 
     def _finish_graph(self, plan: _RenderPlan, item: _RenderItem, image_ref: str) -> dict[str, Any]:
@@ -874,7 +892,7 @@ class EmiliaRenderEngine:
 
     def _warm_cpu_side(self, plan: _RenderPlan) -> None:
         """Best-effort work for the idle CPU and disk while Stage 1 samples on the GPU."""
-        self.inspector.warmup(run_pose=plan.framing == "full_body")
+        self.inspector.warmup(run_pose=True)
         if not plan.preview:
             self._prewarm_stage2_files_in_ram(plan.flags)
     async def _native_wave(self, plan: _RenderPlan, items: list[_RenderItem], run_dir: Path) -> None:
@@ -938,7 +956,7 @@ class EmiliaRenderEngine:
                                 f"quality-gate: seed {item.seed} rejected ({report.reasons}); retrying with new seed...",
                                 file=sys.stderr, flush=True,
                             )
-                            item.seed += 1000
+                            item.seed = (item.seed + 1000) & 0xFFFFFFFFFFFFFFFF
                             continue
                         item.rejection = _native_rejection(plan, report)
                         break
@@ -995,11 +1013,11 @@ class EmiliaRenderEngine:
                     stage = f"finish_{index + 1}" if numbered else "finish"
                     graph = self._finish_graph(plan, item, self._load_image_ref(item.selected, server))
                     result = await self._execute_graph(server, graph=graph, stage=stage, log_dir=server.home / stage)
-                    await settle()
                     item.finishing = result.to_dict()
                     item.final = _output_path(
                         self._output_dir, item.finishing["outputs"][FINAL_OUTPUT_NODE]["images"][0]
                     )
+                    await settle()
                     pending = (item, self._inspect(
                         plan, item.final, QualityInspector.FINAL_SIZE, "final", strict=plan.strict_seed_lock
                     ))
@@ -1012,8 +1030,9 @@ class EmiliaRenderEngine:
             return
         native_report = item.native_report
         assert native_report is not None and item.native is not None and item.selected is not None
+        preview_w, preview_h = self._native_expected_size(plan)
         guidance = (
-            f"{plan.profile} 832x1216 preview"
+            f"{plan.profile} {preview_w}x{preview_h} preview"
             if plan.preview
             else (
                 ("Ultra Multi-Scale + PAG" if plan.pag else "Ultra Multi-Scale (832->1152->2304)")
@@ -1041,7 +1060,7 @@ class EmiliaRenderEngine:
             "guidance": guidance,
             "python": self._python_executable(),
             "isolation": (
-                "Single-stage 832x1216 preview process; Stage 2 refinement omitted."
+                f"Single-stage {preview_w}x{preview_h} preview process; Stage 2 refinement omitted."
                 if plan.preview
                 else "Stage 1 process exited before the Stage 2 process started; no model overlap across stages."
             ),
@@ -1077,12 +1096,16 @@ class EmiliaRenderEngine:
         native_seconds = sum(float(attempt["generation"].get("seconds", 0.0)) for attempt in item.attempts)
         finish_seconds = float(item.finishing.get("seconds", 0.0))
         repair_seconds = float((item.eye_repair or {}).get("seconds", 0.0))
+        actual_positive = (
+            ((item.native_graph.get("6") or {}).get("inputs") or {}).get("text")
+            if isinstance(item.native_graph, dict) else None
+        )
         self.ledger.record_run(
             seed=item.seed,
             mode=f"{plan.profile}_preview" if plan.preview else (f"{plan.profile}_pag" if plan.pag else plan.profile),
             guidance=guidance,
             prompt_idea=plan.user_idea,
-            positive_prompt=plan.positive_prompt or (
+            positive_prompt=actual_positive or plan.positive_prompt or (
                 self.config.ultra_positive_prompt if plan.is_ultra else self.config.base_positive_prompt
             ),
             native_path=str(item.native),

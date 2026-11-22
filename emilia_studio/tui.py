@@ -10,6 +10,7 @@ import shutil
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -318,6 +319,8 @@ def download_file_with_progress(
     A 416 response is only complete when its advertised total matches the partial.
     Without an expected digest, HTTP length validation cannot establish file identity.
     """
+    if urllib.parse.urlsplit(url).scheme.lower() not in ("http", "https"):
+        raise ValueError(f"Unsupported download URL scheme: {url!r}")
     if expected_bytes is not None and expected_bytes < 0:
         raise ValueError("expected_bytes must be nonnegative")
     if chunk_size <= 0:
@@ -387,11 +390,16 @@ def download_file_with_progress(
                 raise RuntimeError(f"Truncated download: expected {response_bytes} response bytes, got {received}")
     except urllib.error.HTTPError as exc:
         with exc:
-            match = re.fullmatch(r"bytes \*/([0-9]+)", exc.headers.get("Content-Range", ""))
+            headers_map = exc.headers or {}
+            match = re.fullmatch(r"bytes \*/([0-9]+)", headers_map.get("Content-Range", ""))
             if exc.code != 416 or not existing_size or match is None or int(match[1]) != existing_size:
+                if bar.stream.isatty():
+                    print(file=bar.stream, flush=True)
                 raise RuntimeError(f"HTTP {exc.code} downloading {url}: {exc.reason}") from exc
             total_bytes = int(match[1])
     except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
+        if bar.stream.isatty():
+            print(file=bar.stream, flush=True)
         raise RuntimeError(f"Download failed for {url}: {exc}") from exc
 
     actual = part_path.stat().st_size
