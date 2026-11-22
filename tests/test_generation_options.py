@@ -143,9 +143,11 @@ def test_posture_bans_follow_the_requested_scene():
 
 
 def test_corrupt_ollama_cache_recovers_and_non_emilia_disables_ipa_and_url_scheme_guard(tmp_path, monkeypatch):
+    import importlib
+    import sys
+    import types
     from emilia_studio import compiler as compiler_mod
     from emilia_studio.tui import download_file_with_progress
-    import gpu_profile
 
     cfg = load_config()
     cfg.temp_dir = tmp_path
@@ -164,6 +166,9 @@ def test_corrupt_ollama_cache_recovers_and_non_emilia_disables_ipa_and_url_schem
     with pytest.raises(ValueError, match='scheme'):
         download_file_with_progress('file:///etc/passwd', tmp_path / 'x.bin')
 
-    monkeypatch.setattr(gpu_profile.pynvml, 'nvmlDeviceGetName', lambda h: b'NVIDIA GeForce RTX 4090')
+    stub_pynvml = types.SimpleNamespace(nvmlDeviceGetName=lambda h: b'NVIDIA GeForce RTX 4090')
+    monkeypatch.setitem(sys.modules, 'pynvml', stub_pynvml)
+    monkeypatch.delitem(sys.modules, 'gpu_profile', raising=False)
+    gpu_profile = importlib.import_module('gpu_profile')
     with pytest.raises(RuntimeError, match='CMP 40HX'):
         gpu_profile._apply(object(), object())
