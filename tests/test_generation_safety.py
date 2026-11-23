@@ -37,7 +37,7 @@ def runtime_plugin(monkeypatch):
     comfy = types.ModuleType("comfy")
     comfy.__path__ = []
     monkeypatch.setitem(sys.modules, "comfy", comfy)
-    for name in ("model_management", "sd", "utils"):
+    for name in ("model_management", "samplers", "sd", "utils"):
         module = types.ModuleType(f"comfy.{name}")
         setattr(comfy, name, module)
         monkeypatch.setitem(sys.modules, f"comfy.{name}", module)
