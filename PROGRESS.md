@@ -437,3 +437,26 @@ No production default, flag or patch changed. Full report with tables and the vi
 
   Every variant passed the CPU gate (1 face, pose complete). The fewer-steps results mostly measure the sampler change, not the schedule. The guidance interval is the only quality-preserving algorithmic win and is the candidate for an opt-in flag.
 - Not applicable on this GPU (sm75, Windows) per `AGENTS.md`: SageAttention/Triton/FP8/xFormers, TensorRT (no LoRA/IPAdapter hot-swap within 8 GiB), stable-fast/OneDiff (Linux-first).
+
+### Phase 24: Phase 23 Candidates Shipped as Opt-In Flags (2026-11-24)
+
+Defaults unchanged: quality seed `20261027` default run reproduced native `3b58d9daf2770d0ad7e87b971912b854e1e7495f9e99a09f348af9bf258c9425` and final `d7fe10c200535d8656ab633248ca7cc651ee6d2e60bd309c23c43fa1ce5af63e`; all five canonical graphs keep builder parity.
+
+- **Code**:
+  - `--guidance-interval [SIGMA]` (default 0.35; `render` / `batch` / `idea`, bridge): `EmiliaWorkflowBuilder.inject_guidance_interval` routes every Stage 1 `KSampler` model through the new plugin node `EmiliaGuidanceInterval`, which skips the unconditional batch and returns the cond prediction once `sigma <= sigma_low`, chaining any existing CFG function (`RescaleCFG`) and cond-batch function. Native graphs only; rejected with `--preview` (CFG 1.0).
+  - `--resident-vram` (CLI, bridge): every stage server gets `--reserve-vram 0.1 --disable-dynamic-vram` instead of `--reserve-vram 0.8`.
+  - FP16 RealESRGAN (`--fp16-upscaler`, so also `--fast`) now runs channels_last weights and tiles (`comfy_extras/nodes_upscale_model.py`, `comfyui_core.patch` regenerated).
+  - Receipts list `guidance_interval` / `resident_vram` under `fast_overrides`.
+- **Evidence** (seed 20261027, cold stage processes, one run each; sampling = KSampler progress-bar time):
+
+  | Run | Sampling s | Native stage s | Finish stage s | Commit peak GB | Native SHA-256 |
+  | :--- | ---: | ---: | ---: | ---: | :--- |
+  | ultra default | 69 + 37 | 195.1 | 93.3 | 25.4 | `847b4fc3e780c00a...` |
+  | ultra `--guidance-interval --fp16-upscaler` | 59 + 23 | 196.0 | 57.5 | 25.3 | `9b2218a3208551d4...` |
+  | ultra `--guidance-interval --resident-vram --fp16-upscaler` | 49 + 21 | 332.6 | 112.3 | 34.6 | `6ebf9ea7d0cd917e...` |
+  | quality default | 150 | 197.4 | 83.7 | 25.6 | `3b58d9daf2770d0a...` |
+  | quality `--resident-vram` | 72 | 180.0 | 116.6 | 33.3 | `2593fe7d4b8c99cf...` |
+
+  - Guidance interval: ultra sampling 106 -> 82 s (1.29x), composition, outfit and gate unchanged (1 face); the native stage wall time did not move in this single cold run because model loading varied (89 vs 114 s overhead).
+  - Resident VRAM: quality sampling 2.08x faster, but the legacy (non-DynamicVRAM) patcher loads and partially unloads the LoRA-patched UNet around CLIP, CLIP-Vision and VAE, so loading grows (quality native overhead 47 -> 108 s, finish +33 s) and the commit peak rises ~8 GB. Single renders are slower end to end (quality 281 -> 297 s, ultra 254 -> 445 s); kept opt-in only.
+  - FP16 upscaler channels_last, in-process `ImageUpscaleWithModel` on a 1152x1728 image: 3.40 -> 2.99 s, peak 2.01 -> 1.01 GiB, output bit-identical to FP16 NCHW.

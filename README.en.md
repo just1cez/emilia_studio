@@ -170,8 +170,10 @@ emilia clean --older-than-hours 1 [--dry-run]     # a running render holds a fil
 | `--pag` | `PerturbedAttentionGuidance`, scale 1.0 on `quality` and 0.8 on `ultra`; one extra UNet pass per step |
 | `--port N` | Stage server port (default: configured `quality_port`, 8199) |
 | `--steps` / `--face-steps` / `--hand-steps` | Step overrides |
-| `--fast` / `--fp16-upscaler` / `--fp16-vae` / `--fast-tiled-vae` | Accelerations (not bit-exact) |
-| `--preview` | Lightning 8-step text-only draft; conflicts with `--fast`, `--pag` and Stage 2 options |
+| `--fast` / `--fp16-upscaler` / `--fp16-vae` / `--fast-tiled-vae` | Accelerations (not bit-exact); the FP16 upscaler runs channels_last |
+| `--guidance-interval [SIGMA]` | Stage 1 runs the conditional pass only (no CFG) once sigma <= SIGMA (default 0.35); ~1.3x faster sampling, pixels change |
+| `--resident-vram` | Stage servers use `--disable-dynamic-vram --reserve-vram 0.1`: quality sampling ~2x faster, but model loading is slower (single renders measured slower end to end) and Windows commit peaks ~8 GB higher; pixels change |
+| `--preview` | Lightning 8-step text-only draft; conflicts with `--fast`, `--pag`, `--guidance-interval` and Stage 2 options |
 | `--outfit` `--angle` `--puck` `--magic` | `ultra` only: `royal\|cloak\|frozen-bond\|sanctuary\|nightgown`; `auto\|front\|three-quarter\|side\|high-angle\|low-angle`; `none\|ice\|blizzard` |
 | `--reference-mode single\|paired` | `ultra` only: one face, or averaged front + three-quarter embeddings |
 | `--hires-bridge lanczos\|anime` | `ultra` only: Pass 1→2 pixel bridge |

@@ -191,3 +191,22 @@ def test_ultra_proportion_angle_priority_and_no_green_color_bleed():
     assert 'forest' not in frozen_pos.casefold()
     assert 'green spirit aura' not in frozen_pos.casefold()
     assert 'green dress' in frozen_neg and 'green tint' in frozen_neg
+
+
+def test_guidance_interval_wraps_every_sampler_model_without_touching_defaults():
+    builder = EmiliaWorkflowBuilder(load_config())
+    baseline = builder.build_ultra_native(seed=20261027)
+    graph = builder.inject_guidance_interval(builder.build_ultra_native(seed=20261027), 0.35)
+    samplers = [key for key, node in baseline.items() if node['class_type'] == 'KSampler']
+    assert len(samplers) == 2
+    for key in samplers:
+        node_id, _ = graph[key]['inputs']['model']
+        gate = graph[node_id]
+        assert gate['class_type'] == 'EmiliaGuidanceInterval'
+        assert gate['inputs'] == {'model': baseline[key]['inputs']['model'], 'sigma_low': 0.35}
+    assert {k: v for k, v in graph.items() if k in baseline and k not in samplers} == {
+        k: v for k, v in baseline.items() if k not in samplers
+    }
+    quality = builder.inject_guidance_interval(builder.build_highres_native(seed=20261027), 0.6)
+    assert sum(node['class_type'] == 'EmiliaGuidanceInterval' for node in quality.values()) == 1
+    assert builder.build_ultra_native(seed=20261027) == baseline

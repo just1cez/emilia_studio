@@ -81,6 +81,14 @@ def _add_pipeline_args(parser: argparse.ArgumentParser, *, default_profile: str,
     parser.add_argument("--fp16-vae", action="store_true", help="Use standalone sdxl-vae-fp16-fix.safetensors in FP16 mode")
     parser.add_argument("--fast-tiled-vae", action="store_true", help="Use single-pass feathered tiled VAE decode/encode instead of 3-pass")
     parser.add_argument("--fast", action="store_true", help="Preset enabling --fp16-upscaler --fp16-vae --fast-tiled-vae and reduced steps (32/16)")
+    parser.add_argument(
+        "--guidance-interval", type=float, nargs="?", const=0.35, default=None, metavar="SIGMA",
+        help="Stage 1 runs the conditional pass only (no CFG) once sigma <= SIGMA (default 0.35); ~1.3x faster sampling, pixels change",
+    )
+    parser.add_argument(
+        "--resident-vram", action="store_true",
+        help="Keep the whole UNet in VRAM (--disable-dynamic-vram --reserve-vram 0.1 instead of --reserve-vram 0.8): quality sampling ~2x faster, but loading is slower (single renders measured slower end to end) and Windows commit peaks ~8 GB higher; pixels change",
+    )
     parser.add_argument("--preview", action="store_true", help="Opt-in official ByteDance SDXL-Lightning 8-step UNet text-only 832x1216 scout; skips identity/image conditioning and refinement; no timing/composition guarantee")
 
 
@@ -96,7 +104,7 @@ def _validate_preview_options(args: argparse.Namespace) -> None:
         raise ValueError("--preview requires --steps 8 (the official 8-step Lightning UNet)")
     incompatible = [
         flag for attr, flag in (
-            ("pag", "--pag"), ("fast", "--fast"),
+            ("pag", "--pag"), ("fast", "--fast"), ("guidance_interval", "--guidance-interval"),
             ("fp16_upscaler", "--fp16-upscaler"),
             ("reference_mode", "--reference-mode"),
             ("face_steps", "--face-steps"), ("hand_steps", "--hand-steps"),
@@ -130,6 +138,10 @@ def _acceleration_kwargs(args: argparse.Namespace, config: StudioConfig) -> dict
     for key in ("fp16_upscaler", "fp16_vae", "fast_tiled_vae"):
         if getattr(args, key) or args.fast:
             out[key] = True
+    if args.guidance_interval is not None:
+        out["guidance_interval"] = args.guidance_interval
+    if args.resident_vram:
+        out["resident_vram"] = True
     return out
 
 def _apply_ultra_tuning(

@@ -250,6 +250,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--fp16-vae", action="store_true", help="使用 sdxl-vae-fp16-fix 半精度 VAE")
     parser.add_argument("--fast-tiled-vae", action="store_true", help="使用单轮羽化分块 VAE 解码/编码")
     parser.add_argument("--fast-finish", action="store_true", help="一键开启极速高分套餐 (FP16超分 + FP16-Fix VAE + 单轮分块VAE + 精简步数)")
+    parser.add_argument("--guidance-interval", type=float, nargs="?", const=0.35, default=None, metavar="SIGMA", help="Stage 1 在 sigma <= SIGMA (默认 0.35) 后只算正向条件、跳过 CFG，采样约快 1.3 倍")
+    parser.add_argument("--resident-vram", action="store_true", help="UNet 完整常驻显存 (--disable-dynamic-vram --reserve-vram 0.1)：quality 采样约快 2 倍，但加载变慢（单张实测端到端更慢），Windows 提交内存峰值约高 8 GB")
     return parser.parse_args(argv)
 
 
@@ -266,13 +268,14 @@ def _idea_command(args: argparse.Namespace, idea: str) -> list[str]:
         for option, value in (("--outfit", args.outfit), ("--angle", args.angle), ("--magic", args.magic)):
             if value is not None:
                 command += [option, value]
-    for option, value in (("--seed", args.seed), ("--steps", args.steps)):
+    for option, value in (("--seed", args.seed), ("--steps", args.steps), ("--guidance-interval", args.guidance_interval)):
         if value is not None:
             command += [option, str(value)]
     for flag, enabled in (
         ("--pag", args.pag), ("--auto-gate", args.auto_gate), ("--puck", args.puck),
         ("--fp16-upscaler", args.fp16_upscaler), ("--fp16-vae", args.fp16_vae),
         ("--fast-tiled-vae", args.fast_tiled_vae), ("--fast", args.fast_finish),
+        ("--resident-vram", args.resident_vram),
     ):
         if enabled:
             command.append(flag)
@@ -302,6 +305,8 @@ def main(argv: list[str] | None = None) -> int:
             ("--fp16-vae", args.fp16_vae),
             ("--fast-tiled-vae", args.fast_tiled_vae),
             ("--fast-finish", args.fast_finish),
+            ("--guidance-interval", args.guidance_interval is not None),
+            ("--resident-vram", args.resident_vram),
         )
         if active
     ]

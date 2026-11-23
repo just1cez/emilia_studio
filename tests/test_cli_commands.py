@@ -250,3 +250,45 @@ def test_cli_validation_guards_and_bridge_flag_boundaries(tmp_path, monkeypatch,
         bridge.main(['--mode', 'ultra', '--width', '832', '爱蜜莉雅'])
     with pytest.raises(bridge.BridgeError, match='--mode fast'):
         bridge.main(['--mode', 'fast', '--pag', '爱蜜莉雅'])
+
+
+def test_guidance_interval_and_resident_vram_reach_engine_and_server(monkeypatch, tmp_path):
+    import asyncio
+    import sys
+    from pathlib import Path
+
+    import pytest
+
+    from emilia_studio.config import StudioConfig
+    from emilia_studio.engine import EmiliaRenderEngine, RuntimeFlags
+
+    captured = {}
+
+    async def fake_render(self, **kwargs):
+        captured.update(kwargs)
+        return {}
+
+    monkeypatch.setattr('emilia_studio.engine.EmiliaRenderEngine.render_quality_pipeline', fake_render)
+    assert main(['render', '--profile', 'ultra', '--guidance-interval', '--resident-vram']) == 0
+    assert captured['guidance_interval'] == 0.35 and captured['resident_vram'] is True
+    captured.clear()
+    assert main(['render', '--guidance-interval', '0.6']) == 0
+    assert captured['guidance_interval'] == 0.6 and 'resident_vram' not in captured
+    assert main(['render', '--preview', '--guidance-interval']) == 1
+
+    commands = []
+
+    def fake_popen(cmd, **kwargs):
+        commands.append(cmd)
+        raise RuntimeError('stop')
+
+    monkeypatch.setattr('emilia_studio.engine.subprocess.Popen', fake_popen)
+    monkeypatch.setattr('emilia_studio.engine._assert_port_available', lambda host, port: None)
+    (tmp_path / 'app').mkdir()
+    engine = EmiliaRenderEngine(config=StudioConfig(root_dir=tmp_path, app_dir=tmp_path / 'app', conda_python=Path(sys.executable)))
+    for flags in (RuntimeFlags(), RuntimeFlags(resident_vram=True)):
+        with pytest.raises(RuntimeError, match='stop'):
+            asyncio.run(engine._stage_server('native', tmp_path, 8199, flags).__aenter__())
+    default, resident = commands
+    assert default[default.index('--reserve-vram') + 1] == '0.8' and '--disable-dynamic-vram' not in default
+    assert resident[resident.index('--reserve-vram') + 1] == '0.1' and '--disable-dynamic-vram' in resident

@@ -514,3 +514,32 @@ def test_sam_empty_segs_short_circuit_and_fast_tiled_vae_single_pass(monkeypatch
     calls_1pass = call_counter["n"]
     assert calls_1pass < calls_3pass
     assert tuple(out_fast.shape) == (1, 3, 768, 768)
+
+
+def test_guidance_interval_skips_uncond_only_below_sigma_low() -> None:
+    if not (ROOT / "app" / "comfy").is_dir() or importlib.util.find_spec("torch") is None or importlib.util.find_spec("cv2") is None:
+        pytest.skip("ComfyUI runtime app/, torch, or cv2 not present in standalone CI")
+    import torch
+    import comfy.model_patcher
+    import comfy.samplers
+    from custom_nodes import emilia_runtime_patches
+
+    seen: list[list[object]] = []
+
+    def calc(args):
+        seen.append(args["conds"])
+        return [torch.full_like(args["input"], 1.0), torch.full_like(args["input"], 3.0)]
+
+    base = comfy.model_patcher.ModelPatcher(torch.nn.Linear(1, 1), torch.device("cpu"), torch.device("cpu"))
+    base.model_options["sampler_calc_cond_batch_function"] = calc
+    base.set_model_sampler_cfg_function(lambda args: args["cond"] * 0 + 7.0)  # stands in for RescaleCFG
+    (patched,) = emilia_runtime_patches.EmiliaGuidanceInterval().patch(base, 0.35)
+    assert base.model_options["sampler_calc_cond_batch_function"] is calc
+
+    x = torch.zeros((1, 4, 8, 8))
+    high = comfy.samplers.sampling_function(None, x, torch.tensor([1.0]), ["u"], ["c"], 5.0, model_options=patched.model_options)
+    assert seen[-1] == [["c"], ["u"]]
+    assert torch.equal(high, x - 7.0)
+    low = comfy.samplers.sampling_function(None, x, torch.tensor([0.3]), ["u"], ["c"], 5.0, model_options=patched.model_options)
+    assert seen[-1] == [["c"], None]
+    assert torch.equal(low, torch.full_like(x, 1.0))

@@ -373,3 +373,9 @@ Standalone executable smoke: seed `20261027`, quality profile, launched outside 
 2. Rejected: fp16_accumulation, cudnn autotune, global channels_last, VAE channels_last, CUDA graphs, built-in TomePatchModel (no-op on SDXL), DeepCache (composition drift), EasyCache on SDE pass 1 (0 skipped steps).
 3. Candidate opt-in: guidance interval (cond only below sigma 0.35-0.60) 1.34-1.43x sampling with the composition preserved; RealESRGAN FP16 + channels_last at tile 512 (-12% time, -50% VRAM, same output as FP16).
 4. Fewer-step schedules (AYS/GITS/UniPC) are only fair against dpmpp_2m_sde if the sampler stays SDE; with dpmpp_2m they lose the canonical outfit. Not adopted.
+
+## Phase 24 Opt-In Speed Flags (2026-11-24)
+
+1. `--guidance-interval [SIGMA]` (`EmiliaGuidanceInterval` on every Stage 1 KSampler, default sigma 0.35): ultra seed 20261027 sampling 106 -> 82 s; never default because pixels change.
+2. `--fp16-upscaler` runs RealESRGAN channels_last: 3.40 -> 2.99 s and half the peak VRAM, output identical to the previous FP16 path.
+3. `--resident-vram` (`--disable-dynamic-vram --reserve-vram 0.1`): quality sampling 150 -> 72 s, but single renders are slower end to end (281 -> 297 s quality, 254 -> 445 s ultra) and the commit peak rises from 25.6 to 33.3-34.6 GB. Opt-in only; `--reserve-vram 0.8` with DynamicVRAM stays the default.

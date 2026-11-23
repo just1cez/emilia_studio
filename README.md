@@ -170,8 +170,10 @@ emilia clean --older-than-hours 1 [--dry-run]     # 正在运行的渲染目录�
 | `--pag` | `PerturbedAttentionGuidance`，`quality` 尺度 1.0、`ultra` 0.8；每步多一次 UNet 前向 |
 | `--port N` | Stage 服务端口（默认配置中的 `quality_port` 8199） |
 | `--steps` / `--face-steps` / `--hand-steps` | 步数覆盖 |
-| `--fast` / `--fp16-upscaler` / `--fp16-vae` / `--fast-tiled-vae` | 加速（非像素一致） |
-| `--preview` | Lightning 8 步纯文本草稿；与 `--fast`、`--pag`、Stage 2 参数互斥 |
+| `--fast` / `--fp16-upscaler` / `--fp16-vae` / `--fast-tiled-vae` | 加速（非像素一致）；FP16 超分以 channels_last 运行 |
+| `--guidance-interval [SIGMA]` | Stage 1 在 sigma ≤ SIGMA（默认 0.35）后只算正向条件、跳过 CFG；采样约快 1.3 倍，像素改变 |
+| `--resident-vram` | 各 Stage 改用 `--disable-dynamic-vram --reserve-vram 0.1`：quality 采样约快 2 倍，但模型加载变慢（单张实测端到端更慢），Windows 提交内存峰值约高 8 GB；像素改变 |
+| `--preview` | Lightning 8 步纯文本草稿；与 `--fast`、`--pag`、`--guidance-interval`、Stage 2 参数互斥 |
 | `--outfit` `--angle` `--puck` `--magic` | 仅 `ultra`：`royal\|cloak\|frozen-bond\|sanctuary\|nightgown`；`auto\|front\|three-quarter\|side\|high-angle\|low-angle`；`none\|ice\|blizzard` |
 | `--reference-mode single\|paired` | 仅 `ultra`：单张或正脸 + 3/4 脸平均嵌入 |
 | `--hires-bridge lanczos\|anime` | 仅 `ultra`：Pass 1→2 像素桥 |

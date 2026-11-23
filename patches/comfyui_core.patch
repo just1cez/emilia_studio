@@ -282,7 +282,7 @@ index 6003bc7b..dc0ca65d 100644
                          #old ModelPatchers are the first to go
                          oom_ram_usage = 1e30
 diff --git a/comfy_extras/nodes_upscale_model.py b/comfy_extras/nodes_upscale_model.py
-index d1e0401b..e81268b5 100644
+index d1e0401b..52056f18 100644
 --- a/comfy_extras/nodes_upscale_model.py
 +++ b/comfy_extras/nodes_upscale_model.py
 @@ -1,4 +1,5 @@
@@ -296,7 +296,7 @@ index d1e0401b..e81268b5 100644
              raise Exception("Upscale model must be a single-image model.")
  
 +        if os.environ.get("EMILIA_FP16_UPSCALER") == "1" and getattr(out, "supports_half", True) and model_management.should_use_fp16():
-+            out.model.half()
++            out.model.half().to(memory_format=torch.channels_last)
 +            out._emilia_fp16 = True
          out.patcher = comfy.model_patcher.CoreModelPatcher(out.model, load_device=model_management.get_torch_device(), offload_device=model_management.unet_offload_device())
          return io.NodeOutput(out)
@@ -316,7 +316,7 @@ index d1e0401b..e81268b5 100644
                  pbar = comfy.utils.ProgressBar(steps)
 -                s = comfy.utils.tiled_scale(in_img, lambda a: upscale_model(a.float()), tile_x=tile, tile_y=tile, overlap=overlap, upscale_amount=upscale_model.scale, pbar=pbar, output_device=output_device)
 +                run_dtype = torch.float16 if getattr(upscale_model, "_emilia_fp16", False) else torch.float32
-+                s = comfy.utils.tiled_scale(in_img, lambda a: upscale_model(a.to(device=device, dtype=run_dtype)).float() if run_dtype == torch.float16 else upscale_model(a.to(device=device, dtype=torch.float32)), tile_x=tile, tile_y=tile, overlap=overlap, upscale_amount=upscale_model.scale, pbar=pbar, output_device=output_device)
++                s = comfy.utils.tiled_scale(in_img, lambda a: upscale_model(a.to(device=device, dtype=run_dtype, memory_format=torch.channels_last)).float() if run_dtype == torch.float16 else upscale_model(a.to(device=device, dtype=torch.float32)), tile_x=tile, tile_y=tile, overlap=overlap, upscale_amount=upscale_model.scale, pbar=pbar, output_device=output_device)
                  oom = False
              except Exception as e:
                  model_management.raise_non_oom(e)

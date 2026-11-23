@@ -105,6 +105,30 @@ class EmiliaWorkflowBuilder:
                 "_meta": {"title": f"External VAE ({vae_name})"},
             }
         return graph
+
+    @staticmethod
+    def inject_guidance_interval(graph: Dict[str, Any], sigma_low: float) -> Dict[str, Any]:
+        """Route every KSampler's model through EmiliaGuidanceInterval (cond only at sigma <= sigma_low)."""
+        _range("sigma_low", sigma_low, 0.0, 100.0)
+        next_id = max(int(key) for key in graph if key.isdigit()) + 1
+        patched: dict[tuple[str, int], list[str | int]] = {}
+        for node in list(graph.values()):
+            if node.get("class_type") != "KSampler":
+                continue
+            source = tuple(node["inputs"]["model"])
+            if source not in patched:
+                patched[source] = [str(next_id), 0]
+                graph[str(next_id)] = {
+                    "class_type": "EmiliaGuidanceInterval",
+                    "inputs": {"model": list(source), "sigma_low": float(sigma_low)},
+                    "_meta": {"title": f"Guidance Interval (cond only at sigma <= {sigma_low:g})"},
+                }
+                next_id += 1
+            node["inputs"]["model"] = list(patched[source])
+        if not patched:
+            raise ValueError("Guidance interval needs a graph with a KSampler")
+        return graph
+
     def build_highres_native(
         self,
         seed: int = 20261027,

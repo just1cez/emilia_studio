@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import math
 import os
 import shutil
 import socket
@@ -152,6 +153,8 @@ class RuntimeFlags:
     fp16_upscaler: bool = False
     fp16_vae: bool = False
     fast_tiled_vae: bool = False
+    # Whole UNet resident in VRAM: --disable-dynamic-vram --reserve-vram 0.1 instead of --reserve-vram 0.8.
+    resident_vram: bool = False
 
 
 @dataclass
@@ -188,6 +191,7 @@ class _RenderPlan:
     framing: str
     require_pose: bool
     preview: bool = False
+    guidance_interval: float | None = None
 
     @property
     def is_ultra(self) -> bool:
@@ -533,7 +537,7 @@ class EmiliaRenderEngine:
             "--port",
             str(port),
             "--reserve-vram",
-            "0.8",
+            "0.1" if flags.resident_vram else "0.8",
             "--fp16-vae" if flags.fp16_vae else "--fp32-vae",
             "--disable-pinned-memory",
             "--mmap-torch-files",
@@ -551,6 +555,8 @@ class EmiliaRenderEngine:
             "sqlite:///:memory:",
             "--log-stdout",
         ]
+        if flags.resident_vram:
+            command.append("--disable-dynamic-vram")
         whitelist = self._stage_custom_node_whitelist(stage)
         if whitelist:
             command.extend(["--disable-all-custom-nodes", "--whitelist-custom-nodes", *whitelist])
@@ -662,6 +668,8 @@ class EmiliaRenderEngine:
         fp16_vae: bool = False,
         fast_tiled_vae: bool = False,
         preview: bool = False,
+        guidance_interval: float | None = None,
+        resident_vram: bool = False,
     ) -> list[dict[str, Any]]:
         """Render seeds as one Stage 1 process, a CPU gate, then one Stage 2 process.
 
@@ -686,8 +694,8 @@ class EmiliaRenderEngine:
             strict_seed_lock=strict_seed_lock, auto_eye_repair=auto_eye_repair,
             max_seed_retries=max_seed_retries, native_options=native_options,
             finish_options=finish_options, native_steps=native_steps, face_steps=face_steps,
-            hand_steps=hand_steps, preview=bool(preview),
-            flags=RuntimeFlags(bool(fp16_upscaler), bool(fp16_vae), bool(fast_tiled_vae)),
+            hand_steps=hand_steps, preview=bool(preview), guidance_interval=guidance_interval,
+            flags=RuntimeFlags(bool(fp16_upscaler), bool(fp16_vae), bool(fast_tiled_vae), bool(resident_vram)),
         )
         temp_dir = self.config.temp_dir or self.config.app_dir / "temp"
         run_dir = temp_dir.resolve() / f"{profile}_{uuid.uuid4().hex[:12]}"
@@ -742,6 +750,7 @@ class EmiliaRenderEngine:
         face_steps: int | None,
         hand_steps: int | None,
         preview: bool = False,
+        guidance_interval: float | None = None,
         flags: RuntimeFlags,
     ) -> _RenderPlan:
         """Validate a request before any process is launched."""
@@ -765,6 +774,11 @@ class EmiliaRenderEngine:
         for name, value in (("native_steps", native_steps), ("face_steps", face_steps), ("hand_steps", hand_steps)):
             if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
                 raise ValueError(f"{name} must be a positive integer")
+        if guidance_interval is not None:
+            if isinstance(guidance_interval, bool) or not isinstance(guidance_interval, (int, float)) or not math.isfinite(guidance_interval) or guidance_interval <= 0:
+                raise ValueError("guidance_interval must be a positive sigma")
+            if preview:
+                raise ValueError("Lightning preview samples at CFG 1.0; guidance_interval has nothing to skip")
         if preview:
             if pag or (native_steps is not None and native_steps != LIGHTNING_PREVIEW_STEPS):
                 raise ValueError("Lightning preview requires exactly 8 steps and does not support PAG")
@@ -806,6 +820,7 @@ class EmiliaRenderEngine:
                 is_ultra and not strict_seed_lock and framing == "full_body" and requests_upright_pose(positive_prompt)
             ),
             preview=bool(preview),
+            guidance_interval=None if guidance_interval is None else float(guidance_interval),
         )
 
     def _with_runtime_vae(self, plan: _RenderPlan, graph: dict[str, Any]) -> dict[str, Any]:
@@ -853,6 +868,8 @@ class EmiliaRenderEngine:
             if plan.native_steps is not None:
                 kwargs["steps"] = plan.native_steps
             graph = self.builder.build_highres_native(**kwargs)
+        if plan.guidance_interval is not None:
+            graph = self.builder.inject_guidance_interval(graph, plan.guidance_interval)
         return self._with_runtime_vae(plan, graph)
 
     def _eye_repair_graph(self, plan: _RenderPlan, item: _RenderItem, image_ref: str) -> dict[str, Any]:
@@ -1046,6 +1063,7 @@ class EmiliaRenderEngine:
                 "native_steps": plan.native_steps, "face_steps": plan.face_steps,
                 "hand_steps": plan.hand_steps, "fp16_upscaler": plan.flags.fp16_upscaler,
                 "fp16_vae": plan.flags.fp16_vae, "fast_tiled_vae": plan.flags.fast_tiled_vae,
+                "guidance_interval": plan.guidance_interval, "resident_vram": plan.flags.resident_vram,
             }.items()
             if value
         }

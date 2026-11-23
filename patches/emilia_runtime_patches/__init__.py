@@ -24,6 +24,7 @@ import torch
 from PIL import Image
 
 import comfy.model_management
+import comfy.samplers
 import comfy.sd
 import comfy.utils
 import folder_paths
@@ -476,14 +477,60 @@ class EmiliaCheckpointConditioning:
         return clip, vae
 
 
+class EmiliaGuidanceInterval:
+    """Run the conditional pass only (no CFG) once sigma <= sigma_low.
+
+    Guidance interval of Kynkäänniemi et al. (NeurIPS 2024): late steps refine detail and
+    gain little from guidance, so skipping their unconditional pass saves one UNet batch
+    per step. Chains any CFG or cond-batch function already set (e.g. RescaleCFG).
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("MODEL",),
+                "sigma_low": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 100.0, "step": 0.01}),
+            }
+        }
+
+    RETURN_TYPES = ("MODEL",)
+    FUNCTION = "patch"
+    CATEGORY = "Emilia"
+
+    def patch(self, model, sigma_low: float):
+        m = model.clone()
+        prev_calc = m.model_options.get("sampler_calc_cond_batch_function")
+        prev_cfg = m.model_options.get("sampler_cfg_function")
+
+        def calc_cond_batch(args):
+            if float(args["sigma"].max()) <= sigma_low:
+                args = {**args, "conds": [args["conds"][0], None]}
+            if prev_calc is not None:
+                return prev_calc(args)
+            return comfy.samplers.calc_cond_batch(args["model"], args["conds"], args["input"], args["sigma"], args["model_options"])
+
+        def cfg(args):
+            if float(args["sigma"].max()) <= sigma_low:
+                return args["cond"]
+            if prev_cfg is not None:
+                return prev_cfg(args)
+            return args["uncond"] + (args["cond"] - args["uncond"]) * args["cond_scale"]
+
+        m.model_options["sampler_calc_cond_batch_function"] = calc_cond_batch
+        m.set_model_sampler_cfg_function(cfg)
+        return (m,)
+
 
 NODE_CLASS_MAPPINGS: dict[str, Any] = {
     "EmiliaRelativeGarmentSEGS": EmiliaRelativeGarmentSEGS,
     "EmiliaCheckpointConditioning": EmiliaCheckpointConditioning,
+    "EmiliaGuidanceInterval": EmiliaGuidanceInterval,
 }
 NODE_DISPLAY_NAME_MAPPINGS: dict[str, str] = {
     "EmiliaRelativeGarmentSEGS": "Emilia Garment Geometry Prior (not segmentation)",
     "EmiliaCheckpointConditioning": "Emilia Checkpoint CLIP/VAE Only",
+    "EmiliaGuidanceInterval": "Emilia Guidance Interval (cond only at low sigma)",
 }
 _inactive = sorted(
     name

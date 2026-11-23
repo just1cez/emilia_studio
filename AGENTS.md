@@ -16,7 +16,7 @@ This repository uses an **Option A** two-tier layout separating our declarative 
   - `workflows/api/`: 29 `.api.json` graphs — 5 canonical parity-verified graphs (`emilia_ipadapter_highres_production`, `emilia_ipadapter_highres_upscale`, `emilia_eye_repair`, `emilia_ultra_multiscale_native`, `emilia_ultra_multiscale_finish`), 1 single-stage bridge template (`emilia_lora_native`), and 23 historical experiment graphs.
   - `workflows/visual/`: 10 ComfyUI visual workflows (`Emilia_01..10`; `Emilia_08..10` re-synced via `emilia workflows --sync-visual`).
   - `workflows/reports/` & `workflows/WORKFLOW_DECISIONS.txt`: Historical benchmark/ablation JSON reports and architectural decision records.
-  - `patches/`: `emilia_runtime_patches/` custom-node plugin (`EmiliaRelativeGarmentSEGS`, `EmiliaCheckpointConditioning`, and source-verified runtime hooks) plus `comfyui_core.patch` (7 core files), `ipadapter_plus.patch`, `impact_pack.patch`, and `impact_subpack.patch`. Base commits are pinned in `models_manifest.json`.
+  - `patches/`: `emilia_runtime_patches/` custom-node plugin (`EmiliaRelativeGarmentSEGS`, `EmiliaCheckpointConditioning`, opt-in `EmiliaGuidanceInterval`, and source-verified runtime hooks) plus `comfyui_core.patch` (7 core files), `ipadapter_plus.patch`, `impact_pack.patch`, and `impact_subpack.patch`. Base commits are pinned in `models_manifest.json`.
   - `assets/`: `official_face_center_clean.png` plus 10 crops in `assets/official_references/` (`official_face_center_clean.png`, `official_references/emilia_official_face_3q.png`, and `official_references/emilia_official_skirt_and_bodice.png` are wired into production graphs).
   - `tests/`: 9 standalone top-level test modules (`tests/test_*.py`), `tests/conftest.py`, and 4 ComfyUI operator unit modules (`tests/comfy_core/test_*.py`).
   - `scripts/`: 10-seed benchmark round runner (`benchmark_architecture_iterations.py`), evaluator (`evaluate_architecture_iteration.py`), and shared PowerShell Python resolver (`EmiliaPython.ps1`).
@@ -41,6 +41,7 @@ Target workstation baseline: **8 GiB NVIDIA CMP 40HX (Turing, compute capability
      `--reserve-vram 0.8 --disable-pinned-memory --mmap-torch-files --preview-method none --disable-api-nodes` plus `--fp32-vae` by default (`--fp16-vae` only when explicitly opted into `sdxl-vae-fp16-fix.safetensors`) and stage-specific `--disable-all-custom-nodes --whitelist-custom-nodes`.
    - Interactive GUI launcher `start-comfyui.ps1` retains `--fp32-vae --mmap-torch-files --preview-method latent2rgb`.
    - Do **not** enable pinned memory or static VRAM modes; historical trials exhausted the Windows commit limit regardless of free physical RAM.
+   - The only sanctioned deviation is the explicit opt-in `--resident-vram` (`--disable-dynamic-vram --reserve-vram 0.1`): never a default, never used for hash verification; it raised the measured commit peak from 25.6 GB to 33.3 GB (quality) / 34.6 GB (ultra) in Phase 24.
 2. **Two-Stage Process Isolation**:
    - **Stage 1 (`native`)** loads `Illustrious-XL` + Emilia LoRA + `CLIP-ViT-H` + `IPAdapter`:
      - `quality` profile: single-pass `1152×1728` (36 steps, `dpmpp_2m_sde` Karras, `emilia-re-zero-re` 0.80, Face IPA 0.40 `K+V`).
