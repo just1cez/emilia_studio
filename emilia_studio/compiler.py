@@ -257,7 +257,8 @@ class OllamaPromptCompiler:
         subject = '1girl, solo' if companion == 'none' else '1girl, one human girl with one small cat spirit companion'
         return deduplicate_tags(
             f"masterpiece, best quality, absurdres, {subject}, {framing_lead}, "
-            f"{identity}, {scene_and_pose_tags}, {EMILIA_ANGLE_SPECS[angle]['tags']}, "
+            f"{EMILIA_ANGLE_SPECS[angle]['tags']}, slender, slim figure, "
+            f"{identity}, {scene_and_pose_tags}, "
             f"{EMILIA_COMPANION_TAGS[companion]}, {EMILIA_MAGIC_TAGS[magic]}, "
             "balanced body proportions, coherent anatomy, delicate clean lineart, layered anime cel shading, "
             "balanced exposure, coherent light direction, natural shadow gradients"

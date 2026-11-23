@@ -172,3 +172,22 @@ def test_corrupt_ollama_cache_recovers_and_non_emilia_disables_ipa_and_url_schem
     gpu_profile = importlib.import_module('gpu_profile')
     with pytest.raises(RuntimeError, match='CMP 40HX'):
         gpu_profile._apply(object(), object())
+
+
+def test_ultra_proportion_angle_priority_and_no_green_color_bleed():
+    from emilia_studio.config import DEFAULT_ULTRA_NEGATIVE_PROMPT
+
+    neg_tags = {t.strip() for t in DEFAULT_ULTRA_NEGATIVE_PROMPT.split(',')}
+    assert 'long legs' not in neg_tags
+    assert {'short legs', 'thick thighs', 'stocky', 'chubby'} <= neg_tags
+
+    compiler = OllamaPromptCompiler(load_config())
+    angled = compiler.build_emilia_ultra_prompt('standing on a balcony', 'full_body', angle='three-quarter')
+    assert angled.index('three-quarter view') < angled.index('white sweetheart bustier cups')
+    assert 'slender' in angled
+
+    frozen_pos = compiler.build_emilia_ultra_prompt('cathedral window', 'portrait', outfit='frozen-bond', companion='puck')
+    frozen_neg = compiler.build_emilia_ultra_negative(outfit='frozen-bond', framing='portrait')
+    assert 'forest' not in frozen_pos.casefold()
+    assert 'green spirit aura' not in frozen_pos.casefold()
+    assert 'green dress' in frozen_neg and 'green tint' in frozen_neg

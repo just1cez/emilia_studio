@@ -78,7 +78,7 @@ DEFAULT_HAND_DETAILER_NEGATIVE_PROMPT: str = (
 # Ultra Multi-Scale Hires.fix (832x1216 -> 1152x1728 -> 2304x3456) canonical identity, official skirt geometry & lighting lock
 ULTRA_EMILIA_OUTFIT_CANONICAL: str = (
     r"emilia_rezero, rezero emilia, emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, "
-    "official character design, anime key visual, silver-white hair, very long hair, straight bangs, "
+    "official character design, anime key visual, slender, slim figure, silver-white hair, very long hair, straight bangs, "
     "crown braid, symmetrical violet eyes with cyan-blue inner pupil ring, clear round purple irises, natural eye highlights, pointed elf ears, "
     "white rose hair ornament, x hair ornament, purple hair ribbon, "
     "detached white high collar with scalloped purple trim, green diamond crystal pendant at throat, bare shoulders, "
@@ -118,7 +118,7 @@ DEFAULT_ULTRA_NEGATIVE_PROMPT: str = (
     "text, watermark, signature, copyright, copyright name, logo, artist name, english text, "
     "flat lighting, harsh contrast, blown-out highlights, anime screencap, flat background, simple background, "
     "white background, glowing outline, halo around body, "
-    "bad anatomy, bad proportions, long torso, long legs, warped legs, bowed legs, knock-kneed, "
+    "bad anatomy, bad proportions, short legs, thick thighs, stocky, chubby, warped legs, bowed legs, knock-kneed, "
     "extra legs, third leg, extra limbs, fused legs, asymmetrical boots, mismatched footwear, "
     "stocking feet, shoeless, barefoot, cropped feet, feet out of frame, "
     "bad hands, malformed hands, fused fingers, extra fingers, missing fingers, "
@@ -240,16 +240,16 @@ EMILIA_OUTFIT_MODES: dict[str, dict[str, Any]] = {
         "title": "冰结森林主题创作服装（非官设复刻） / Frozen-forest interpretation",
         "positive": (
             r"emilia \(re:zero\), re:zero kara hajimeru isekai seikatsu, alternate costume, "
-            "anime key visual, silver-white hair, very long hair, straight bangs, "
+            "anime key visual, slender, slim figure, silver-white hair, very long hair, straight bangs, "
             "crown braid, symmetrical violet eyes, clear round irises, natural eye highlights, pointed elf ears, "
             "white rose hair ornament, x hair ornament, "
-            "(pure white ethereal one-piece forest sundress:1.3), (soft lavender ribbon sash tied at waist:1.2), "
-            "translucent white chiffon shawl over shoulders, green emerald crystal pendant at chest, "
+            "(pure white sleeveless sundress:1.3), (soft lavender ribbon sash tied at waist:1.2), "
+            "translucent white chiffon shawl over shoulders, small green crystal pendant at throat, "
             "(flowing layered white chiffon long skirt:1.2), delicate white lace stockings, white ankle boots"
         ),
         "negative_remove": ("floor-length gown, wedding dress, ",),
         "negative_add": (
-            "heavy armor, dark purple bodysuit, modern clothes, official costume, default outfit, "
+            "green dress, green tint, green fog, heavy armor, dark purple bodysuit, modern clothes, official costume, default outfit, "
             "corset, waist panel, vertical purple dash markings, juliet bell sleeves, detached sleeves, "
             "split coattails, yellow hawk emblem, purple sleeve tails, miniskirt"
         ),
@@ -308,9 +308,8 @@ EMILIA_OUTFIT_MODES: dict[str, dict[str, Any]] = {
 EMILIA_COMPANION_TAGS: dict[str, str] = {
     "none": "",
     "puck": (
-        "tiny cute grey-furred fairy cat spirit Puck floating beside her shoulder, "
-        "small grey kitten spirit with long fluffy tail and golden earring on left ear, "
-        "warm glowing green spirit aura around the tiny cat"
+        "tiny cute grey-furred fairy cat spirit Puck floating close beside her cheek and shoulder, "
+        "small grey-and-white kitten spirit with long fluffy tail and tiny golden earring"
     ),
 }
 

@@ -361,3 +361,15 @@ Standalone executable smoke: seed `20261027`, quality profile, launched outside 
 
 1. **Bridge aspect (`build_ultra_native` node 51)**: 832x1216 is not exactly 2:3, so scaling to 1152x1728 with `crop: disabled` stretched figures 2.6% vertically. Decision: `crop: center` (trims ~11 px per side of the base). Kept the pixel-space lanczos bridge over latent upscaling, which needs denoise >= 0.55 on SDXL and would undo pass-1 anatomy.
 2. **Pose gate (`analyze_pose_completeness`)**: judge the face-containing person box with the best-supported leg keypoints (the low-confidence detector often lists a partial box first, which produced a false reject of a standing seed). Add face-height proportion rules for kneeling/seated/cropped legs (< 3.05 below hips), seated with hanging legs (< 6.3 tall and shin/thigh drop >= 1.6) and unreliable hips (< 5 tall). Lying flat seen from above remains undetectable from 2D keypoints and is handled by the ultra negative prompt; a standing figure shot from above can be rejected (one reseed). Evidence: 42-image corpus and the live `--auto-gate` batch recorded in PROGRESS.md Phase 20.
+
+## Phase 22 Ultra Proportion and Color-Bleed Prompts (2026-11-22)
+
+1. `slender, slim figure` in the canonical and frozen-bond outfits, placed in the first CLIP chunk after the framing lead; the ultra negative bans `short legs, thick thighs, stocky, chubby` instead of `long torso, long legs`. Evidence: seed 20263123 shin/thigh ratios 0.87/0.93 -> 1.13/1.11 (`03_finished_2x_00037_`).
+2. No green scene words near the dress: frozen-bond drops `forest`, Puck drops the green aura, negative `green dress, green tint, green fog`. Evidence: seed 20261124 `03_finished_2x_00038_`.
+
+## Phase 23 Community Speed Methods (2026-11-23; nothing adopted)
+
+1. Residency first: on this card DynamicVRAM plus `--reserve-vram 0.8` leaves the UNet partly offloaded (ultra pass 1 2.55 s/it). `--disable-dynamic-vram --reserve-vram 0.1` gives 1.89 s/it and quality 4.06 -> 1.92 s/it, but changes pixels and conflicts with the mandatory flags; held for an explicit decision.
+2. Rejected: fp16_accumulation, cudnn autotune, global channels_last, VAE channels_last, CUDA graphs, built-in TomePatchModel (no-op on SDXL), DeepCache (composition drift), EasyCache on SDE pass 1 (0 skipped steps).
+3. Candidate opt-in: guidance interval (cond only below sigma 0.35-0.60) 1.34-1.43x sampling with the composition preserved; RealESRGAN FP16 + channels_last at tile 512 (-12% time, -50% VRAM, same output as FP16).
+4. Fewer-step schedules (AYS/GITS/UniPC) are only fair against dpmpp_2m_sde if the sampler stays SDE; with dpmpp_2m they lose the canonical outfit. Not adopted.

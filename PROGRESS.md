@@ -405,3 +405,35 @@ No sampler, prompt, or model defaults changed; all five canonical API graphs and
   - Fixed `install-gpu-profile-task.ps1` for PowerShell 7 (`pwsh`) via `System.IO.FileSystemAclExtensions` compatibility helpers, copied Conda `Library\bin\*ffi*.dll` required by `_ctypes.pyd` / `pynvml`, and added a pre-registration `-I -S -c "import ctypes, pynvml"` check.
   - Completed live elevated migration on this workstation (`.\install-gpu-profile-task.ps1 -Python D:\conda-data\envs\comfyui\python.exe`): `Task EmiliaGPUProfile registered; last result: 0` (`220W`, fans `100%`, `+105/+500 MHz`, `34°C`). `.\install-gpu-profile-task.ps1 -Audit` now exits `0`, confirming the protected versioned runtime `C:\ProgramData\EmiliaGPUProfile\versions\171f0df14cf742f48a17915392ccddb5\runtime\python.exe -I -S` and resolving the Phase 17/18 open local ACL risk.
 - **Verification**: `emilia setup --sync` ready; top-level `tests/` `260 passed, 1 warning` (+5 new regression test suites); runtime `app/tests-unit/comfy_test/` `158 passed, 1 warning`; `emilia doctor` exit 0 (all required/optional models, 3 reference assets, 4 custom nodes, pinned commits, and patches `OK`); `emilia workflows` parity true for all five canonical graphs; `ledger stats` 182 runs; rebuilt `dist/` (`emilia.exe`, `.whl`, `.tar.gz`) and smoke-tested `dist\emilia.exe --version` and `workflows`.
+
+### Phase 22: Ultra Body-Proportion and Color-Bleed Prompt Fix (2026-11-22)
+
+`quality` graphs are unchanged; only the ultra prompt constants and the ultra canonical native graph changed.
+
+- **Problem** (live `ultra --auto-gate` renders `03_finished_2x_00034_`..`00036_`): seed `20263123` looked short and stocky; seed `20261124` (`frozen-bond`) had a green tint on the chest.
+- **Code**:
+  - `config.py`: `slender, slim figure` added to `ULTRA_EMILIA_OUTFIT_CANONICAL` and `frozen-bond`; `DEFAULT_ULTRA_NEGATIVE_PROMPT` replaces `long torso, long legs` (which suppressed long legs) with `short legs, thick thighs, stocky, chubby`; `frozen-bond` drops `forest`, uses `(pure white sleeveless sundress:1.3)` and negates `green dress, green tint, green fog`; Puck no longer carries `warm glowing green spirit aura`.
+  - `compiler.py`: angle tags and `slender, slim figure` follow the framing lead in `build_emilia_ultra_prompt`, inside the first CLIP chunk.
+  - `workflows/api/emilia_ultra_multiscale_native.api.json` regenerated from the builder; test `test_ultra_proportion_angle_priority_and_no_green_color_bleed`.
+- **Evidence** (same seeds): `20263123` -> `03_finished_2x_00037_` slender figure, `shin_thigh_ratios` `0.87/0.93 -> 1.13/1.11`, auto eye repair (heterochromia 2.1 deg), native 221.5 s / finish 67.0 s; `20261124` -> `03_finished_2x_00038_` no green bleed, native 116.4 s / finish 57.0 s.
+
+### Phase 23: Community Performance Research, Measured on the CMP 40HX (2026-11-23; research only)
+
+No production default, flag or patch changed. Full report with tables and the visual grid: brain artifact `community_performance_research.md`; raw data and scripts under the conversation `scratch/` (`bench_turing_kernels.json`, `bench_runtime_clean.json`, `bench_dynvram_conv6.json`, `ab_algos/scores.json`).
+
+- **Biggest measured bottleneck is VRAM residency, not kernels.** With the production flags (`--reserve-vram 0.8`, DynamicVRAM on by default in ComfyUI 0.34 / comfy-aimdo 0.4.15) the SDXL UNet is only partly resident and weights stream over PCIe 2.0: ultra pass 1 `2.55 s/it` (82.9 s) and quality `4.06 s/it`. Isolated full-GPU UNet cost is `0.44 s/step` (832x1216, B=2) and `0.98 s/step` (1152x1728). `--disable-dynamic-vram --reserve-vram 0.1` (seed 20261027, same graphs): ultra pass 1 `1.89 s/it` (61.9 s), pass 2 `1.93 s/it`, quality `1.92 s/it` (69.2 s, UNet fully loaded). Pixels change (quality native SHA-256 `2593fe7d4b8c99cf...`, not the pinned `3b58d9da...`), `--reserve-vram 0.8` is an `AGENTS.md` mandatory flag and upstream marks `--disable-dynamic-vram` for removal, so this is not adopted; it needs an explicit decision and new baselines.
+- **Kernel-level** (isolated, `bench_turing_kernels.py` / `bench_runtime_clean.py`): `fp16_accumulation` (-4.4%) and `cudnn.benchmark` (-7.9%) are slower on the real UNet; global `channels_last` is -11% at 832x1216. cuDNN 9.20 allocates a 5.4 GiB workspace for `output_blocks.6.0.in_layers.2` at 1152x1728 B=2 NCHW in a bare UNet; a selective NHWC or B=1 split of that conv fixes it in isolation, but inside ComfyUI the regime never appears (pass 2 runs `1.93 s/it` with or without the guard), so no patch. `CUDAGraph` replay: no gain (GPU-bound). VAE `channels_last`: slower (FP32 21.4 -> 27.4 s, FP16-fix 4.8 -> 6.8 s). RealESRGAN FP16 + NHWC at tile 512: 2.48 s vs 2.81 s FP16 NCHW, half the VRAM, identical output; FP32 + NHWC is 11x slower. Built-in `TomePatchModel` hardcodes `max_downsample = 1` and is a no-op on SDXL.
+- **Algorithm-level A/B** (ultra rose-garden seed 20261027, one warm process, `--disable-dynamic-vram --reserve-vram 0.1 --fp16-vae`; sampling time of pass 1 + pass 2; PSNR vs baseline):
+
+  | Variant | Sampling s | Speedup | PSNR dB | Visual |
+  | :--- | ---: | ---: | ---: | :--- |
+  | Baseline 28+18 | 86 | 1.00x | - | reference |
+  | EasyCache 0.12 / 0.20 | 79 / 78 | 1.09x / 1.10x | 24.8 | same composition; pass 1 skipped 0/28 steps (SDE noise), pass 2 3/18 |
+  | Guidance interval, no uncond at sigma <= 0.35 | 64 | 1.34x | 24.2 | same composition and outfit, minor coattail-emblem change |
+  | Guidance interval, sigma <= 0.60 | 60 | 1.43x | 23.6 | same composition, slightly flatter shading |
+  | DeepCache branch 2 / branch 1, interval 2 | 76 / 72 | 1.13x / 1.19x | 16.2 | composition and pose drift |
+  | Karras / AYS / GITS dpmpp_2m 18+10, UniPC 16+10 | 45-48 | 1.79-1.91x | 11.1-11.5 | different image: ODE sampler instead of SDE loses the canonical corset/skirt (blue-green skirt) |
+  | AYS 18+10 + guidance interval 0.35 | 37 | 2.32x | 11.4 | same drift as AYS |
+
+  Every variant passed the CPU gate (1 face, pose complete). The fewer-steps results mostly measure the sampler change, not the schedule. The guidance interval is the only quality-preserving algorithmic win and is the candidate for an opt-in flag.
+- Not applicable on this GPU (sm75, Windows) per `AGENTS.md`: SageAttention/Triton/FP8/xFormers, TensorRT (no LoRA/IPAdapter hot-swap within 8 GiB), stable-fast/OneDiff (Linux-first).
