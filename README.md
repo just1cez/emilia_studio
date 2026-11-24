@@ -97,7 +97,7 @@ emilia pull all          # 断点续传 + SHA-256 校验；两个 Emilia LoRA �
 emilia doctor            # commit、补丁、依赖版本漂移与模型
 ```
 
-`--bootstrap` 可重复执行：已在固定 commit 的检出和已打的补丁直接跳过；检出不在固定 commit 且有本地改动时报错，不会丢弃改动。`--install-deps` 只在版本与固定值不符时调用 pip。`idea` 与桥接脚本另需 [Ollama](https://ollama.com) 和 `ollama pull qwen3.5:9b`。
+`--bootstrap` 可重复执行：已在固定 commit 的检出和已打的补丁直接跳过；检出不在固定 commit 且有本地改动时报错，不会丢弃改动。`--install-deps` 只在版本与固定值不符时调用 pip。`idea` 与桥接脚本另需 [Ollama](https://ollama.com) 和 `ollama pull qwen3.5:9b`；若代理工作在 TUN fake-ip 模式，Ollama 会以 `redirect target not allowed ... non-public 198.18.x.x` 拒绝下载，此时让 `ollama serve` 进程带上 `HTTPS_PROXY` 再拉取。
 
 无参数运行 `emilia` 进入交互式终端（`help <子命令>`，`exit` 退出）。
 

@@ -98,7 +98,7 @@ emilia pull all          # resumable, SHA-256 verified; the two Emilia LoRAs hav
 emilia doctor            # commits, patches, dependency-version drift and models
 ```
 
-`--bootstrap` is rerunnable: checkouts already on their pinned commit and patches already applied are skipped; a checkout on another commit with local changes is an error, never discarded. `--install-deps` calls pip only for versions that differ from the pins. `idea` and the bridge script also need [Ollama](https://ollama.com) with `ollama pull qwen3.5:9b`.
+`--bootstrap` is rerunnable: checkouts already on their pinned commit and patches already applied are skipped; a checkout on another commit with local changes is an error, never discarded. `--install-deps` calls pip only for versions that differ from the pins. `idea` and the bridge script also need [Ollama](https://ollama.com) with `ollama pull qwen3.5:9b`; behind a TUN fake-ip proxy Ollama refuses the download with `redirect target not allowed ... non-public 198.18.x.x`, so start `ollama serve` with `HTTPS_PROXY` set before pulling.
 
 Running `emilia` without arguments opens the interactive shell (`help <command>`, `exit`).
 
