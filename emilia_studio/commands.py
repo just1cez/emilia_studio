@@ -23,6 +23,7 @@ from .config import (
     EMILIA_OUTFIT_MODES,
     get_user_config_path,
 )
+from .runtime_env import checkout_checks, environment_check
 from .tui import download_file_with_progress, format_bytes, print_banner, render_table
 
 PATH_KEYS = (
@@ -31,47 +32,6 @@ PATH_KEYS = (
     'conda_python', 'ollama_exe',
 )
 VALUE_KEYS = ('comfy_host', 'comfy_port', 'quality_port', 'ollama_base', 'ollama_model')
-
-
-def checkout_checks(config, manifest: dict) -> list[tuple[str, str, str, bool]]:
-    """Compare runtime git checkouts with their pinned commits and tracked source patches.
-
-    Returns ``(check, status, details, ok)`` rows. A checkout that git cannot inspect is
-    reported UNKNOWN without failing; a different commit or an unapplied patch fails,
-    because every recorded timing and pixel hash refers to exactly this patched source.
-    """
-    rows: list[tuple[str, str, str, bool]] = []
-    git = shutil.which('git')
-    entries = [manifest['comfyui']] if manifest.get('comfyui') else []
-    entries += [node for node in manifest.get('custom_nodes', []) if node.get('pinned_commit')]
-    for entry in entries:
-        directory = (config.app_dir / entry['directory']).resolve()
-        pinned = entry['pinned_commit']
-
-        def run(*arguments: str) -> subprocess.CompletedProcess[str] | None:
-            if git is None or not (directory / '.git').exists():
-                return None
-            try:
-                return subprocess.run([git, '-C', str(directory), *arguments], capture_output=True, text=True, timeout=60)
-            except (OSError, subprocess.SubprocessError):
-                return None
-
-        head = run('rev-parse', 'HEAD')
-        if head is None or head.returncode != 0:
-            rows.append((f"{entry['name']} commit", 'UNKNOWN', f'not a readable git checkout; expected {pinned[:12]}', True))
-        else:
-            actual = head.stdout.strip()
-            matches = actual.startswith(pinned) or pinned.startswith(actual)
-            rows.append((f"{entry['name']} commit", 'OK' if matches else 'DRIFT', actual[:12] if matches else f'{actual[:12]} (pinned {pinned[:12]})', matches))
-        patch = entry.get('patch')
-        if patch:
-            patch_path = config.resources_dir / patch
-            applied = run('apply', '--reverse', '--check', str(patch_path)) if patch_path.is_file() else None
-            if applied is None:
-                rows.append((f"{entry['name']} patch", 'UNKNOWN', patch, True))
-            else:
-                rows.append((f"{entry['name']} patch", 'OK' if applied.returncode == 0 else 'NOT APPLIED', patch, applied.returncode == 0))
-    return rows
 
 
 def add_commands(sub):
@@ -534,6 +494,11 @@ def handle(args, config, main, parser):
             rows.append([item['name'], 'OK' if valid else 'MISSING', item['directory']])
             ok &= valid
         for check, status, details, passed in checkout_checks(config, manifest):
+            rows.append([check, status, details])
+            ok &= passed
+        env_row = environment_check(config, manifest)
+        if env_row is not None:
+            check, status, details, passed = env_row
             rows.append([check, status, details])
             ok &= passed
         print(render_table(['Check', 'Status', 'Details'], rows, title='Emilia doctor'))

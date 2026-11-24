@@ -8,6 +8,12 @@
     "pinned_commit": "0a33ed6c28f926d14536235771c222f9e6d1026b",
     "patch": "patches/comfyui_core.patch"
   },
+  "python_env": {
+    "python": "3.13",
+    "torch_index_url": "https://download.pytorch.org/whl/cu130",
+    "torch_packages": ["torch==2.13.0", "torchvision==0.28.0", "torchaudio==2.11.0"],
+    "requirements": "requirements-inference.txt"
+  },
   "models": [
     {
       "key": "illustrious-xl",

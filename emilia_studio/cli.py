@@ -25,6 +25,7 @@ from .commands import add_commands, handle
 from .engine import EmiliaRenderEngine, QualityGateRejected
 from .inspector import QualityInspector
 from .ledger import ExperimentLedger
+from .runtime_env import bootstrap_checkouts, install_inference_env
 from .workflows import LIGHTNING_PREVIEW_STEPS, EmiliaWorkflowBuilder
 
 DEFAULT_SEED = 20261027
@@ -288,12 +289,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_setup = sub.add_parser(
         "setup",
-        help="Verify installed model weights, reference assets, and custom nodes against models_manifest.json.",
+        help="Verify installed model weights, reference assets, and custom nodes against models_manifest.json; optionally bootstrap the pinned runtime.",
     )
     p_setup.add_argument(
         "--sync",
         action="store_true",
         help="Sync top-level assets/, patches/, workflows/, and tests/ into the app/ ComfyUI runtime directory.",
+    )
+    p_setup.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="Clone ComfyUI and the pinned custom nodes into app_dir (or move clean checkouts) at their manifest commits, apply patches/*.patch, then --sync.",
+    )
+    p_setup.add_argument(
+        "--install-deps",
+        action="store_true",
+        help="pip-install the manifest torch build (EMILIA_TORCH_INDEX_URL overrides its index) and requirements-inference.txt into conda_python where versions differ.",
     )
 
     return parser
@@ -504,7 +515,11 @@ def _cmd_setup(args: argparse.Namespace, config: StudioConfig) -> int:
         raise RuntimeError(f"Manifest not found: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert config.app_dir is not None
-    synced_files = _sync_into_app(config) if args.sync and config.app_dir.is_dir() else []
+    if args.bootstrap:
+        bootstrap_checkouts(config, manifest, log=lambda line: print(line, file=sys.stderr, flush=True))
+    if args.install_deps:
+        install_inference_env(config, manifest, log=lambda line: print(line, file=sys.stderr, flush=True))
+    synced_files = _sync_into_app(config) if (args.sync or args.bootstrap) and config.app_dir.is_dir() else []
     missing: list[str] = []
     verified_models: list[dict[str, object]] = []
     for item in manifest.get("models", []) + manifest.get("reference_assets", []):

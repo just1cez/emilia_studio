@@ -12,23 +12,25 @@ This repository uses an **Option A** two-tier layout separating our declarative 
   - `engine.py`: Two-stage isolated wave rendering engine (`EmiliaRenderEngine`) with per-graph total (`stage_timeout_s`) and prompt-event silence (`stall_timeout_s`) watchdogs. `render_quality_pipeline` is the single-seed form of `render_batch_pipeline`: one Stage 1 process for all seeds and retries, the CPU gate, then one Stage 2 process for eye repairs and finishing; `.run.json` receipts are written beside the image they describe.
   - `ledger.py`: WAL-mode SQLite experiment and render ledger (`ExperimentLedger`) indexing `.run.json` receipts under `output/emilia/` and 10-seed architecture benchmark rounds.
   - `cli.py`, `commands.py` & `tui.py`: Unified CLI/TUI entrypoint (`emilia` / `emilia-studio` / `python -m emilia_studio.cli`).
+  - `runtime_env.py`: Pinned-runtime bootstrap (`setup --bootstrap`: clone/checkout ComfyUI and custom nodes at manifest commits, apply `patches/*.patch`, never discarding local changes), inference-interpreter installs (`setup --install-deps`), and the doctor's commit/patch/version-drift checks.
 - **Top-Level Tracked Assets (`workflows/`, `patches/`, `assets/`, `tests/`, `scripts/`)**:
   - `workflows/api/`: 29 `.api.json` graphs — 5 canonical parity-verified graphs (`emilia_ipadapter_highres_production`, `emilia_ipadapter_highres_upscale`, `emilia_eye_repair`, `emilia_ultra_multiscale_native`, `emilia_ultra_multiscale_finish`), 1 single-stage bridge template (`emilia_lora_native`), and 23 historical experiment graphs.
   - `workflows/visual/`: 10 ComfyUI visual workflows (`Emilia_01..10`; `Emilia_08..10` re-synced via `emilia workflows --sync-visual`).
   - `workflows/reports/` & `workflows/WORKFLOW_DECISIONS.txt`: Historical benchmark/ablation JSON reports and architectural decision records.
   - `patches/`: `emilia_runtime_patches/` custom-node plugin (`EmiliaRelativeGarmentSEGS`, `EmiliaCheckpointConditioning`, opt-in `EmiliaGuidanceInterval`, and source-verified runtime hooks) plus `comfyui_core.patch` (7 core files), `ipadapter_plus.patch`, `impact_pack.patch`, and `impact_subpack.patch`. Base commits are pinned in `models_manifest.json`.
   - `assets/`: `official_face_center_clean.png` plus 10 crops in `assets/official_references/` (`official_face_center_clean.png`, `official_references/emilia_official_face_3q.png`, and `official_references/emilia_official_skirt_and_bodice.png` are wired into production graphs).
-  - `tests/`: 9 standalone top-level test modules (`tests/test_*.py`), `tests/conftest.py`, and 4 ComfyUI operator unit modules (`tests/comfy_core/test_*.py`).
+  - `tests/`: 10 standalone top-level test modules (`tests/test_*.py`), `tests/conftest.py`, and 4 ComfyUI operator unit modules (`tests/comfy_core/test_*.py`).
   - `scripts/`: 10-seed benchmark round runner (`benchmark_architecture_iterations.py`), evaluator (`evaluate_architecture_iteration.py`), and shared PowerShell Python resolver (`EmiliaPython.ps1`).
 - **Root Launchers & Config**:
   - `render-emilia-quality.ps1`: PowerShell shortcut for `emilia render` (`-Seed`, `-Profile`, `-Pag`, `-AutoGate`, `-Fast`, `-Preview`).
   - `start-comfyui.ps1`: Interactive GUI server launcher (`-Listen`, `-Port`, default `127.0.0.1:8188`).
   - `ollama_comfyui_bridge.py`: CLI bridge driving either the 2-stage pipeline (`--mode ultra`, default, or `--mode quality`, with `--fast-finish` for TensorCore speedups) or single-stage interactive server queueing (`--mode fast`).
-  - `config.example.toml` & `models_manifest.json`: Portable TOML configuration template; manifest of 11 required models, 4 experimental models, reference assets, and pinned commits/patches.
+  - `config.example.toml` & `models_manifest.json`: Portable TOML configuration template; manifest of 11 required models, 4 experimental models, reference assets, pinned commits/patches, and the inference `python_env` (Python 3.13, `torch==2.13.0` cu130 index, `requirements-inference.txt`).
+  - `requirements-inference.txt`: Exact `name==version` pins of the inference interpreter (ComfyUI + Impact Pack/Subpack requirements at the pinned commits). Bumping a pinned commit or package updates this file in the same commit.
   - `gpu_profile.py` & `install-gpu-profile-task.ps1`: Optional CMP 40HX tuning profile and versioned, ACL-audited `%ProgramData%\EmiliaGPUProfile` SYSTEM scheduled task.
 - **`app/`** (Git-Ignored External ComfyUI Runtime Subtree):
   - Upstream ComfyUI checkout (`Comfy-Org/ComfyUI`, retaining its own `app/.git`) plus custom nodes (`comfyui-ipadapter-plus`, `comfyui-impact-pack`, `comfyui-impact-subpack`), each pinned to a commit in `models_manifest.json` and modified by the matching `patches/*.patch`. `emilia doctor` verifies both.
-  - Run `python -m emilia_studio.cli setup --sync` to sync top-level `assets/`, the patch plugin, `workflows/`, and runtime tests into `app/`.
+  - On a new machine `python -m emilia_studio.cli setup --bootstrap --install-deps` creates this subtree from the manifest; `setup --sync` (implied by `--bootstrap`) syncs top-level `assets/`, the patch plugin, `workflows/`, and runtime tests into `app/`.
   - When modifying anything inside `app/comfy/` or `app/nodes.py`, also follow `app/AGENTS.md` and regenerate `patches/comfyui_core.patch`.
 ---
 
@@ -79,19 +81,20 @@ Target workstation baseline: **8 GiB NVIDIA CMP 40HX (Turing, compute capability
 
 ## 4. Verification & Testing Requirements
 
-Before completing any code or workflow change, run the unit test suite using the project Conda environment:
+Before completing any code or workflow change, run the unit test suite with the configured inference interpreter (`emilia config show` → `conda_python`; on the reference workstation `D:\conda-data\envs\comfyui\python.exe`):
 
 ```powershell
+$Py = '<conda_python>'
 # 1. Run the top-level Emilia Studio unit suite
-D:\conda-data\envs\comfyui\python.exe -m pytest tests/
+& $Py -m pytest tests/
 
 # 2. Run the full ComfyUI runtime unit suite in app/tests-unit/comfy_test/ (after `setup --sync`)
-D:\conda-data\envs\comfyui\python.exe -m pytest app/tests-unit/comfy_test/
+& $Py -m pytest app/tests-unit/comfy_test/
 
 # 3. Verify CLI health (doctor, workflows, and SQLite ledger)
-D:\conda-data\envs\comfyui\python.exe -m emilia_studio.cli doctor
-D:\conda-data\envs\comfyui\python.exe -m emilia_studio.cli workflows
-D:\conda-data\envs\comfyui\python.exe -m emilia_studio.cli ledger stats
+& $Py -m emilia_studio.cli doctor
+& $Py -m emilia_studio.cli workflows
+& $Py -m emilia_studio.cli ledger stats
 ```
 
 ## 5. Git & Repository Hygiene

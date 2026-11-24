@@ -8,6 +8,7 @@
 # Env overrides: EMILIA_ROOT_DIR, EMILIA_APP_DIR, EMILIA_OUTPUT_DIR, EMILIA_TEMP_DIR,
 #                EMILIA_WORKFLOWS_DIR, EMILIA_VISUAL_WORKFLOWS_DIR, EMILIA_RESOURCES_DIR,
 #                EMILIA_CONDA_PYTHON, EMILIA_OLLAMA_EXE
+# `emilia setup --install-deps` reads EMILIA_TORCH_INDEX_URL to replace the manifest's PyTorch index (default cu130).
 # root_dir = "."
 # app_dir = "./app"
 # output_dir = "./app/output"

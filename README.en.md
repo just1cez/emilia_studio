@@ -86,20 +86,19 @@ flowchart TB
 ### 1. Install
 
 ```powershell
-python -m pip install -e .
-emilia config init --root-dir <workspace> --app-dir <workspace>/app --python <inference-env>/python.exe
+git clone https://github.com/just1cez/emilia_studio.git; cd emilia_studio
+python -m pip install -e .                                   # controller: aiohttp / numpy / Pillow
+conda create -n comfyui python=3.13                          # inference environment (a venv works too)
+emilia config init --root-dir . --app-dir ./app --python <inference-env>/python.exe
 
-# First deployment: check out the commits pinned in models_manifest.json and apply the patches
-git -C app checkout 0a33ed6c28f926d14536235771c222f9e6d1026b
-git -C app apply ../patches/comfyui_core.patch
-git -C app/custom_nodes/comfyui-ipadapter-plus apply ../../../patches/ipadapter_plus.patch
-git -C app/custom_nodes/comfyui-impact-pack apply ../../../patches/impact_pack.patch
-git -C app/custom_nodes/comfyui-impact-subpack apply ../../../patches/impact_subpack.patch
-
-emilia setup --sync     # references, patch plugin, workflows and runtime tests into app/
-emilia doctor           # dependencies, models, commits and patch state
-emilia pull --list      # resumable, SHA-256 verified; the two Emilia LoRAs have no public URL and must be placed manually
+emilia setup --bootstrap --install-deps   # clone ComfyUI and the 3 custom nodes at the commits pinned in models_manifest.json,
+                                          # apply the patches, sync app/, then install the pinned torch (cu130; EMILIA_TORCH_INDEX_URL
+                                          # switches the index) and requirements-inference.txt into the inference environment
+emilia pull all          # resumable, SHA-256 verified; the two Emilia LoRAs have no public URL and go into app/models/loras/ by hand
+emilia doctor            # commits, patches, dependency-version drift and models
 ```
+
+`--bootstrap` is rerunnable: checkouts already on their pinned commit and patches already applied are skipped; a checkout on another commit with local changes is an error, never discarded. `--install-deps` calls pip only for versions that differ from the pins. `idea` and the bridge script also need [Ollama](https://ollama.com) with `ollama pull qwen3.5:9b`.
 
 Running `emilia` without arguments opens the interactive shell (`help <command>`, `exit`).
 
@@ -204,7 +203,7 @@ Seed `20261027`, `pag=False`, no `--auto-gate`; decoded-pixel SHA-256 (`hashlib.
 | `quality` | `3b58d9daf2770d0ad7e87b971912b854e1e7495f9e99a09f348af9bf258c9425` | `d7fe10c200535d8656ab633248ca7cc651ee6d2e60bd309c23c43fa1ce5af63e` |
 | `quality --fast` | — | `a97a5cbff467816b53049c710b88c1f25ce7ed58b49c0d5c342b572fd6db3f9d` |
 
-If a hash differs, rule out the hardware first: `python gpu_profile.py status` shows clock offsets; `gpu_profile.py reset` (elevated) removes them for a control run. `ultra` hashes and their history are in [PROGRESS.md](PROGRESS.md).
+These hashes hold only on the reference workstation (CMP 40HX, PyTorch 2.13.0+cu130, cuDNN 9.20, the versions in `requirements-inference.txt`); another GPU, driver or library version changes the pixels, so record a new baseline with the same command on a new machine. If a hash differs here, rule out the hardware first: `python gpu_profile.py status` shows clock offsets; `gpu_profile.py reset` (elevated) removes them for a control run. `ultra` hashes and their history are in [PROGRESS.md](PROGRESS.md).
 
 ---
 
@@ -233,17 +232,17 @@ All verified to keep decoded pixels unchanged on the fixed seed and the historic
 ## Repository Layout
 
 ```text
-emilia_studio/       controller: cli / commands / tui / config / _version / workflows / compiler / engine / inspector / inspection_worker / ledger
+emilia_studio/       controller: cli / commands / tui / config / _version / workflows / compiler / engine / inspector / inspection_worker / ledger / runtime_env
 workflows/api/       29 .api.json: 5 canonical graphs (builder-verified), emilia_lora_native template, 23 historical experiments
 workflows/visual/    Emilia_01..10 GUI workflows (08–10 rewritten by workflows --sync-visual)
 workflows/reports/   ablation, image-quality and hardware reports; WORKFLOW_DECISIONS.txt is the decision record
 patches/             4 git patches + emilia_runtime_patches (EmiliaRelativeGarmentSEGS, EmiliaCheckpointConditioning, source-signature checks)
 assets/              official_face_center_clean.png + 10 design crops in official_references/
 scripts/             10-seed benchmark runner/evaluator, shared PowerShell interpreter resolver
-tests/               9 top-level modules + 4 operator modules in comfy_core/
+tests/               10 top-level modules + 4 operator modules in comfy_core/
 packaging/           PyInstaller spec and Windows build script
 render-emilia-quality.ps1 · start-comfyui.ps1 · ollama_comfyui_bridge.py · gpu_profile.py · install-gpu-profile-task.ps1
-config.example.toml · models_manifest.json (11 required + 4 experimental models, references, pinned commits and patches)
+config.example.toml · models_manifest.json (11 required + 4 experimental models, references, pinned commits and patches, inference torch build) · requirements-inference.txt (exact inference-environment pins)
 ```
 
 `app/` is ignored by Git. It is not a clean upstream checkout; upgrading ComfyUI or a custom node requires regenerating its patch.
@@ -253,7 +252,7 @@ config.example.toml · models_manifest.json (11 required + 4 experimental models
 `install-gpu-profile-task.ps1` stages a protected, versioned Python/pynvml copy under `%ProgramData%\EmiliaGPUProfile\versions\`, runs it with `-I -S`, and audits the ACLs of everything it executes before registering.
 
 ```powershell
-.\install-gpu-profile-task.ps1 -Python D:\conda-data\envs\comfyui\python.exe   # elevated
+.\install-gpu-profile-task.ps1 -Python <inference-env>\python.exe   # elevated
 .\install-gpu-profile-task.ps1 -Audit                                           # unelevated
 .\install-gpu-profile-task.ps1 -Remove                                          # elevated
 ```

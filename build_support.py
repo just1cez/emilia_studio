@@ -10,6 +10,7 @@ from setuptools.command.build_py import build_py
 
 RESOURCE_PATTERNS = (
     "models_manifest.json",
+    "requirements-inference.txt",
     "assets/**/*.png",
     "workflows/api/*.json",
     "workflows/visual/*.json",
@@ -22,7 +23,7 @@ RESOURCE_PATTERNS = (
 def resource_files(root: Path) -> list[Path]:
     """Return canonical, sorted resources from either a checkout or an sdist."""
     files = {path for pattern in RESOURCE_PATTERNS for path in root.glob(pattern) if path.is_file()}
-    for required in ("models_manifest.json", "assets", "workflows/api", "workflows/visual", "patches/emilia_runtime_patches"):
+    for required in ("models_manifest.json", "requirements-inference.txt", "assets", "workflows/api", "workflows/visual", "patches/emilia_runtime_patches"):
         if not (root / required).exists():
             raise FileNotFoundError(f"Missing distribution resource: {root / required}")
     return sorted(files, key=lambda path: path.relative_to(root).as_posix())

@@ -86,20 +86,18 @@ flowchart TB
 ### 1. 安装
 
 ```powershell
-python -m pip install -e .
-emilia config init --root-dir <工作区> --app-dir <工作区>/app --python <推理环境>/python.exe
+git clone https://github.com/just1cez/emilia_studio.git; cd emilia_studio
+python -m pip install -e .                                   # 控制层：aiohttp / numpy / Pillow
+conda create -n comfyui python=3.13                          # 推理环境（venv 亦可）
+emilia config init --root-dir . --app-dir ./app --python <推理环境>/python.exe
 
-# 首次部署：检出 models_manifest.json 固定的 commit 并应用补丁
-git -C app checkout 0a33ed6c28f926d14536235771c222f9e6d1026b
-git -C app apply ../patches/comfyui_core.patch
-git -C app/custom_nodes/comfyui-ipadapter-plus apply ../../../patches/ipadapter_plus.patch
-git -C app/custom_nodes/comfyui-impact-pack apply ../../../patches/impact_pack.patch
-git -C app/custom_nodes/comfyui-impact-subpack apply ../../../patches/impact_subpack.patch
-
-emilia setup --sync     # 参考图、补丁插件、工作流与运行时单测同步进 app/
-emilia doctor           # 依赖、模型、commit 与补丁状态
-emilia pull --list      # 断点续传 + SHA-256 校验；两个 Emilia LoRA 无公开地址，需手动放置
+emilia setup --bootstrap --install-deps   # 按 models_manifest.json 克隆 ComfyUI 与 3 个节点到固定 commit、打补丁、同步 app/；
+                                          # 再向推理环境安装固定版本 torch（cu130，可用 EMILIA_TORCH_INDEX_URL 换源）与 requirements-inference.txt
+emilia pull all          # 断点续传 + SHA-256 校验；两个 Emilia LoRA 无公开地址，需手动放入 app/models/loras/
+emilia doctor            # commit、补丁、依赖版本漂移与模型
 ```
+
+`--bootstrap` 可重复执行：已在固定 commit 的检出和已打的补丁直接跳过；检出不在固定 commit 且有本地改动时报错，不会丢弃改动。`--install-deps` 只在版本与固定值不符时调用 pip。`idea` 与桥接脚本另需 [Ollama](https://ollama.com) 和 `ollama pull qwen3.5:9b`。
 
 无参数运行 `emilia` 进入交互式终端（`help <子命令>`，`exit` 退出）。
 
@@ -204,7 +202,7 @@ emilia clean --older-than-hours 1 [--dry-run]     # 正在运行的渲染目录�
 | `quality` | `3b58d9daf2770d0ad7e87b971912b854e1e7495f9e99a09f348af9bf258c9425` | `d7fe10c200535d8656ab633248ca7cc651ee6d2e60bd309c23c43fa1ce5af63e` |
 | `quality --fast` | — | `a97a5cbff467816b53049c710b88c1f25ce7ed58b49c0d5c342b572fd6db3f9d` |
 
-哈希不一致时先排除硬件：`python gpu_profile.py status` 查看超频偏移，管理员执行 `gpu_profile.py reset` 后做对照。`ultra` 档历次哈希与改动记录见 [PROGRESS.md](PROGRESS.md)。
+这些哈希只在参考工作站（CMP 40HX、PyTorch 2.13.0+cu130、cuDNN 9.20、`requirements-inference.txt` 的版本）上成立；换 GPU、驱动或库版本后像素必然变化，请在新机器上用同一命令重新记录基线。哈希不一致时先排除硬件：`python gpu_profile.py status` 查看超频偏移，管理员执行 `gpu_profile.py reset` 后做对照。`ultra` 档历次哈希与改动记录见 [PROGRESS.md](PROGRESS.md)。
 
 ---
 
@@ -233,17 +231,17 @@ emilia clean --older-than-hours 1 [--dry-run]     # 正在运行的渲染目录�
 ## 仓库结构
 
 ```text
-emilia_studio/       控制器：cli / commands / tui / config / _version / workflows / compiler / engine / inspector / inspection_worker / ledger
+emilia_studio/       控制器：cli / commands / tui / config / _version / workflows / compiler / engine / inspector / inspection_worker / ledger / runtime_env
 workflows/api/       29 个 .api.json：5 个规范图（构建器逐键校验）、emilia_lora_native 模板、23 个历史实验
 workflows/visual/    Emilia_01..10 GUI 工作流（08–10 可由 workflows --sync-visual 重写）
 workflows/reports/   消融、画质与硬件实验报告；WORKFLOW_DECISIONS.txt 为决策记录
 patches/             4 个 git 补丁 + emilia_runtime_patches（EmiliaRelativeGarmentSEGS、EmiliaCheckpointConditioning、源码签名自检）
 assets/              official_face_center_clean.png + official_references/ 10 张设定裁图
 scripts/             10 种子基准轮次运行/评估脚本、PowerShell 共用解释器解析
-tests/               9 个顶层模块 + comfy_core/ 4 个算子模块
+tests/               10 个顶层模块 + comfy_core/ 4 个算子模块
 packaging/           PyInstaller 规范与 Windows 构建脚本
 render-emilia-quality.ps1 · start-comfyui.ps1 · ollama_comfyui_bridge.py · gpu_profile.py · install-gpu-profile-task.ps1
-config.example.toml · models_manifest.json（11 必需 + 4 实验模型、参考图、固定 commit 与补丁）
+config.example.toml · models_manifest.json（11 必需 + 4 实验模型、参考图、固定 commit 与补丁、推理环境 torch 版本）· requirements-inference.txt（推理环境精确版本）
 ```
 
 `app/` 整目录被 Git 忽略。它不是干净的上游检出；升级 ComfyUI 或自定义节点后必须重新生成对应补丁。
@@ -253,7 +251,7 @@ config.example.toml · models_manifest.json（11 必需 + 4 实验模型、参�
 `install-gpu-profile-task.ps1` 在 `%ProgramData%\EmiliaGPUProfile\versions\` 下创建受保护的版本化 Python/pynvml 副本，以 `-I -S` 运行，注册前审计被执行路径的 ACL。
 
 ```powershell
-.\install-gpu-profile-task.ps1 -Python D:\conda-data\envs\comfyui\python.exe   # 管理员
+.\install-gpu-profile-task.ps1 -Python <推理环境>\python.exe   # 管理员
 .\install-gpu-profile-task.ps1 -Audit                                           # 普通权限可执行
 .\install-gpu-profile-task.ps1 -Remove                                          # 管理员
 ```
